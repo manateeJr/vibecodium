@@ -10,6 +10,7 @@ import {
 } from '../contracts/commands.js';
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 import type { StartWorkerMessage, WorkerOutputMessage } from '../server/session-worker.js';
+import { AdmissionBudget, admissionConfigFromEnv, SessionThrottledError } from './admission.js';
 
 export type SessionFork = (
   modulePath: string,
@@ -21,6 +22,7 @@ export interface SessionSubsystemOptions {
   readonly workerPath?: string;
   readonly fork?: SessionFork;
   readonly idFactory?: () => string;
+  readonly admission?: AdmissionBudget;
 }
 
 interface SessionState {
@@ -36,6 +38,7 @@ export class SessionSubsystem implements Subsystem {
   private readonly forkProcess: SessionFork;
   private readonly idFactory: () => string;
   private readonly sessions = new Map<string, SessionState>();
+  private readonly admission: AdmissionBudget;
   private context: SubsystemContext | undefined;
   private registered = false;
 
@@ -44,6 +47,7 @@ export class SessionSubsystem implements Subsystem {
       options.workerPath ?? fileURLToPath(new URL('../server/session-worker.js', import.meta.url));
     this.forkProcess = options.fork ?? nodeFork;
     this.idFactory = options.idFactory ?? randomUUID;
+    this.admission = options.admission ?? new AdmissionBudget(admissionConfigFromEnv());
   }
 
   public register(context: SubsystemContext): void {
@@ -57,6 +61,23 @@ export class SessionSubsystem implements Subsystem {
   public async open(command: unknown): Promise<SessionOpenResult> {
     const args = sessionOpenArgs(command);
     const context = this.requireContext();
+    const active = [...this.sessions.values()].filter((state) => state.terminal === false).length;
+    const decision = this.admission.tryAdmit(active);
+    if (!decision.ok) {
+      context.append(
+        'admission',
+        'session_throttled' as never,
+        {
+          provider: args.provider,
+          reason: decision.reason,
+          limit: decision.limit,
+          ...(decision.retry_after_ms === undefined
+            ? {}
+            : { retry_after_ms: decision.retry_after_ms }),
+        } as never,
+      );
+      throw new SessionThrottledError(decision);
+    }
     const session_id = this.idFactory();
     if (!session_id.trim()) throw new Error('session id is required');
     const stream_id = `session:${session_id}`;

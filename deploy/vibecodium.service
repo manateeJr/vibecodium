@@ -1,0 +1,20 @@
+[Unit]
+Description=Vibecodium control plane
+Documentation=https://github.com/manateeJr/vibecodium
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vibecodium
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/var/lib/snapd/snap/bin
+ExecStart=/usr/bin/node dist/src/cli.js start
+Restart=always
+RestartSec=2
+Environment=VIBECODIUM_PORT=4310
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vibecodium
+
+[Install]
+WantedBy=default.target
