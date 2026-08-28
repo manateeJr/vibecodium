@@ -8,9 +8,12 @@ import type { EventEnvelope } from '../src/contracts/events.js';
 import { Authority } from '../src/server/authority.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import type { ControlPlaneAddress } from '../src/server/control-plane.js';
+import { createSessionSubsystem } from '../src/session/index.js';
 
 type WireMessage = {
+  id?: string;
   type: string;
+  value?: unknown;
   event?: EventEnvelope;
   streamId?: string;
   sessionId?: string;
@@ -89,7 +92,7 @@ test('opens an echo session, streams ordered events, and catches up after reconn
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-control-plane-'));
   const controlPlane = new ControlPlane({
     dataPath: path.join(directory, 'events.sqlite'),
-    subsystems: [],
+    subsystems: [createSessionSubsystem()],
     port: 0,
     authority: new Authority({
       permitted: [
@@ -106,9 +109,21 @@ test('opens an echo session, streams ordered events, and catches up after reconn
     firstSocket = await connect(address);
     const firstInbox = new Inbox(firstSocket);
     firstSocket.send(
-      JSON.stringify({ type: 'session.open', provider: 'fake', prompt: 'hello world' }),
+      JSON.stringify({
+        id: 'open-session',
+        type: 'command',
+        name: 'session.open',
+        args: { provider: 'fake', prompt: 'hello world' },
+      }),
     );
-    const opened = await firstInbox.wait((message) => message.type === 'session.opened');
+    const commandResult = await firstInbox.wait(
+      (message) => message.type === 'result' && message.id === 'open-session',
+    );
+    const commandValue = commandResult.value as { session_id: string; stream_id: string };
+    const opened = {
+      streamId: commandValue.stream_id,
+      sessionId: commandValue.session_id,
+    };
     assert.ok(opened.streamId);
     assert.ok(opened.sessionId);
     firstSocket.send(JSON.stringify({ type: 'subscribe', streamId: opened.streamId, fromSeq: 0 }));

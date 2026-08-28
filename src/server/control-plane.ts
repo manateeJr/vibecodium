@@ -4,7 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
-import type { CommandFrame, CommandServerFrame } from '../contracts/commands.js';
+import {
+  COMMAND_NAMES,
+  type CommandFrame,
+  type CommandServerFrame,
+} from '../contracts/commands.js';
 import type { CapabilityTokenManager } from '../notify/index.js';
 import type {
   CommandHandler,
@@ -16,7 +20,6 @@ import { registerSubsystems } from '../subsystems/index.js';
 import { Authority } from './authority.js';
 import type { ScopedAction } from './authority.js';
 import { EventStore } from './event-store.js';
-import { LegacySessionManager } from './legacy-session-manager.js';
 import {
   CommandAuthorizationError,
   CommandDispatcher,
@@ -49,11 +52,6 @@ export interface ControlPlaneAddress {
 export type ClientMessage =
   | CommandFrame
   | {
-      readonly type: 'session.open';
-      readonly provider: string;
-      readonly prompt: string;
-    }
-  | {
       readonly type: 'subscribe';
       readonly streamId: string;
       readonly fromSeq?: number;
@@ -77,7 +75,6 @@ export class ControlPlane {
   };
   private readonly host: string;
   private readonly port: number;
-  private readonly legacySessions: LegacySessionManager;
   private readonly projectors = new Map<string, EventHandler>();
   private readonly projectorSubscriptions = new Map<string, () => void>();
   private readonly commands = new Map<string, CommandHandler>();
@@ -105,10 +102,6 @@ export class ControlPlane {
       });
     this.host = options.host ?? '127.0.0.1';
     this.port = options.port ?? 4310;
-    this.legacySessions = new LegacySessionManager({
-      authority: this.authority,
-      appendEvent: (stream_id, type, payload) => this.eventStore.append(stream_id, type, payload),
-    });
     const registeredSubsystems = registerSubsystems(this.context, options.subsystems);
     this.tokenVerifier =
       options.tokenVerifier ??
@@ -149,7 +142,6 @@ export class ControlPlane {
       socket.close();
     }
     this.clientSubscriptions.clear();
-    this.legacySessions.stopAll();
     for (const stopAll of this.sessionStopAll) stopAll();
     await new Promise<void>((resolve) => {
       if (!this.websocketServer) return resolve();
@@ -311,10 +303,6 @@ export class ControlPlane {
       this.send(socket, { type: 'error', code: 'unauthorized', message: 'unauthorized' });
       return;
     }
-    if (message.type === 'session.open') {
-      await this.openSession(socket, message);
-      return;
-    }
     if (message.type === 'subscribe') {
       this.subscribe(socket, message);
       return;
@@ -345,13 +333,6 @@ export class ControlPlane {
       const reply: CommandServerFrame = { id, type: 'error', message: errorMessage(error) };
       this.send(socket, reply);
     }
-  }
-
-  private async openSession(
-    socket: WebSocket,
-    message: Extract<ClientMessage, { type: 'session.open' }>,
-  ): Promise<void> {
-    await this.legacySessions.open(message, (reply) => this.send(socket, reply));
   }
 
   private subscribe(
@@ -415,7 +396,9 @@ export class ControlPlane {
     });
     if (!decision.allowed || message.action.type !== 'session.stop') return;
     const sessionId = message.action.scope.session_id;
-    if (sessionId) this.legacySessions.stop(sessionId);
+    if (!sessionId) return;
+    const stop = this.commands.get(COMMAND_NAMES.sessionStop);
+    if (stop) void stop({ session_id: sessionId });
   }
 
   private cleanupClient(socket: WebSocket): void {
@@ -449,7 +432,7 @@ function isCommandFrame(value: unknown): value is CommandFrame {
 function isClientMessage(value: unknown): value is ClientMessage {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const type = (value as Record<string, unknown>).type;
-  return type === 'session.open' || type === 'subscribe' || type === 'action.request';
+  return type === 'subscribe' || type === 'action.request';
 }
 
 function bearerToken(authorization: string | undefined): string | undefined {
