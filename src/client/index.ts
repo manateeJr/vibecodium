@@ -2,6 +2,8 @@ import type {
   EventsHttpResponse,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionSendArgs,
+  SessionSendResult,
   SessionStopArgs,
   SessionStopResult,
   SubscribeFrame,
@@ -9,6 +11,7 @@ import type {
   WorkflowApproveResult,
   WorkflowRunArgs,
   WorkflowRunResult,
+  WorkspaceListResult,
 } from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
 
@@ -16,6 +19,8 @@ import type { EventEnvelope } from '../contracts/events.js';
 const COMMAND_NAMES = {
   sessionOpen: 'session.open',
   sessionStop: 'session.stop',
+  sessionSend: 'session.send',
+  workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
 } as const;
@@ -36,6 +41,8 @@ export type {
   EventsHttpResponse,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionSendArgs,
+  SessionSendResult,
   SessionStopArgs,
   SessionStopResult,
   SubscribeFrame,
@@ -43,6 +50,9 @@ export type {
   WorkflowApproveResult,
   WorkflowRunArgs,
   WorkflowRunResult,
+  WorkspaceEntry,
+  WorkspaceListArgs,
+  WorkspaceListResult,
 } from '../contracts/commands.js';
 
 export interface ClientOptions {
@@ -54,6 +64,8 @@ export interface ClientOptions {
 export interface VibecodiumClient {
   openSession(args: SessionOpenArgs): Promise<SessionOpenResult>;
   stopSession(args: SessionStopArgs): Promise<SessionStopResult>;
+  sendMessage(args: SessionSendArgs): Promise<SessionSendResult>;
+  listWorkspaces(): Promise<WorkspaceListResult>;
   runWorkflow(args: WorkflowRunArgs): Promise<WorkflowRunResult>;
   approve(args: WorkflowApproveArgs): Promise<WorkflowApproveResult>;
   getEvents(stream_id: string, from_seq: number): Promise<readonly EventEnvelope[]>;
@@ -93,6 +105,11 @@ export function createClient(options: ClientOptions): VibecodiumClient {
 
   const stopSession = (args: SessionStopArgs): Promise<SessionStopResult> =>
     post<SessionStopResult>(baseUrl, COMMAND_NAMES.sessionStop, args, options.token);
+  const sendMessage = (args: SessionSendArgs): Promise<SessionSendResult> =>
+    post<SessionSendResult>(baseUrl, COMMAND_NAMES.sessionSend, args, options.token);
+
+  const listWorkspaces = (): Promise<WorkspaceListResult> =>
+    post<WorkspaceListResult>(baseUrl, COMMAND_NAMES.workspaceList, {}, options.token);
 
   const runWorkflow = async (args: WorkflowRunArgs): Promise<WorkflowRunResult> => {
     const result = await post<WorkflowRunResult>(
@@ -165,7 +182,16 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     };
   };
 
-  return { openSession, stopSession, runWorkflow, approve, getEvents, subscribe };
+  return {
+    openSession,
+    stopSession,
+    sendMessage,
+    listWorkspaces,
+    runWorkflow,
+    approve,
+    getEvents,
+    subscribe,
+  };
 }
 
 async function post<T>(

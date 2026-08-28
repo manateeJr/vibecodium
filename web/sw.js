@@ -1,6 +1,6 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v2';
+const CACHE_NAME = 'vibecodium-shell-v3';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',

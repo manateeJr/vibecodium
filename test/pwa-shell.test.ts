@@ -32,6 +32,9 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /href="\/manifest\.webmanifest"/);
     assert.match(index, /script type="module" src="\/app\.js"/);
     assert.match(index, /serviceWorker\.register\('\/sw\.js'/);
+    assert.match(index, /id="workspace"/);
+    assert.match(index, /id="turnForm"/);
+    assert.match(index, /id="turnInput"/);
 
     const manifestResponse = await fetch(`${address.httpUrl}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200);

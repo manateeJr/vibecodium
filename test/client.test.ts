@@ -49,9 +49,14 @@ test('SDK posts command args and subscribes with the active stream frame', async
     return {
       ok: true,
       status: 200,
-      json: async () => ({
-        value: { session_id: 'session-1', stream_id: 'session:session-1' },
-      }),
+      json: async () => {
+        const url = String(input);
+        if (url.endsWith('/commands/session.send'))
+          return { value: { stream_id: 'session:session-1', turn: 2 } };
+        if (url.endsWith('/commands/workspace.list'))
+          return { value: { workspaces: [{ name: 'repo', path: '/tmp/repo' }] } };
+        return { value: { session_id: 'session-1', stream_id: 'session:session-1' } };
+      },
     } as Response;
   };
   (globalThis as unknown as { WebSocket: typeof StubSocket }).WebSocket = StubSocket;
@@ -66,6 +71,25 @@ test('SDK posts command args and subscribes with the active stream frame', async
       provider: 'fake',
       prompt: 'hello',
     });
+    const sendResult = await client.sendMessage({
+      session_id: 'session-1',
+      prompt: 'follow up',
+    });
+    assert.deepEqual(sendResult, { stream_id: 'session:session-1', turn: 2 });
+    assert.equal(requests[1]?.url, 'http://127.0.0.1:4310/commands/session.send');
+    assert.equal(requests[1]?.init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+      session_id: 'session-1',
+      prompt: 'follow up',
+    });
+
+    const workspaceResult = await client.listWorkspaces();
+    assert.deepEqual(workspaceResult, {
+      workspaces: [{ name: 'repo', path: '/tmp/repo' }],
+    });
+    assert.equal(requests[2]?.url, 'http://127.0.0.1:4310/commands/workspace.list');
+    assert.equal(requests[2]?.init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(requests[2]?.init?.body)), {});
     const received: EventEnvelope[] = [];
     const unsubscribe = client.subscribe(0, (event) => received.push(event));
     await new Promise<void>((resolve) => setImmediate(resolve));

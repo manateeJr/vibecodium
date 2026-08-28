@@ -31,7 +31,7 @@
       <section class="stream-panel" aria-labelledby="stream-title">
         <div class="section-heading">
           <div class="section-heading__title">
-            <h1 id="stream-title">STREAM</h1>
+            <h1 id="stream-title">CHAT</h1>
             <span id="stream-caption">No active stream</span>
           </div>
           <div
@@ -45,12 +45,33 @@
           <li id="stream-empty" class="stream-empty">Open a session or run a workflow to begin.</li>
         </ol>
       </section>
+      <form id="turnForm" class="turn-bar" hidden>
+        <div class="prompt-label">
+          <span class="entry-label">CHAT</span>
+          <span class="prompt-hint">SESSION.SEND</span>
+        </div>
+        <div class="turn-grid">
+          <label class="sr-only" for="turnInput">Message</label>
+          <input
+            id="turnInput"
+            name="turnInput"
+            type="text"
+            autocomplete="off"
+            placeholder="Continue this session..."
+          />
+          <button id="send-turn" class="button button--send" type="submit">SEND</button>
+        </div>
+      </form>
 
       <form id="prompt-form" class="prompt-bar">
         <div class="prompt-label">
           <span class="entry-label">FREE SESSION</span>
           <span class="prompt-hint">SESSION.OPEN</span>
         </div>
+        <label class="sr-only" for="workspace">Project</label>
+        <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
+          <option value="">(default cwd)</option>
+        </select>
         <div class="prompt-grid">
           <label class="sr-only" for="provider">Provider</label>
           <select id="provider" name="provider" autocomplete="off">

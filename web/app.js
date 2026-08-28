@@ -1,7 +1,5 @@
 /* global document */
-
 import { createClient } from '/client.js';
-
 const TOKEN_KEY = 'vibecodium.token';
 const EVENT_TONES = Object.freeze({
   session_started: 'ok',
@@ -26,7 +24,11 @@ const elements = {
   streamEmpty: document.querySelector('#stream-empty'),
   promptForm: document.querySelector('#prompt-form'),
   provider: document.querySelector('#provider'),
+  workspace: document.querySelector('#workspace'),
   prompt: document.querySelector('#prompt'),
+  turnForm: document.querySelector('#turnForm'),
+  turnInput: document.querySelector('#turnInput'),
+  turnSend: document.querySelector('#send-turn'),
   open: document.querySelector('#open-session'),
   stop: document.querySelector('#stop-session'),
   run: document.querySelector('#run-workflow'),
@@ -49,20 +51,21 @@ let transientTimer = null;
 const sessions = new Map();
 const transientLines = [];
 const seenEvents = new Set();
-
 elements.token.value = clientToken;
 renderTokenState();
-setStatus(
-  globalThis.navigator.onLine ? 'READY' : 'OFFLINE',
-  globalThis.navigator.onLine ? 'idle' : 'bad',
-);
+const online = globalThis.navigator.onLine;
+setStatus(online ? 'READY' : 'OFFLINE', online ? 'idle' : 'bad');
 refreshControls();
 renderSwitcher();
 renderStream();
-
+void loadWorkspaces();
 elements.promptForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void openSession();
+});
+elements.turnForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void sendMessage();
 });
 elements.stop.addEventListener('click', () => void stopSession());
 elements.run.addEventListener('click', () => void runWorkflow());
@@ -78,9 +81,7 @@ globalThis.addEventListener('online', () => {
   if (selectedStreamId) void hydrateStream(selectedStreamId);
 });
 globalThis.addEventListener('offline', () => setStatus('OFFLINE', 'bad'));
-
 client.subscribe(0, onEvent, '*');
-
 function loadToken() {
   try {
     return (globalThis.localStorage.getItem(TOKEN_KEY) ?? '').trim();
@@ -88,7 +89,6 @@ function loadToken() {
     return '';
   }
 }
-
 function saveToken(value) {
   try {
     if (value) globalThis.localStorage.setItem(TOKEN_KEY, value);
@@ -97,13 +97,21 @@ function saveToken(value) {
     setStatus('TOKEN UNSAVED', 'wait');
   }
 }
-
+async function loadWorkspaces() {
+  try {
+    const result = await client.listWorkspaces();
+    elements.workspace.replaceChildren(new globalThis.Option('(default cwd)', ''));
+    for (const workspace of result.workspaces)
+      elements.workspace.add(new globalThis.Option(workspace.name, workspace.path));
+  } catch (error) {
+    appendError(`workspace list failed: ${errorMessage(error)}`);
+  }
+}
 function renderTokenState() {
   const isSet = Boolean(elements.token.value.trim());
   elements.tokenState.textContent = isSet ? 'set' : 'not set';
   elements.tokenState.dataset.set = isSet ? 'yes' : 'no';
 }
-
 function refreshClient() {
   const nextToken = elements.token.value.trim();
   if (nextToken === clientToken) return;
@@ -111,31 +119,24 @@ function refreshClient() {
   if (nextToken) clientOptions.token = nextToken;
   else delete clientOptions.token;
 }
-
 function setStatus(label, tone) {
   elements.status.textContent = label;
   elements.connection.dataset.tone = tone;
 }
-
 function refreshControls() {
   const entry = sessions.get(selectedStreamId);
+  const sessionLive = entry?.kind === 'session' && entry.status === 'running';
   elements.open.disabled = opening;
-  elements.stop.disabled =
-    !entry || entry.kind !== 'session' || entry.status !== 'running' || stopping;
+  elements.stop.disabled = !sessionLive || stopping;
+  elements.turnForm.hidden = !sessionLive;
+  elements.turnSend.disabled = !sessionLive || Boolean(entry?.busy);
   elements.run.disabled = running;
   elements.approve.disabled =
     !entry || entry.kind !== 'workflow' || entry.status !== 'running' || approving;
 }
-
-function streamKind(streamId) {
-  if (streamId.startsWith('session:')) return 'session';
-  if (streamId.startsWith('workflow:')) return 'workflow';
-  return null;
-}
-
 function ensureEntry(streamId, label = '') {
-  const kind = streamKind(streamId);
-  if (!kind) return null;
+  const kind = streamId.split(':', 1)[0];
+  if (kind !== 'session' && kind !== 'workflow') return null;
   let entry = sessions.get(streamId);
   if (!entry) {
     entry = {
@@ -143,6 +144,7 @@ function ensureEntry(streamId, label = '') {
       kind,
       label: label || (kind === 'session' ? 'session' : 'workflow'),
       status: 'running',
+      busy: false,
       lines: [],
     };
     sessions.set(streamId, entry);
@@ -156,12 +158,6 @@ function ensureEntry(streamId, label = '') {
   }
   return entry;
 }
-
-function shortId(streamId) {
-  const id = streamId.slice(streamId.indexOf(':') + 1);
-  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
-}
-
 function selectStream(streamId) {
   const entry = sessions.get(streamId);
   if (!entry) return;
@@ -172,10 +168,11 @@ function selectStream(streamId) {
   refreshControls();
   void hydrateStream(streamId);
 }
-
 function renderSwitcher() {
   elements.streamSwitcher.replaceChildren();
   for (const entry of [...sessions.values()].reverse()) {
+    const id = entry.stream_id.split(':', 2)[1] ?? '';
+    const shortId = id.length > 8 ? `${id.slice(0, 8)}…` : id;
     const chip = document.createElement('button');
     chip.className = 'stream-chip';
     chip.type = 'button';
@@ -185,13 +182,11 @@ function renderSwitcher() {
     chip.setAttribute('aria-selected', String(entry.stream_id === selectedStreamId));
     chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${shortId(entry.stream_id)}`);
     chip.addEventListener('click', () => selectStream(entry.stream_id));
-
     const dot = document.createElement('span');
     dot.className = 'stream-chip__dot';
     dot.dataset.status = entry.status;
     dot.setAttribute('aria-hidden', 'true');
     chip.append(dot);
-
     const text = document.createElement('span');
     text.className = 'stream-chip__text';
     text.textContent = `${entry.kind} · ${entry.label} · ${shortId(entry.stream_id)}`;
@@ -199,7 +194,6 @@ function renderSwitcher() {
     elements.streamSwitcher.append(chip);
   }
 }
-
 function renderStream() {
   const entry = sessions.get(selectedStreamId);
   const lines = entry ? [...transientLines, ...entry.lines] : transientLines;
@@ -218,24 +212,22 @@ function renderStream() {
   for (const [index, item] of lines.entries()) {
     const line = document.createElement('li');
     line.className = `stream-line stream-line--${item.cls}`;
+    line.classList.add(item.cls);
     const sequence = document.createElement('span');
     sequence.className = 'stream-line__seq';
-    sequence.textContent = `#${index + 1}`;
-    line.append(sequence);
+    sequence.textContent = item.cls === 'divider' ? '' : `#${index + 1}`;
     const text = document.createElement('span');
     text.className = 'stream-line__text';
     text.textContent = item.text;
-    line.append(text);
+    line.append(sequence, text);
     elements.streamLines.append(line);
   }
   if (stickToBottom) elements.streamLines.scrollTop = elements.streamLines.scrollHeight;
 }
-
 function pushLine(entry, cls, text) {
   entry.lines.push({ cls, text });
   if (entry.stream_id === selectedStreamId) renderStream();
 }
-
 function showTransientLine(cls, text) {
   transientLines.push({ cls, text });
   if (transientTimer !== null) globalThis.clearTimeout(transientTimer);
@@ -246,13 +238,11 @@ function showTransientLine(cls, text) {
   }, 6_000);
   renderStream();
 }
-
 function appendError(message, entry = sessions.get(selectedStreamId)) {
   const text = `${eventClock(new Date().toISOString())} error · ${message}`;
   if (entry) pushLine(entry, 'bad', text);
   else showTransientLine('bad', text);
 }
-
 function onEvent(event) {
   const key = `${event.stream_id}:${event.seq}`;
   if (seenEvents.has(key)) return;
@@ -273,59 +263,73 @@ function onEvent(event) {
     return;
   }
   const entry = ensureEntry(event.stream_id);
-  if (!entry) {
-    setStatus('LIVE', 'live');
-    return;
-  }
+  if (!entry) return setStatus('LIVE', 'live');
   applyEvent(entry, event);
   renderSwitcher();
   refreshControls();
   setStatus('LIVE', 'live');
 }
-
 function applyEvent(entry, event) {
   const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+  if (typeof payload.session_id === 'string') entry.session_id = payload.session_id;
+  const clock = eventClock(event.ts);
   if (entry.kind === 'session') {
     if (event.type === 'session_started') {
       if (typeof payload.provider === 'string' && payload.provider.trim())
         entry.label = payload.provider;
       entry.status = 'running';
-      pushEventLine(entry, event, 'ok');
+      pushLine(entry, 'you', `${clock} you · ${payload.prompt ?? ''}`);
+      pushLine(
+        entry,
+        'meta',
+        `${clock} ${payload.provider ?? 'session'} · cwd ${payload.cwd ?? '(default cwd)'}`,
+      );
+      return;
+    }
+    if (event.type === 'session_input') {
+      pushLine(entry, 'you', `${clock} you · ${payload.text ?? ''}`);
       return;
     }
     if (event.type === 'session_output') {
-      pushEventLine(entry, event, 'normal');
+      pushLine(entry, 'agent', `${clock} agent · ${payload.text ?? ''}`);
       return;
     }
-    if (event.type === 'session_complete') {
-      entry.status = 'done';
-      pushEventLine(entry, event, 'ok');
+    if (event.type === 'turn_complete') {
+      entry.busy = false;
+      pushLine(entry, 'divider', `— turn ${payload.turn ?? '?'} —`);
       return;
     }
-    if (event.type === 'verify_failed') {
-      entry.status = 'failed';
-      pushEventLine(entry, event, 'bad');
+    if (event.type === 'session_complete' || event.type === 'verify_failed') {
+      const failed = event.type === 'verify_failed';
+      const text = failed
+        ? `${payload.stage ?? 'verify'}: ${payload.error ?? 'failed'}`
+        : 'session ended';
+      entry.status = failed ? 'failed' : 'done';
+      entry.busy = false;
+      pushLine(entry, failed ? 'bad' : 'meta', `${clock} ${text}`);
       return;
     }
-    pushEventLine(entry, event, toneFor(event.type));
+    pushEventLine(entry, event, EVENT_TONES[event.type] ?? 'meta');
     return;
   }
   const template = templateFromPayload(payload);
   if (template) entry.label = template;
-  pushEventLine(entry, event, toneFor(event.type));
-  if (isWorkflowFailure(event.type)) entry.status = 'failed';
-  else if (isWorkflowTerminal(event.type)) entry.status = 'done';
+  pushEventLine(entry, event, EVENT_TONES[event.type] ?? 'meta');
+  if (event.type === 'verify_failed' || /(?:fail|error|denied|rejected)/i.test(event.type))
+    entry.status = 'failed';
+  else if (
+    event.type === 'session_complete' ||
+    /(?:complete|completed|done|released|succeeded|success)$/i.test(event.type)
+  )
+    entry.status = 'done';
   else if (event.type === 'session_started') entry.status = 'running';
 }
-
-function pushEventLine(entry, event, tone) {
+const pushEventLine = (entry, event, tone) =>
   pushLine(
     entry,
     tone,
     `${eventClock(event.ts)} ${event.type} · ${eventText(event.type, event.payload)}`,
   );
-}
-
 function templateFromPayload(payload) {
   if (typeof payload.template === 'string' && payload.template.trim()) return payload.template;
   if (typeof payload.template_name === 'string' && payload.template_name.trim())
@@ -334,18 +338,6 @@ function templateFromPayload(payload) {
     return payload.prompt.slice('workflow-template:'.length) || 'workflow';
   return '';
 }
-
-function isWorkflowFailure(type) {
-  return type === 'verify_failed' || /(?:fail|error|denied|rejected)/i.test(type);
-}
-
-function isWorkflowTerminal(type) {
-  return (
-    type === 'session_complete' ||
-    /(?:complete|completed|done|released|succeeded|success)$/i.test(type)
-  );
-}
-
 async function hydrateStream(streamId) {
   try {
     const events = await client.getEvents(streamId, 0);
@@ -357,33 +349,19 @@ async function hydrateStream(streamId) {
     if (selectedStreamId === streamId) setStatus('EVENT ERROR', 'bad');
   }
 }
-
 function eventClock(timestamp) {
   const date = new Date(timestamp ?? '');
   if (Number.isNaN(date.getTime())) return '--:--:--';
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
-
-function toneFor(type) {
-  return EVENT_TONES[type] ?? 'meta';
-}
-
 function eventText(type, payload) {
   const value = payload && typeof payload === 'object' ? payload : {};
-  if (type === 'session_output' && typeof value.text === 'string') return value.text;
-  if (type === 'session_started')
-    return `${value.provider ?? 'session'} · ${value.prompt ?? ''}`.trim();
-  if (type === 'session_complete') return `session ${value.session_id ?? ''} complete`.trim();
-  if (type === 'verify_failed') return `${value.stage ?? 'verify'}: ${value.error ?? 'failed'}`;
-  if (type === 'action_requested' || type === 'action_approved' || type === 'action_denied') {
+  if (type === 'action_requested' || type === 'action_approved' || type === 'action_denied')
     return `${value.action ?? 'action'} · request ${value.request_id ?? 'unknown'}`;
-  }
   if (type === 'merge_to_main')
     return `${value.branch ?? 'branch'} · ${value.commit_sha ?? ''}`.trim();
-  const serialized = JSON.stringify(payload);
-  return serialized === undefined ? String(payload) : serialized;
+  return JSON.stringify(payload) ?? String(payload);
 }
-
 async function openSession() {
   const provider = elements.provider.value.trim();
   const prompt = elements.prompt.value.trim();
@@ -396,9 +374,14 @@ async function openSession() {
   setStatus('OPENING', 'wait');
   refreshControls();
   try {
-    const result = await client.openSession({ provider, prompt });
+    const result = await client.openSession({
+      provider,
+      prompt,
+      cwd: elements.workspace.value || undefined,
+    });
     const entry = ensureEntry(result.stream_id, provider);
     if (!entry) throw new Error('session.open returned an invalid stream');
+    entry.session_id = result.session_id;
     selectStream(result.stream_id);
     setStatus('LIVE', 'live');
     elements.prompt.value = '';
@@ -410,7 +393,35 @@ async function openSession() {
     refreshControls();
   }
 }
-
+async function sendMessage() {
+  const entry = sessions.get(selectedStreamId);
+  if (!entry || entry.kind !== 'session' || entry.status !== 'running' || entry.busy) return;
+  const prompt = elements.turnInput.value.trim();
+  if (!prompt) {
+    appendError('message is required', entry);
+    return;
+  }
+  const sessionId = entry.session_id || entry.stream_id.slice('session:'.length);
+  if (!sessionId) {
+    appendError('session id unavailable', entry);
+    return;
+  }
+  refreshClient();
+  entry.busy = true;
+  setStatus('SENDING', 'wait');
+  refreshControls();
+  try {
+    await client.sendMessage({ session_id: sessionId, prompt });
+    elements.turnInput.value = '';
+    if (selectedStreamId === entry.stream_id) setStatus('LIVE', 'live');
+  } catch (error) {
+    entry.busy = false;
+    appendError(`session send failed: ${errorMessage(error)}`, entry);
+    if (selectedStreamId === entry.stream_id) setStatus('ERROR', 'bad');
+  } finally {
+    refreshControls();
+  }
+}
 async function stopSession() {
   const entry = sessions.get(selectedStreamId);
   if (!entry || entry.kind !== 'session' || entry.status !== 'running') return;
@@ -422,12 +433,13 @@ async function stopSession() {
   try {
     const result = await client.stopSession({ session_id: sessionId });
     entry.status = 'done';
+    const detail = result.stopped
+      ? `stopped ${sessionId}`
+      : `session ${sessionId} was already stopped`;
     pushLine(
       entry,
       result.stopped ? 'ok' : 'meta',
-      `${eventClock(new Date().toISOString())} session.stop · ${
-        result.stopped ? `stopped ${sessionId}` : `session ${sessionId} was already stopped`
-      }`,
+      `${eventClock(new Date().toISOString())} session.stop · ${detail}`,
     );
     setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
   } catch (error) {
@@ -439,7 +451,6 @@ async function stopSession() {
     refreshControls();
   }
 }
-
 async function runWorkflow() {
   const template = 'basic-build';
   refreshClient();
@@ -460,7 +471,6 @@ async function runWorkflow() {
     refreshControls();
   }
 }
-
 async function approveWorkflow() {
   const entry = sessions.get(selectedStreamId);
   if (!entry || entry.kind !== 'workflow' || entry.status !== 'running') return;
@@ -474,13 +484,8 @@ async function approveWorkflow() {
     if (result.status === 'released' || result.stage === 'release') entry.status = 'done';
     const tone = result.approved ? 'ok' : result.blocked ? 'wait' : 'bad';
     const reason = result.reason ? ` · ${result.reason}` : '';
-    pushLine(
-      entry,
-      tone,
-      `${eventClock(new Date().toISOString())} workflow.approve · ${result.status} · ${
-        result.stage
-      }${reason}`,
-    );
+    const detail = `${result.status} · ${result.stage}${reason}`;
+    pushLine(entry, tone, `${eventClock(new Date().toISOString())} workflow.approve · ${detail}`);
     setStatus(result.blocked ? 'WAITING' : 'LIVE', result.blocked ? 'wait' : 'live');
   } catch (error) {
     appendError(`workflow approval failed: ${errorMessage(error)}`, entry);
@@ -491,7 +496,4 @@ async function approveWorkflow() {
     refreshControls();
   }
 }
-
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
-}
+const errorMessage = (error) => (error instanceof Error ? error.message : String(error));
