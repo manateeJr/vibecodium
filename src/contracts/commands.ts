@@ -3,11 +3,15 @@ import type { EventEnvelope } from './events.js';
 export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
   sessionStop: 'session.stop',
+  sessionSend: 'session.send',
+  workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
 } as const;
 export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
 export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
+export const SESSION_SEND_COMMAND = COMMAND_NAMES.sessionSend;
+export const WORKSPACE_LIST_COMMAND = COMMAND_NAMES.workspaceList;
 export const WORKFLOW_RUN_COMMAND = COMMAND_NAMES.workflowRun;
 export const WORKFLOW_APPROVE_COMMAND = COMMAND_NAMES.workflowApprove;
 export const WORKFLOW_START_COMMAND = 'workflow.start';
@@ -31,6 +35,27 @@ export interface SessionStopArgs {
 
 export interface SessionStopResult {
   readonly stopped: boolean;
+}
+
+export interface SessionSendArgs {
+  readonly session_id: string;
+  readonly prompt: string;
+}
+
+export interface SessionSendResult {
+  readonly stream_id: string;
+  readonly turn: number;
+}
+
+export interface WorkspaceEntry {
+  readonly name: string;
+  readonly path: string;
+}
+
+export type WorkspaceListArgs = Record<string, never>;
+
+export interface WorkspaceListResult {
+  readonly workspaces: readonly WorkspaceEntry[];
 }
 
 export interface WorkflowRunArgs extends Readonly<Record<string, unknown>> {
@@ -60,12 +85,16 @@ export interface WorkflowApproveResult {
 export interface CommandArgsMap {
   'session.open': SessionOpenArgs;
   'session.stop': SessionStopArgs;
+  'session.send': SessionSendArgs;
+  'workspace.list': WorkspaceListArgs;
   'workflow.run': WorkflowRunArgs;
   'workflow.approve': WorkflowApproveArgs;
 }
 
 export interface CommandResultMap {
   'session.open': SessionOpenResult;
+  'session.send': SessionSendResult;
+  'workspace.list': WorkspaceListResult;
   'session.stop': SessionStopResult;
   'workflow.run': WorkflowRunResult;
   'workflow.approve': WorkflowApproveResult;

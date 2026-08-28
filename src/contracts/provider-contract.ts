@@ -3,6 +3,9 @@ import type { SessionOutputPayload } from './events.js';
 export interface ProviderSpawnRequest {
   readonly sessionId: string;
   readonly prompt: string;
+  readonly cwd?: string;
+  readonly storageDir?: string;
+  readonly resume?: boolean;
 }
 
 export interface ProviderSession {

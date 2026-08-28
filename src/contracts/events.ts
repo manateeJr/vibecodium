@@ -2,6 +2,8 @@ export type EventKind =
   | 'session_started'
   | 'session_output'
   | 'session_complete'
+  | 'session_input'
+  | 'turn_complete'
   | 'verify_failed'
   | 'action_requested'
   | 'action_approved'
@@ -16,6 +18,7 @@ export interface SessionStartedPayload {
   readonly session_id: string;
   readonly provider: string;
   readonly prompt: string;
+  readonly cwd?: string;
 }
 
 export interface SessionOutputPayload {
@@ -24,9 +27,20 @@ export interface SessionOutputPayload {
   readonly text: string;
 }
 
+export interface SessionInputPayload {
+  readonly session_id: string;
+  readonly turn: number;
+  readonly text: string;
+}
+
 export interface SessionCompletePayload {
   readonly session_id: string;
   readonly provider: string;
+}
+
+export interface TurnCompletePayload {
+  readonly session_id: string;
+  readonly turn: number;
 }
 
 export interface VerifyFailedPayload {
@@ -78,6 +92,8 @@ export interface EventPayloadMap {
   readonly session_started: SessionStartedPayload;
   readonly session_output: SessionOutputPayload;
   readonly session_complete: SessionCompletePayload;
+  readonly session_input: SessionInputPayload;
+  readonly turn_complete: TurnCompletePayload;
   readonly verify_failed: VerifyFailedPayload;
   readonly action_requested: ActionRequestedPayload;
   readonly action_approved: ActionApprovedPayload;
