@@ -46,6 +46,12 @@ test('folds matching failures and only returns signatures at the threshold', () 
     assert.equal(recurring[0]?.status, 'open');
     assert.equal(store.queryRecurringSignatures(4).length, 0);
     assert.equal(store.queryRecurringSignatures(2)[0]?.signature, recurring[0]?.signature);
+    const signature = recurring[0]?.signature;
+    assert.ok(signature);
+    assert.equal(store.setSignatureStatus(signature, 'resolved'), true);
+    assert.equal(store.queryRecurringSignatures().length, 1);
+    assert.equal(store.queryRecurringSignatures(3, 'open').length, 0);
+    assert.equal(store.queryRecurringSignatures(3, 'resolved').length, 1);
   } finally {
     store.close();
     fs.rmSync(directory, { recursive: true, force: true });

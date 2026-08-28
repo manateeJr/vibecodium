@@ -68,7 +68,7 @@ export class TelemetryStore {
     this.recurringSignaturesQuery = this.database.prepare(`
       SELECT signature, kind, stage, occurrences, status, updated_at
       FROM signatures
-      WHERE occurrences >= ?
+      WHERE occurrences >= ? AND (? IS NULL OR status = ?)
       ORDER BY occurrences DESC, signature ASC
     `);
     this.signatureQuery = this.database.prepare(`
@@ -101,13 +101,25 @@ export class TelemetryStore {
     project();
   }
 
-  public queryRecurringSignatures(minOccurrences = 3): TelemetrySignatureRow[] {
+  public queryRecurringSignatures(
+    minOccurrences = 3,
+    status?: SignatureStatus,
+  ): TelemetrySignatureRow[] {
     validateThreshold(minOccurrences);
-    return this.recurringSignaturesQuery.all(minOccurrences) as TelemetrySignatureRow[];
+    validateStatusFilter(status);
+    const storedStatus = status ?? null;
+    return this.recurringSignaturesQuery.all(
+      minOccurrences,
+      storedStatus,
+      storedStatus,
+    ) as TelemetrySignatureRow[];
   }
 
-  public getRecurringSignatures(minOccurrences = 3): TelemetrySignatureRow[] {
-    return this.queryRecurringSignatures(minOccurrences);
+  public getRecurringSignatures(
+    minOccurrences = 3,
+    status?: SignatureStatus,
+  ): TelemetrySignatureRow[] {
+    return this.queryRecurringSignatures(minOccurrences, status);
   }
 
   public getSignature(signature: string): TelemetrySignatureRow | undefined {
@@ -184,5 +196,11 @@ function asRecord(value: unknown): PayloadRecord {
 function validateThreshold(minOccurrences: number): void {
   if (!Number.isInteger(minOccurrences) || minOccurrences < 1) {
     throw new Error('minOccurrences must be a positive integer');
+  }
+}
+function validateStatusFilter(status: SignatureStatus | undefined): void {
+  if (status === undefined) return;
+  if (!['open', 'proposed', 'resolved', 'ignored'].includes(status)) {
+    throw new Error('status must be open, proposed, resolved, or ignored');
   }
 }
