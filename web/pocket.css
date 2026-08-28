@@ -1,14 +1,11 @@
 /* Pocket console: one-hand phosphor controls on the shared design tokens. */
-
 :root {
   --fs-input: 16px;
   color-scheme: dark;
 }
-
 * {
   box-sizing: border-box;
 }
-
 html,
 body {
   min-height: 100%;
@@ -19,36 +16,30 @@ body {
   font-size: var(--fs-base);
   line-height: var(--lh);
 }
-
 body {
   min-height: 100dvh;
 }
-
 button,
 input,
 select {
   color: inherit;
   font: inherit;
 }
-
 button,
 select,
 input {
   min-height: 44px;
 }
-
 button,
 select,
 input,
 summary {
   -webkit-tap-highlight-color: transparent;
 }
-
 button,
 summary {
   cursor: pointer;
 }
-
 button:focus-visible,
 select:focus-visible,
 input:focus-visible,
@@ -56,7 +47,6 @@ summary:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-
 .app-shell {
   width: min(100%, 430px);
   min-height: 100dvh;
@@ -67,7 +57,6 @@ summary:focus-visible {
   flex-direction: column;
   background: var(--bg);
 }
-
 .top-strip {
   min-height: calc(var(--chrome-h) + 22px);
   padding: 10px 0;
@@ -78,7 +67,6 @@ summary:focus-visible {
   gap: 12px;
   flex: 0 0 auto;
 }
-
 .brand-kicker,
 .brand-name,
 .section-heading h1,
@@ -89,7 +77,6 @@ summary:focus-visible {
 .stream-empty {
   margin: 0;
 }
-
 .brand-kicker,
 .prompt-label,
 .token-panel summary,
@@ -98,16 +85,13 @@ summary:focus-visible {
   letter-spacing: var(--track-label);
   text-transform: uppercase;
 }
-
 .brand-kicker {
   color: var(--ink-dim);
 }
-
 .brand-name {
   color: var(--ink-hi);
   font-size: 16px;
 }
-
 .connection {
   display: inline-flex;
   align-items: center;
@@ -117,19 +101,15 @@ summary:focus-visible {
   letter-spacing: var(--track-small);
   white-space: nowrap;
 }
-
 .connection[data-tone='live'] {
   color: var(--ok);
 }
-
 .connection[data-tone='wait'] {
   color: var(--amber);
 }
-
 .connection[data-tone='bad'] {
   color: var(--bad);
 }
-
 .connection-dot {
   width: 8px;
   height: 8px;
@@ -137,11 +117,9 @@ summary:focus-visible {
   border-radius: 50%;
   background: currentColor;
 }
-
 .connection[data-tone='wait'] .connection-dot {
   background: transparent;
 }
-
 .stream-panel {
   min-height: 0;
   display: flex;
@@ -149,13 +127,11 @@ summary:focus-visible {
   flex-direction: column;
   padding: 14px 0 10px;
 }
-
 .section-heading {
   display: block;
   padding-bottom: 8px;
   flex: 0 0 auto;
 }
-
 .section-heading__title {
   display: flex;
   align-items: baseline;
@@ -171,7 +147,6 @@ summary:focus-visible {
   overscroll-behavior-x: contain;
   scrollbar-color: var(--line) transparent;
 }
-
 .stream-chip {
   display: inline-flex;
   flex: 0 0 auto;
@@ -189,17 +164,14 @@ summary:focus-visible {
   letter-spacing: var(--track-small);
   text-transform: uppercase;
 }
-
 .stream-chip[data-active='yes'] {
   border-color: var(--focus);
   color: var(--ink-hi);
 }
-
 .stream-chip:hover:not(:disabled) {
   border-color: var(--ink);
   color: var(--ink-hi);
 }
-
 .stream-chip__dot {
   width: 7px;
   height: 7px;
@@ -207,31 +179,25 @@ summary:focus-visible {
   border-radius: 50%;
   background: var(--ink-dim);
 }
-
 .stream-chip__dot[data-status='running'] {
   background: var(--amber);
 }
-
 .stream-chip__dot[data-status='done'] {
   background: var(--ok);
 }
-
 .stream-chip__dot[data-status='failed'],
 .stream-chip__dot[data-status='throttled'] {
   background: var(--bad);
 }
-
 .stream-chip__text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .section-heading h1 {
   color: var(--ink-hi);
   font-weight: 500;
 }
-
 #stream-caption {
   min-width: 0;
   overflow: hidden;
@@ -240,7 +206,6 @@ summary:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .stream-lines {
   min-height: 150px;
   margin: 0;
@@ -250,21 +215,17 @@ summary:focus-visible {
   overscroll-behavior: contain;
   scrollbar-color: var(--line) var(--bg);
 }
-
 .stream-lines::-webkit-scrollbar {
   width: 5px;
 }
-
 .stream-lines::-webkit-scrollbar-thumb {
   background: var(--line);
 }
-
 .stream-empty {
   padding: 30px 8px;
   color: var(--ink-dim);
   text-align: center;
 }
-
 .stream-line {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -275,38 +236,66 @@ summary:focus-visible {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
-
 .stream-line__seq {
   color: var(--ink-dim);
   font-size: var(--fs-small);
 }
-
 .stream-line__text {
   min-width: 0;
   grid-column: 2 / -1;
   color: var(--ink);
 }
-
 .stream-line--ok .stream-line__text {
   color: var(--ok);
 }
-
 .stream-line--wait .stream-line__text,
 .stream-line--wait .stream-line__kind {
   color: var(--amber);
 }
-
 .stream-line--bad .stream-line__text,
 .stream-line--bad .stream-line__kind {
   color: var(--bad);
 }
-
 .stream-line--replay .stream-line__text {
   color: var(--replay);
 }
-
 .stream-line--meta .stream-line__text {
   color: var(--ink-hi);
+}
+.stream-line--you .stream-line__text,
+.stream-line.you .stream-line__text {
+  color: var(--ink-hi);
+}
+.stream-line--divider {
+  padding: 4px 0;
+  border-bottom: 0;
+  font-size: var(--fs-small);
+  text-align: center;
+}
+.stream-line--divider .stream-line__seq {
+  display: none;
+}
+
+.stream-line--divider .stream-line__text {
+  grid-column: 1 / -1;
+  color: var(--ink-dim);
+}
+
+.turn-bar {
+  flex: 0 0 auto;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.turn-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px;
+  gap: 7px;
+}
+
+.workspace-picker {
+  display: block;
+  margin-bottom: 7px;
 }
 
 .prompt-bar {
@@ -339,6 +328,8 @@ summary:focus-visible {
 
 .prompt-grid select,
 .prompt-grid input,
+.workspace-picker,
+.turn-grid input,
 .token-panel input {
   width: 100%;
   border: 1px solid var(--line);
@@ -349,17 +340,22 @@ summary:focus-visible {
 }
 
 .prompt-grid select,
-.prompt-grid input {
+.prompt-grid input,
+.workspace-picker,
+.turn-grid input {
   padding: 0 10px;
 }
 
 .prompt-grid input::placeholder,
+.turn-grid input::placeholder,
 .token-panel input::placeholder {
   color: var(--placeholder);
 }
 
 .prompt-grid select:focus,
 .prompt-grid input:focus,
+.workspace-picker:focus,
+.turn-grid input:focus,
 .token-panel input:focus {
   border-color: var(--focus);
   outline: none;
@@ -394,6 +390,11 @@ summary:focus-visible {
 .button--run {
   border-color: var(--ok);
   color: var(--ok);
+}
+
+.button--send {
+  border-color: var(--focus);
+  color: var(--ink-hi);
 }
 
 .button--stop {

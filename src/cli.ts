@@ -15,6 +15,10 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     await runSessionCommand(client, args.slice(1));
     return;
   }
+  if (command === 'workspace') {
+    await runWorkspaceCommand(client, args.slice(1));
+    return;
+  }
   if (command === 'workflow') {
     await runWorkflowCommand(client, args.slice(1));
     return;
@@ -57,11 +61,31 @@ async function runSessionCommand(client: VibecodiumClient, args: string[]): Prom
     printJson(await client.openSession(parsed));
     return;
   }
+  if (subcommand === 'send' && args.length >= 3) {
+    const session_id = args[1]!;
+    const prompt = args.slice(2).join(' ').trim();
+    if (!prompt) {
+      usage();
+      return;
+    }
+    printJson(await client.sendMessage({ session_id, prompt }));
+    return;
+  }
   if (subcommand === 'stop' && args.length === 2) {
     printJson(await client.stopSession({ session_id: args[1]! }));
     return;
   }
   usage();
+}
+
+async function runWorkspaceCommand(client: VibecodiumClient, args: string[]): Promise<void> {
+  if (args.length !== 1 || args[0] !== 'list') {
+    usage();
+    return;
+  }
+  const result = await client.listWorkspaces();
+  for (const workspace of result.workspaces)
+    process.stdout.write(`${workspace.name}\t${workspace.path}\n`);
 }
 
 async function runWorkflowCommand(client: VibecodiumClient, args: string[]): Promise<void> {
@@ -125,7 +149,7 @@ function printJson(value: unknown): void {
 
 function usage(): void {
   process.stderr.write(
-    'usage: vibecodium start|dev | session open --provider <p> --prompt <text> [--cwd <dir>] | session stop <id> | workflow run <template> | approve <token|stream_id>\n',
+    'usage: vibecodium start|dev | session open --provider <p> --prompt <text> [--cwd <dir>] | session send <id> <prompt...> | session stop <id> | workspace list | workflow run <template> | approve <token|stream_id>\n',
   );
   process.exitCode = 2;
 }
