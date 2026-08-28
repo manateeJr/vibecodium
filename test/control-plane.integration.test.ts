@@ -89,6 +89,7 @@ test('opens an echo session, streams ordered events, and catches up after reconn
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-control-plane-'));
   const controlPlane = new ControlPlane({
     dataPath: path.join(directory, 'events.sqlite'),
+    subsystems: [],
     port: 0,
     authority: new Authority({
       permitted: [

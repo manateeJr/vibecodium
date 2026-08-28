@@ -10,7 +10,7 @@ import { ControlPlane } from '../src/server/control-plane.js';
 test('registers a global projector, replays its cursor, and receives new events', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-subsystem-'));
   const dataPath = path.join(directory, 'events.sqlite');
-  const firstControlPlane = new ControlPlane({ dataPath });
+  const firstControlPlane = new ControlPlane({ dataPath, subsystems: [] });
   firstControlPlane.context.append('stream:a', 'session_started', {
     session_id: 'session-1',
     provider: 'fake',
