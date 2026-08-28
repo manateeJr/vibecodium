@@ -4,3 +4,7 @@ dist/
 .vibecodium/*.sqlite
 .vibecodium/*.sqlite-shm
 .vibecodium/*.sqlite-wal
+.vibecodium/branch.json
+.vibecodium/*.db
+.vibecodium/*.db-shm
+.vibecodium/*.db-wal
