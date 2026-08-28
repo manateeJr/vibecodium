@@ -17,11 +17,11 @@ const EVENT_TONES = Object.freeze({
   notify_emitted: 'meta',
   inbound_received: 'meta',
 });
-
 const elements = {
   status: document.querySelector('#connection-status'),
   connection: document.querySelector('.connection'),
   streamCaption: document.querySelector('#stream-caption'),
+  streamSwitcher: document.querySelector('#stream-switcher'),
   streamLines: document.querySelector('#stream-lines'),
   streamEmpty: document.querySelector('#stream-empty'),
   promptForm: document.querySelector('#prompt-form'),
@@ -34,23 +34,20 @@ const elements = {
   token: document.querySelector('#capability-token'),
   tokenState: document.querySelector('#token-state'),
 };
-
 let clientToken = loadToken();
 const clientOptions = {
   baseUrl: globalThis.location.origin,
   ...(clientToken ? { token: clientToken } : {}),
 };
 const client = createClient(clientOptions);
-let activeStreamId = '';
-let activeSessionId = '';
-let workflowStreamId = '';
-let unsubscribe = null;
-let pollTimer = null;
-let lastSequence = 0;
+let selectedStreamId = '';
 let opening = false;
 let stopping = false;
 let running = false;
 let approving = false;
+let transientTimer = null;
+const sessions = new Map();
+const transientLines = [];
 const seenEvents = new Set();
 
 elements.token.value = clientToken;
@@ -60,6 +57,8 @@ setStatus(
   globalThis.navigator.onLine ? 'idle' : 'bad',
 );
 refreshControls();
+renderSwitcher();
+renderStream();
 
 elements.promptForm.addEventListener('submit', (event) => {
   event.preventDefault();
@@ -75,10 +74,12 @@ elements.token.addEventListener('input', () => {
 });
 elements.token.addEventListener('change', () => refreshClient());
 globalThis.addEventListener('online', () => {
-  setStatus(activeStreamId ? 'LIVE' : 'READY', activeStreamId ? 'live' : 'idle');
-  if (activeStreamId) void pollEvents(activeStreamId, true);
+  setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
+  if (selectedStreamId) void hydrateStream(selectedStreamId);
 });
 globalThis.addEventListener('offline', () => setStatus('OFFLINE', 'bad'));
+
+client.subscribe(0, onEvent, '*');
 
 function loadToken() {
   try {
@@ -117,98 +118,244 @@ function setStatus(label, tone) {
 }
 
 function refreshControls() {
+  const entry = sessions.get(selectedStreamId);
   elements.open.disabled = opening;
-  elements.stop.disabled = !activeSessionId || stopping;
+  elements.stop.disabled =
+    !entry || entry.kind !== 'session' || entry.status !== 'running' || stopping;
   elements.run.disabled = running;
-  elements.approve.disabled = !workflowStreamId || approving;
+  elements.approve.disabled =
+    !entry || entry.kind !== 'workflow' || entry.status !== 'running' || approving;
 }
 
-function detachStream() {
-  if (unsubscribe) unsubscribe();
-  unsubscribe = null;
-  if (pollTimer !== null) globalThis.clearInterval(pollTimer);
-  pollTimer = null;
+function streamKind(streamId) {
+  if (streamId.startsWith('session:')) return 'session';
+  if (streamId.startsWith('workflow:')) return 'workflow';
+  return null;
 }
 
-function attachStream(streamId) {
-  detachStream();
-  activeStreamId = streamId;
-  lastSequence = 0;
+function ensureEntry(streamId, label = '') {
+  const kind = streamKind(streamId);
+  if (!kind) return null;
+  let entry = sessions.get(streamId);
+  if (!entry) {
+    entry = {
+      stream_id: streamId,
+      kind,
+      label: label || (kind === 'session' ? 'session' : 'workflow'),
+      status: 'running',
+      lines: [],
+    };
+    sessions.set(streamId, entry);
+    while (sessions.size > 20) {
+      const oldest = sessions.keys().next().value;
+      if (typeof oldest !== 'string') break;
+      sessions.delete(oldest);
+    }
+  } else if (label) {
+    entry.label = label;
+  }
+  return entry;
+}
+
+function shortId(streamId) {
+  const id = streamId.slice(streamId.indexOf(':') + 1);
+  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
+}
+
+function selectStream(streamId) {
+  const entry = sessions.get(streamId);
+  if (!entry) return;
+  selectedStreamId = streamId;
   elements.streamCaption.textContent = streamId;
-  setStatus('CONNECTING', 'wait');
-  unsubscribe = client.subscribe(0, (event) => {
-    if (event.stream_id !== streamId) return;
-    appendEvent(event);
-    setStatus('LIVE', 'live');
-  });
-  void pollEvents(streamId, true);
-  pollTimer = globalThis.setInterval(() => void pollEvents(streamId, false), 2_000);
+  renderSwitcher();
+  renderStream();
   refreshControls();
+  void hydrateStream(streamId);
 }
 
-async function pollEvents(streamId, reportError) {
-  if (streamId !== activeStreamId) return;
-  try {
-    const events = await client.getEvents(streamId, lastSequence);
-    if (streamId !== activeStreamId) return;
-    for (const event of events) appendEvent(event);
-    if (events.length > 0) setStatus('LIVE', 'live');
-  } catch (error) {
-    if (!reportError || streamId !== activeStreamId) return;
-    appendError(`event stream unavailable: ${errorMessage(error)}`);
-    setStatus('EVENT ERROR', 'bad');
+function renderSwitcher() {
+  elements.streamSwitcher.replaceChildren();
+  for (const entry of [...sessions.values()].reverse()) {
+    const chip = document.createElement('button');
+    chip.className = 'stream-chip';
+    chip.type = 'button';
+    chip.dataset.active = entry.stream_id === selectedStreamId ? 'yes' : 'no';
+    chip.dataset.status = entry.status;
+    chip.setAttribute('role', 'tab');
+    chip.setAttribute('aria-selected', String(entry.stream_id === selectedStreamId));
+    chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${shortId(entry.stream_id)}`);
+    chip.addEventListener('click', () => selectStream(entry.stream_id));
+
+    const dot = document.createElement('span');
+    dot.className = 'stream-chip__dot';
+    dot.dataset.status = entry.status;
+    dot.setAttribute('aria-hidden', 'true');
+    chip.append(dot);
+
+    const text = document.createElement('span');
+    text.className = 'stream-chip__text';
+    text.textContent = `${entry.kind} · ${entry.label} · ${shortId(entry.stream_id)}`;
+    chip.append(text);
+    elements.streamSwitcher.append(chip);
   }
 }
 
-function appendEvent(event) {
-  const key = `${event.stream_id}:${event.seq}`;
-  if (seenEvents.has(key)) return;
-  seenEvents.add(key);
-  lastSequence = Math.max(lastSequence, event.seq);
-  appendLine(
-    event.seq,
-    event.type,
-    eventText(event.type, event.payload),
-    toneFor(event.type),
-    event.ts,
-  );
-  if (event.type === 'session_complete' && event.payload.session_id === activeSessionId) {
-    activeSessionId = '';
-    refreshControls();
-  }
-}
-
-function appendLine(sequence, kind, text, tone, timestamp) {
-  elements.streamEmpty.hidden = true;
+function renderStream() {
+  const entry = sessions.get(selectedStreamId);
+  const lines = entry ? [...transientLines, ...entry.lines] : transientLines;
   const stickToBottom =
     elements.streamLines.scrollHeight -
       elements.streamLines.scrollTop -
       elements.streamLines.clientHeight <
     48;
-  const line = document.createElement('li');
-  line.className = `stream-line stream-line--${tone}`;
-  line.dataset.kind = kind;
-
-  const sequenceNode = document.createElement('span');
-  sequenceNode.className = 'stream-line__seq';
-  sequenceNode.textContent = sequence === '—' ? '—' : `#${sequence}`;
-  line.append(sequenceNode);
-
-  const kindNode = document.createElement('span');
-  kindNode.className = 'stream-line__kind';
-  kindNode.textContent = `${eventClock(timestamp)} ${kind}`;
-  line.append(kindNode);
-
-  const textNode = document.createElement('span');
-  textNode.className = 'stream-line__text';
-  textNode.textContent = text;
-  line.append(textNode);
-  elements.streamLines.append(line);
+  elements.streamLines.replaceChildren();
+  if (!entry && lines.length === 0) {
+    elements.streamEmpty.hidden = false;
+    elements.streamLines.append(elements.streamEmpty);
+    return;
+  }
+  elements.streamEmpty.hidden = true;
+  for (const [index, item] of lines.entries()) {
+    const line = document.createElement('li');
+    line.className = `stream-line stream-line--${item.cls}`;
+    const sequence = document.createElement('span');
+    sequence.className = 'stream-line__seq';
+    sequence.textContent = `#${index + 1}`;
+    line.append(sequence);
+    const text = document.createElement('span');
+    text.className = 'stream-line__text';
+    text.textContent = item.text;
+    line.append(text);
+    elements.streamLines.append(line);
+  }
   if (stickToBottom) elements.streamLines.scrollTop = elements.streamLines.scrollHeight;
 }
 
-function appendError(message) {
-  appendLine('—', 'error', message, 'bad', new Date().toISOString());
+function pushLine(entry, cls, text) {
+  entry.lines.push({ cls, text });
+  if (entry.stream_id === selectedStreamId) renderStream();
+}
+
+function showTransientLine(cls, text) {
+  transientLines.push({ cls, text });
+  if (transientTimer !== null) globalThis.clearTimeout(transientTimer);
+  transientTimer = globalThis.setTimeout(() => {
+    transientLines.length = 0;
+    transientTimer = null;
+    renderStream();
+  }, 6_000);
+  renderStream();
+}
+
+function appendError(message, entry = sessions.get(selectedStreamId)) {
+  const text = `${eventClock(new Date().toISOString())} error · ${message}`;
+  if (entry) pushLine(entry, 'bad', text);
+  else showTransientLine('bad', text);
+}
+
+function onEvent(event) {
+  const key = `${event.stream_id}:${event.seq}`;
+  if (seenEvents.has(key)) return;
+  seenEvents.add(key);
+  if (event.stream_id === 'admission') {
+    if (event.type === 'session_throttled') {
+      const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+      const retry =
+        typeof payload.retry_after_ms === 'number' ? ` · retry ${payload.retry_after_ms}ms` : '';
+      showTransientLine(
+        'bad',
+        `${eventClock(event.ts)} session throttled · ${payload.provider ?? 'session'} · ${
+          payload.reason ?? 'admission limit'
+        }${retry}`,
+      );
+    }
+    setStatus('LIVE', 'live');
+    return;
+  }
+  const entry = ensureEntry(event.stream_id);
+  if (!entry) {
+    setStatus('LIVE', 'live');
+    return;
+  }
+  applyEvent(entry, event);
+  renderSwitcher();
+  refreshControls();
+  setStatus('LIVE', 'live');
+}
+
+function applyEvent(entry, event) {
+  const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+  if (entry.kind === 'session') {
+    if (event.type === 'session_started') {
+      if (typeof payload.provider === 'string' && payload.provider.trim())
+        entry.label = payload.provider;
+      entry.status = 'running';
+      pushEventLine(entry, event, 'ok');
+      return;
+    }
+    if (event.type === 'session_output') {
+      pushEventLine(entry, event, 'normal');
+      return;
+    }
+    if (event.type === 'session_complete') {
+      entry.status = 'done';
+      pushEventLine(entry, event, 'ok');
+      return;
+    }
+    if (event.type === 'verify_failed') {
+      entry.status = 'failed';
+      pushEventLine(entry, event, 'bad');
+      return;
+    }
+    pushEventLine(entry, event, toneFor(event.type));
+    return;
+  }
+  const template = templateFromPayload(payload);
+  if (template) entry.label = template;
+  pushEventLine(entry, event, toneFor(event.type));
+  if (isWorkflowFailure(event.type)) entry.status = 'failed';
+  else if (isWorkflowTerminal(event.type)) entry.status = 'done';
+  else if (event.type === 'session_started') entry.status = 'running';
+}
+
+function pushEventLine(entry, event, tone) {
+  pushLine(
+    entry,
+    tone,
+    `${eventClock(event.ts)} ${event.type} · ${eventText(event.type, event.payload)}`,
+  );
+}
+
+function templateFromPayload(payload) {
+  if (typeof payload.template === 'string' && payload.template.trim()) return payload.template;
+  if (typeof payload.template_name === 'string' && payload.template_name.trim())
+    return payload.template_name;
+  if (typeof payload.prompt === 'string' && payload.prompt.startsWith('workflow-template:'))
+    return payload.prompt.slice('workflow-template:'.length) || 'workflow';
+  return '';
+}
+
+function isWorkflowFailure(type) {
+  return type === 'verify_failed' || /(?:fail|error|denied|rejected)/i.test(type);
+}
+
+function isWorkflowTerminal(type) {
+  return (
+    type === 'session_complete' ||
+    /(?:complete|completed|done|released|succeeded|success)$/i.test(type)
+  );
+}
+
+async function hydrateStream(streamId) {
+  try {
+    const events = await client.getEvents(streamId, 0);
+    for (const event of events) onEvent(event);
+    if (selectedStreamId === streamId) setStatus('LIVE', 'live');
+  } catch (error) {
+    const entry = sessions.get(streamId);
+    appendError(`event stream unavailable: ${errorMessage(error)}`, entry);
+    if (selectedStreamId === streamId) setStatus('EVENT ERROR', 'bad');
+  }
 }
 
 function eventClock(timestamp) {
@@ -233,11 +380,8 @@ function eventText(type, payload) {
   }
   if (type === 'merge_to_main')
     return `${value.branch ?? 'branch'} · ${value.commit_sha ?? ''}`.trim();
-  try {
-    return JSON.stringify(payload);
-  } catch {
-    return String(payload);
-  }
+  const serialized = JSON.stringify(payload);
+  return serialized === undefined ? String(payload) : serialized;
 }
 
 async function openSession() {
@@ -247,25 +391,16 @@ async function openSession() {
     appendError('provider and prompt are required');
     return;
   }
-  if (activeSessionId) {
-    appendError('stop the active session before opening another');
-    return;
-  }
   refreshClient();
   opening = true;
   setStatus('OPENING', 'wait');
   refreshControls();
   try {
     const result = await client.openSession({ provider, prompt });
-    activeSessionId = result.session_id;
-    appendLine(
-      '—',
-      'session.open',
-      `${provider} · ${result.session_id}`,
-      'meta',
-      new Date().toISOString(),
-    );
-    attachStream(result.stream_id);
+    const entry = ensureEntry(result.stream_id, provider);
+    if (!entry) throw new Error('session.open returned an invalid stream');
+    selectStream(result.stream_id);
+    setStatus('LIVE', 'live');
     elements.prompt.value = '';
   } catch (error) {
     appendError(`session open failed: ${errorMessage(error)}`);
@@ -277,48 +412,46 @@ async function openSession() {
 }
 
 async function stopSession() {
-  if (!activeSessionId) return;
+  const entry = sessions.get(selectedStreamId);
+  if (!entry || entry.kind !== 'session' || entry.status !== 'running') return;
   refreshClient();
-  const sessionId = activeSessionId;
+  const sessionId = entry.stream_id.slice('session:'.length);
   stopping = true;
   setStatus('STOPPING', 'wait');
   refreshControls();
   try {
     const result = await client.stopSession({ session_id: sessionId });
-    activeSessionId = '';
-    appendLine(
-      '—',
-      'session.stop',
-      result.stopped ? `stopped ${sessionId}` : `session ${sessionId} was already stopped`,
+    entry.status = 'done';
+    pushLine(
+      entry,
       result.stopped ? 'ok' : 'meta',
-      new Date().toISOString(),
+      `${eventClock(new Date().toISOString())} session.stop · ${
+        result.stopped ? `stopped ${sessionId}` : `session ${sessionId} was already stopped`
+      }`,
     );
-    setStatus(activeStreamId ? 'LIVE' : 'READY', activeStreamId ? 'live' : 'idle');
+    setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
   } catch (error) {
-    appendError(`session stop failed: ${errorMessage(error)}`);
+    appendError(`session stop failed: ${errorMessage(error)}`, entry);
     setStatus('ERROR', 'bad');
   } finally {
     stopping = false;
+    renderSwitcher();
     refreshControls();
   }
 }
 
 async function runWorkflow() {
+  const template = 'basic-build';
   refreshClient();
   running = true;
   setStatus('STARTING WORKFLOW', 'wait');
   refreshControls();
   try {
-    const result = await client.runWorkflow({ template: 'basic-build' });
-    workflowStreamId = result.stream_id;
-    appendLine(
-      '—',
-      'workflow.run',
-      `basic-build · ${result.stream_id}`,
-      'meta',
-      new Date().toISOString(),
-    );
-    attachStream(result.stream_id);
+    const result = await client.runWorkflow({ template });
+    const entry = ensureEntry(result.stream_id, template);
+    if (!entry) throw new Error('workflow.run returned an invalid stream');
+    selectStream(result.stream_id);
+    setStatus('LIVE', 'live');
   } catch (error) {
     appendError(`workflow run failed: ${errorMessage(error)}`);
     setStatus('ERROR', 'bad');
@@ -329,28 +462,32 @@ async function runWorkflow() {
 }
 
 async function approveWorkflow() {
-  if (!workflowStreamId) return;
+  const entry = sessions.get(selectedStreamId);
+  if (!entry || entry.kind !== 'workflow' || entry.status !== 'running') return;
   refreshClient();
+  const streamId = entry.stream_id;
   approving = true;
   setStatus('APPROVING', 'wait');
   refreshControls();
   try {
-    const result = await client.approve({ stream_id: workflowStreamId });
+    const result = await client.approve({ stream_id: streamId });
+    if (result.status === 'released' || result.stage === 'release') entry.status = 'done';
     const tone = result.approved ? 'ok' : result.blocked ? 'wait' : 'bad';
     const reason = result.reason ? ` · ${result.reason}` : '';
-    appendLine(
-      '—',
-      'workflow.approve',
-      `${result.status} · ${result.stage}${reason}`,
+    pushLine(
+      entry,
       tone,
-      new Date().toISOString(),
+      `${eventClock(new Date().toISOString())} workflow.approve · ${result.status} · ${
+        result.stage
+      }${reason}`,
     );
     setStatus(result.blocked ? 'WAITING' : 'LIVE', result.blocked ? 'wait' : 'live');
   } catch (error) {
-    appendError(`workflow approval failed: ${errorMessage(error)}`);
+    appendError(`workflow approval failed: ${errorMessage(error)}`, entry);
     setStatus('APPROVAL ERROR', 'bad');
   } finally {
     approving = false;
+    renderSwitcher();
     refreshControls();
   }
 }

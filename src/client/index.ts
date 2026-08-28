@@ -57,7 +57,11 @@ export interface VibecodiumClient {
   runWorkflow(args: WorkflowRunArgs): Promise<WorkflowRunResult>;
   approve(args: WorkflowApproveArgs): Promise<WorkflowApproveResult>;
   getEvents(stream_id: string, from_seq: number): Promise<readonly EventEnvelope[]>;
-  subscribe(from_seq: number, onEvent: (event: EventEnvelope) => void): () => void;
+  subscribe(
+    from_seq: number,
+    onEvent: (event: EventEnvelope) => void,
+    streamId?: string,
+  ): () => void;
 }
 
 interface SocketLike {
@@ -121,7 +125,11 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     return response.events;
   };
 
-  const subscribe = (from_seq: number, onEvent: (event: EventEnvelope) => void): (() => void) => {
+  const subscribe = (
+    from_seq: number,
+    onEvent: (event: EventEnvelope) => void,
+    streamId?: string,
+  ): (() => void) => {
     let cancelled = false;
     let socket: SocketLike | undefined;
     const browserWebSocket: unknown = globalThis.WebSocket;
@@ -135,7 +143,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
         socket = new Socket(websocketUrl(baseUrl));
         const frame: SubscribeFrame = {
           type: 'subscribe',
-          streamId: activeStreamId ?? '*',
+          streamId: streamId ?? activeStreamId ?? '*',
           fromSeq: from_seq,
           ...(options.token === undefined ? {} : { token: options.token }),
         };

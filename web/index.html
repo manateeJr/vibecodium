@@ -30,8 +30,16 @@
 
       <section class="stream-panel" aria-labelledby="stream-title">
         <div class="section-heading">
-          <h1 id="stream-title">STREAM</h1>
-          <span id="stream-caption">No active stream</span>
+          <div class="section-heading__title">
+            <h1 id="stream-title">STREAM</h1>
+            <span id="stream-caption">No active stream</span>
+          </div>
+          <div
+            id="stream-switcher"
+            class="stream-switcher"
+            role="tablist"
+            aria-label="Open streams"
+          ></div>
         </div>
         <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
           <li id="stream-empty" class="stream-empty">Open a session or run a workflow to begin.</li>
@@ -40,7 +48,7 @@
 
       <form id="prompt-form" class="prompt-bar">
         <div class="prompt-label">
-          <span>PROMPT</span>
+          <span class="entry-label">FREE SESSION</span>
           <span class="prompt-hint">SESSION.OPEN</span>
         </div>
         <div class="prompt-grid">
@@ -66,7 +74,10 @@
 
       <section class="action-row" aria-label="Control actions">
         <button id="stop-session" class="button button--stop" type="button" disabled>STOP</button>
-        <button id="run-workflow" class="button button--run" type="button">RUN BUILD</button>
+        <button id="run-workflow" class="button button--run" type="button">
+          <span class="entry-label">WORKFLOW</span>
+          <span>RUN BUILD</span>
+        </button>
         <button id="approve-workflow" class="button button--approve" type="button" disabled>
           APPROVE
         </button>
@@ -86,6 +97,9 @@
           spellcheck="false"
           placeholder="cap_..."
         />
+        <p class="token-hint">
+          Not needed over Tailscale (loopback). Only for direct tailnet access.
+        </p>
         <p class="token-note">Stored only in this browser on this device.</p>
       </details>
     </main>

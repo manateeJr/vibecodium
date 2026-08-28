@@ -88,6 +88,25 @@ test('SDK posts command args and subscribes with the active stream frame', async
     assert.deepEqual(received, [event]);
     unsubscribe();
     assert.equal(socket.readyState, 3);
+
+    const wildcardUnsubscribe = client.subscribe(0, () => undefined, '*');
+    const wildcardSocket = StubSocket.instances[1]!;
+    wildcardSocket.open();
+    assert.equal(JSON.parse(wildcardSocket.sent[0]!).streamId, '*');
+    wildcardUnsubscribe();
+
+    const explicitUnsubscribe = client.subscribe(0, () => undefined, 'session:x');
+    const explicitSocket = StubSocket.instances[2]!;
+    explicitSocket.open();
+    assert.equal(JSON.parse(explicitSocket.sent[0]!).streamId, 'session:x');
+    explicitUnsubscribe();
+
+    const fallbackClient = createClient({ baseUrl: 'http://127.0.0.1:4310/' });
+    const fallbackUnsubscribe = fallbackClient.subscribe(0, () => undefined);
+    const fallbackSocket = StubSocket.instances[3]!;
+    fallbackSocket.open();
+    assert.equal(JSON.parse(fallbackSocket.sent[0]!).streamId, '*');
+    fallbackUnsubscribe();
   } finally {
     globalThis.fetch = originalFetch;
     (globalThis as unknown as { WebSocket?: unknown }).WebSocket = originalWebSocket;
