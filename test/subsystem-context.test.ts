@@ -1,39 +1,55 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import type { EventEnvelope } from '../src/contracts/events.js';
 import type { Subsystem } from '../src/contracts/subsystem.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 
-test('registers a subsystem and projects events appended through its context', async () => {
+test('registers a global projector, replays its cursor, and receives new events', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-subsystem-'));
+  const dataPath = path.join(directory, 'events.sqlite');
+  const firstControlPlane = new ControlPlane({ dataPath });
+  firstControlPlane.context.append('stream:a', 'session_started', {
+    session_id: 'session-1',
+    provider: 'fake',
+    prompt: 'hello',
+  });
+  await firstControlPlane.stop();
+
   let registered = false;
-  let projected: EventEnvelope | undefined;
+  const projected: EventEnvelope[] = [];
   const subsystem: Subsystem = {
     name: 'dummy',
     register(ctx) {
       registered = true;
       ctx.registerProjector('dummy-projector', (event) => {
-        projected = event;
+        projected.push(event);
       });
     },
   };
-  const controlPlane = new ControlPlane({ dataPath: ':memory:', subsystems: [subsystem] });
+  const secondControlPlane = new ControlPlane({ dataPath, subsystems: [subsystem] });
   try {
-    const seq = controlPlane.context.append('dummy', 'session_started', {
-      session_id: 'session-1',
-      provider: 'fake',
-      prompt: 'hello',
-    });
-
     assert.equal(registered, true);
-    assert.equal(projected?.seq, seq);
-    assert.equal(projected?.stream_id, 'dummy');
-    assert.equal(projected?.type, 'session_started');
-    assert.deepEqual(projected?.payload, {
-      session_id: 'session-1',
+    assert.equal(projected[0]?.stream_id, 'stream:a');
+    assert.equal(projected[0]?.seq, 1);
+
+    const seq = secondControlPlane.context.append('stream:b', 'session_started', {
+      session_id: 'session-2',
       provider: 'fake',
-      prompt: 'hello',
+      prompt: 'world',
     });
+    assert.equal(seq, 2);
+    assert.deepEqual(
+      projected.map((event) => [event.stream_id, event.seq]),
+      [
+        ['stream:a', 1],
+        ['stream:b', 2],
+      ],
+    );
   } finally {
-    await controlPlane.stop();
+    await secondControlPlane.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 });

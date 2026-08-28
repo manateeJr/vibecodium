@@ -17,7 +17,10 @@ export interface EventStoreOptions {
 export class EventStore {
   private readonly database: Database.Database;
   private readonly listeners = new Map<string, Set<EventListener>>();
+  private readonly allListeners = new Set<EventListener>();
   private readonly insertEvent;
+  private readonly readProjectorCursor;
+  private readonly writeProjectorCursor;
 
   public constructor(options: EventStoreOptions) {
     this.database = new Database(options.filename);
@@ -32,10 +35,21 @@ export class EventStore {
         ts TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS events_stream_seq ON events (stream_id, seq);
+      CREATE TABLE IF NOT EXISTS projector_cursors (
+        name TEXT PRIMARY KEY,
+        seq INTEGER NOT NULL
+      );
     `);
     this.insertEvent = this.database.prepare(
       'INSERT INTO events (stream_id, type, payload, ts) VALUES (?, ?, ?, ?)',
     );
+    this.readProjectorCursor = this.database.prepare(
+      'SELECT seq FROM projector_cursors WHERE name = ?',
+    );
+    this.writeProjectorCursor = this.database.prepare(`
+      INSERT INTO projector_cursors (name, seq) VALUES (?, ?)
+      ON CONFLICT(name) DO UPDATE SET seq = excluded.seq
+    `);
   }
 
   public append<K extends EventKind>(stream_id: string, type: K, payload: EventPayload<K>): number {
@@ -57,25 +71,29 @@ export class EventStore {
       ts,
     };
     for (const listener of this.listeners.get(stream_id) ?? []) listener(event);
+    for (const listener of this.allListeners) listener(event);
     return seq;
   }
 
   public read(stream_id: string, from_seq = 0): EventEnvelope[] {
     if (!stream_id) throw new Error('stream_id is required');
-    if (!Number.isInteger(from_seq) || from_seq < 0)
-      throw new Error('from_seq must be a non-negative integer');
+    validateCursor(from_seq);
     const rows = this.database
       .prepare(
         'SELECT seq, stream_id, type, payload, ts FROM events WHERE stream_id = ? AND seq > ? ORDER BY seq ASC',
       )
       .all(stream_id, from_seq) as EventRow[];
-    return rows.map((row) => ({
-      seq: row.seq,
-      stream_id: row.stream_id,
-      type: row.type as EventKind,
-      payload: JSON.parse(row.payload) as EventPayload,
-      ts: row.ts,
-    }));
+    return rows.map((row) => this.eventFromRow(row));
+  }
+
+  public readAll(from_seq = 0): EventEnvelope[] {
+    validateCursor(from_seq);
+    const rows = this.database
+      .prepare(
+        'SELECT seq, stream_id, type, payload, ts FROM events WHERE seq > ? ORDER BY seq ASC',
+      )
+      .all(from_seq) as EventRow[];
+    return rows.map((row) => this.eventFromRow(row));
   }
 
   public latestSequence(stream_id?: string): number {
@@ -88,6 +106,18 @@ export class EventStore {
     const row = this.database.prepare('SELECT seq FROM events ORDER BY seq DESC LIMIT 1').get() as
       { seq?: number } | undefined;
     return row?.seq ?? 0;
+  }
+
+  public projectorCursor(name: string): number {
+    if (!name.trim()) throw new Error('projector name is required');
+    const row = this.readProjectorCursor.get(name) as { seq?: number } | undefined;
+    return row?.seq ?? 0;
+  }
+
+  public saveProjectorCursor(name: string, seq: number): void {
+    if (!name.trim()) throw new Error('projector name is required');
+    validateCursor(seq);
+    this.writeProjectorCursor.run(name, seq);
   }
 
   public subscribe(stream_id: string, listener: EventListener): () => void;
@@ -111,8 +141,31 @@ export class EventStore {
     };
   }
 
+  public subscribeAll(from_seq: number, listener: EventListener): () => void {
+    validateCursor(from_seq);
+    for (const event of this.readAll(from_seq)) listener(event);
+    this.allListeners.add(listener);
+    return () => this.allListeners.delete(listener);
+  }
+
+  private eventFromRow(row: EventRow): EventEnvelope {
+    return {
+      seq: row.seq,
+      stream_id: row.stream_id,
+      type: row.type as EventKind,
+      payload: JSON.parse(row.payload) as EventPayload,
+      ts: row.ts,
+    };
+  }
+
   public close(): void {
     this.listeners.clear();
+    this.allListeners.clear();
     this.database.close();
   }
+}
+
+function validateCursor(from_seq: number): void {
+  if (!Number.isInteger(from_seq) || from_seq < 0)
+    throw new Error('from_seq must be a non-negative integer');
 }

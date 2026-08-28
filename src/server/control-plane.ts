@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
-import type { EventEnvelope, EventKind, EventPayload } from '../contracts/events.js';
+import type { EventKind, EventPayload } from '../contracts/events.js';
 import type {
   CommandHandler,
   EventHandler,
@@ -62,20 +62,21 @@ export class ControlPlane {
   public readonly eventStore: EventStore;
   public readonly authority: Authority;
   public readonly context: SubsystemContext = {
-    registerProjector: (name, onEvent) => this.register(this.projectors, name, onEvent),
+    registerProjector: (name, onEvent, from_seq) => this.registerProjector(name, onEvent, from_seq),
     registerCommand: (name, handler) => this.register(this.commands, name, handler),
-    registerListener: (name, handler) => this.register(this.listeners, name, handler),
-    append: (stream_id, type, payload) => this.appendEvent(stream_id, type, payload),
-    subscribe: (stream_id, from_seq, onEvent) =>
-      this.eventStore.subscribe(stream_id, from_seq, onEvent),
+    registerListener: (name, handler) => this.registerListener(name, handler),
+    append: (stream_id, type, payload) => this.eventStore.append(stream_id, type, payload),
+    subscribe: (from_seq, onEvent) => this.eventStore.subscribeAll(from_seq, onEvent),
   };
   private readonly host: string;
   private readonly port: number;
   private readonly workerPath = fileURLToPath(new URL('./session-worker.js', import.meta.url));
   private readonly sessions = new Map<string, SessionState>();
   private readonly projectors = new Map<string, EventHandler>();
+  private readonly projectorSubscriptions = new Map<string, () => void>();
   private readonly commands = new Map<string, CommandHandler>();
   private readonly listeners = new Map<string, EventHandler>();
+  private readonly listenerSubscriptions = new Map<string, () => void>();
   private readonly clientSubscriptions = new Map<WebSocket, Map<string, () => void>>();
   private httpServer: Server | undefined;
   private websocketServer: WebSocketServer | undefined;
@@ -151,6 +152,10 @@ export class ControlPlane {
     this.websocketServer = undefined;
     this.httpServer = undefined;
     this.boundAddress = undefined;
+    for (const unsubscribe of this.projectorSubscriptions.values()) unsubscribe();
+    for (const unsubscribe of this.listenerSubscriptions.values()) unsubscribe();
+    this.projectorSubscriptions.clear();
+    this.listenerSubscriptions.clear();
     this.eventStore.close();
   }
 
@@ -160,15 +165,25 @@ export class ControlPlane {
     registry.set(name, handler);
   }
 
+  private registerProjector(name: string, onEvent: EventHandler, from_seq?: number): void {
+    this.register(this.projectors, name, onEvent);
+    const cursor = from_seq ?? this.eventStore.projectorCursor(name);
+    this.eventStore.saveProjectorCursor(name, cursor);
+    const unsubscribe = this.eventStore.subscribeAll(cursor, (event) => {
+      onEvent(event);
+      this.eventStore.saveProjectorCursor(name, event.seq);
+    });
+    this.projectorSubscriptions.set(name, unsubscribe);
+  }
+
+  private registerListener(name: string, handler: EventHandler): void {
+    this.register(this.listeners, name, handler);
+    const unsubscribe = this.eventStore.subscribeAll(this.eventStore.latestSequence(), handler);
+    this.listenerSubscriptions.set(name, unsubscribe);
+  }
+
   private appendEvent(stream_id: string, type: EventKind, payload: EventPayload): number {
-    const seq = this.eventStore.append(stream_id, type, payload);
-    const event: EventEnvelope | undefined = this.eventStore
-      .read(stream_id, seq - 1)
-      .find((candidate) => candidate.seq === seq);
-    if (!event) throw new Error(`appended event ${stream_id}:${seq} could not be read`);
-    for (const projector of this.projectors.values()) projector(event);
-    for (const listener of this.listeners.values()) listener(event);
-    return seq;
+    return this.context.append(stream_id, type, payload);
   }
 
   private handleHttp(request: IncomingMessage, response: ServerResponse): void {
