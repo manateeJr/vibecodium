@@ -44,7 +44,7 @@
 Real `npm run gate` / pre-push output:
 
 ```text
-max-file-lines passed: 51 tracked candidate(s), max 500
+max-file-lines passed: 52 tracked candidate(s), max 500
 branch-name passed: build/slice-0-1
 branch-issue passed
 worktree-nesting passed: 7 worktree(s)
