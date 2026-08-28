@@ -3,7 +3,7 @@
 ## Checkpoints
 
 - `7ba23bc` — `#1 build slice 0 gate and server skeleton`
-- `11facede` — `#1 add strict governance checks`
+- `1facede` — `#1 add strict governance checks`
 - Branch: `build/slice-0-1`; `main` was not changed.
 
 ## What was built
