@@ -104,7 +104,10 @@ export abstract class CliProvider implements ProviderSessionRef {
     cliSession.stopped = true;
     cliSession.queue.length = 0;
     this.finish(cliSession);
-    if (!cliSession.child.killed && cliSession.child.exitCode === null) {
+    if (
+      !cliSession.child.killed &&
+      (cliSession.child.exitCode === null || cliSession.child.exitCode === undefined)
+    ) {
       cliSession.child.kill('SIGTERM');
     }
   }
