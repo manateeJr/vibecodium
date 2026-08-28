@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
+import { tokensToCssVars } from '../design/tokens.js';
+import { serveStaticAsset } from './static-assets.js';
 import {
   COMMAND_NAMES,
   type CommandFrame,
@@ -26,6 +28,9 @@ import {
   capabilityVerifierFrom,
   sessionStopHandlersFrom,
 } from './command-dispatcher.js';
+
+const WEB_DIR = path.resolve(process.cwd(), 'web');
+const CLIENT_BUNDLE = path.resolve(process.cwd(), 'dist/src/client/index.js');
 interface SocketWithAddress extends WebSocket {
   _socket?: { remoteAddress?: string };
 }
@@ -41,14 +46,12 @@ export interface ControlPlaneOptions {
 }
 
 export type CommandTokenVerifier = Pick<CapabilityTokenManager, 'verify' | 'consume'>;
-
 export interface ControlPlaneAddress {
   readonly host: string;
   readonly port: number;
   readonly httpUrl: string;
   readonly wsUrl: string;
 }
-
 export type ClientMessage =
   | CommandFrame
   | {
@@ -62,7 +65,6 @@ export type ClientMessage =
       readonly requestId?: string;
       readonly action: ScopedAction;
     };
-
 export class ControlPlane {
   public readonly eventStore: EventStore;
   public readonly authority: Authority;
@@ -87,7 +89,6 @@ export class ControlPlane {
   private httpServer: Server | undefined;
   private websocketServer: WebSocketServer | undefined;
   private boundAddress: ControlPlaneAddress | undefined;
-
   public constructor(options: ControlPlaneOptions) {
     if (options.dataPath !== ':memory:')
       fs.mkdirSync(path.dirname(options.dataPath), { recursive: true });
@@ -134,7 +135,6 @@ export class ControlPlane {
     };
     return this.boundAddress;
   }
-
   public async stop(): Promise<void> {
     for (const [socket, subscriptions] of this.clientSubscriptions) {
       for (const unsubscribe of subscriptions.values()) unsubscribe();
@@ -164,13 +164,11 @@ export class ControlPlane {
     this.listenerSubscriptions.clear();
     this.eventStore.close();
   }
-
   private register<T>(registry: Map<string, T>, name: string, handler: T): void {
     if (!name.trim()) throw new Error('subsystem registration name is required');
     if (registry.has(name)) throw new Error(`duplicate subsystem registration: ${name}`);
     registry.set(name, handler);
   }
-
   private registerProjector(name: string, onEvent: EventHandler, from_seq?: number): void {
     this.register(this.projectors, name, onEvent);
     const cursor = from_seq ?? this.eventStore.projectorCursor(name);
@@ -181,13 +179,11 @@ export class ControlPlane {
     });
     this.projectorSubscriptions.set(name, unsubscribe);
   }
-
   private registerListener(name: string, handler: EventHandler): void {
     this.register(this.listeners, name, handler);
     const unsubscribe = this.eventStore.subscribeAll(this.eventStore.latestSequence(), handler);
     this.listenerSubscriptions.set(name, unsubscribe);
   }
-
   private handleHttp(request: IncomingMessage, response: ServerResponse): void {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const commandPrefix = '/commands/';
@@ -234,9 +230,27 @@ export class ControlPlane {
       this.sendJson(response, 200, { events: this.eventStore.read(stream_id, from_seq) });
       return;
     }
+    if (request.method === 'GET') {
+      if (requestUrl.pathname === '/tokens.css') {
+        this.sendAsset(response, 200, 'text/css', Buffer.from(tokensToCssVars()));
+        return;
+      }
+      if (requestUrl.pathname === '/client.js') {
+        try {
+          this.sendAsset(response, 200, 'text/javascript', fs.readFileSync(CLIENT_BUNDLE));
+        } catch {
+          this.sendJson(response, 404, { error: 'not_found' });
+        }
+        return;
+      }
+      const asset = serveStaticAsset(WEB_DIR, requestUrl.pathname);
+      if (asset.status === 200) {
+        this.sendAsset(response, asset.status, asset.contentType, asset.body);
+        return;
+      }
+    }
     this.sendJson(response, 404, { error: 'not_found' });
   }
-
   private async handleCommandHttp(
     request: IncomingMessage,
     response: ServerResponse,
@@ -263,7 +277,6 @@ export class ControlPlane {
       this.sendJson(response, statusCode, { error: errorMessage(error) });
     }
   }
-
   private handleConnection(socket: WebSocket): void {
     this.clientSubscriptions.set(socket, new Map());
     socket.on('message', (data) => {
@@ -274,7 +287,6 @@ export class ControlPlane {
     socket.on('close', () => this.cleanupClient(socket));
     socket.on('error', () => this.cleanupClient(socket));
   }
-
   private async handleClientMessage(socket: WebSocket, serialized: string): Promise<void> {
     let parsed: unknown;
     try {
@@ -313,7 +325,6 @@ export class ControlPlane {
     }
     this.send(socket, { type: 'error', code: 'invalid_message', message: 'unknown message type' });
   }
-
   private async handleCommandWebSocket(socket: WebSocket, frame: CommandFrame): Promise<void> {
     const id = frame.id;
     if (!id || !frame.name) {
@@ -334,7 +345,6 @@ export class ControlPlane {
       this.send(socket, reply);
     }
   }
-
   private subscribe(
     socket: WebSocket,
     message: Extract<ClientMessage, { type: 'subscribe' }>,
@@ -369,7 +379,6 @@ export class ControlPlane {
           : this.eventStore.latestSequence(message.streamId),
     });
   }
-
   private requestAction(
     socket: WebSocket,
     message: Extract<ClientMessage, { type: 'action.request' }>,
@@ -400,7 +409,6 @@ export class ControlPlane {
     const stop = this.commands.get(COMMAND_NAMES.sessionStop);
     if (stop) void stop({ session_id: sessionId });
   }
-
   private cleanupClient(socket: WebSocket): void {
     const subscriptions = this.clientSubscriptions.get(socket);
     if (!subscriptions) return;
@@ -408,11 +416,21 @@ export class ControlPlane {
     subscriptions.clear();
     this.clientSubscriptions.delete(socket);
   }
-
   private send(socket: WebSocket, message: unknown): void {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }
-
+  private sendAsset(
+    response: ServerResponse,
+    statusCode: number,
+    contentType: string,
+    body: Buffer,
+  ): void {
+    response.writeHead(statusCode, {
+      'content-type': contentType,
+      'content-length': body.byteLength,
+    });
+    response.end(body);
+  }
   private sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
     const serialized = JSON.stringify(body);
     response.writeHead(statusCode, {

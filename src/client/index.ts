@@ -1,4 +1,3 @@
-import { COMMAND_NAMES } from '../contracts/commands.js';
 import type {
   EventsHttpResponse,
   SessionOpenArgs,
@@ -12,6 +11,14 @@ import type {
   WorkflowRunResult,
 } from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
+
+// Keep command names local so /client.js remains a standalone browser module.
+const COMMAND_NAMES = {
+  sessionOpen: 'session.open',
+  sessionStop: 'session.stop',
+  workflowRun: 'workflow.run',
+  workflowApprove: 'workflow.approve',
+} as const;
 
 export type {
   CommandArgs,
@@ -41,6 +48,7 @@ export type {
 export interface ClientOptions {
   readonly baseUrl: string;
   readonly token?: string;
+  readonly webSocket?: SocketConstructor;
 }
 
 export interface VibecodiumClient {
@@ -116,9 +124,14 @@ export function createClient(options: ClientOptions): VibecodiumClient {
   const subscribe = (from_seq: number, onEvent: (event: EventEnvelope) => void): (() => void) => {
     let cancelled = false;
     let socket: SocketLike | undefined;
-    void websocketConstructor()
-      .then((Socket) => {
-        if (cancelled) return;
+    const browserWebSocket: unknown = globalThis.WebSocket;
+    const Socket =
+      options.webSocket ??
+      (typeof browserWebSocket === 'function'
+        ? (browserWebSocket as SocketConstructor)
+        : undefined);
+    if (Socket) {
+      try {
         socket = new Socket(websocketUrl(baseUrl));
         const frame: SubscribeFrame = {
           type: 'subscribe',
@@ -134,8 +147,10 @@ export function createClient(options: ClientOptions): VibecodiumClient {
           const message = parseSocketMessage(event);
           if (message?.type === 'event' && isEventEnvelope(message.event)) onEvent(message.event);
         });
-      })
-      .catch(() => undefined);
+      } catch {
+        socket?.close();
+      }
+    }
     return () => {
       cancelled = true;
       socket?.close();
@@ -191,12 +206,6 @@ function websocketUrl(baseUrl: string): string {
   if (baseUrl.startsWith('https://')) return `wss://${baseUrl.slice('https://'.length)}`;
   if (baseUrl.startsWith('http://')) return `ws://${baseUrl.slice('http://'.length)}`;
   return baseUrl;
-}
-
-async function websocketConstructor(): Promise<SocketConstructor> {
-  if (typeof WebSocket !== 'undefined') return WebSocket as unknown as SocketConstructor;
-  const module = await import('ws');
-  return module.WebSocket as unknown as SocketConstructor;
 }
 
 function addSocketListener(
