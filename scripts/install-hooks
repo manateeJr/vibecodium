@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+git config core.hooksPath .githooks
+actual=$(git config --get core.hooksPath || true)
+if [ "$actual" != ".githooks" ]; then
+  printf 'failed: core.hooksPath is %s\n' "$actual" >&2
+  exit 1
+fi
+printf 'git hooks active at %s/.githooks\n' "$root"

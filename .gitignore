@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.vibecodium/evidence/
+.vibecodium/*.sqlite
+.vibecodium/*.sqlite-shm
+.vibecodium/*.sqlite-wal
