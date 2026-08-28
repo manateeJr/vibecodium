@@ -1,15 +1,19 @@
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 import { createNotifySubsystem } from '../notify/index.js';
+import { createSessionSubsystem } from '../session/index.js';
 import { createTelemetrySubsystem } from '../telemetry/index.js';
 import { createWorkflowSubsystem } from '../workflow/index.js';
 
 export function registerSubsystems(
   context: SubsystemContext,
-  subsystems: readonly Subsystem[] = [
+  subsystems?: readonly Subsystem[],
+): readonly Subsystem[] {
+  const selected = subsystems ?? [
     createTelemetrySubsystem(),
     createWorkflowSubsystem(),
     createNotifySubsystem(),
-  ],
-): void {
-  for (const subsystem of subsystems) subsystem.register(context);
+    createSessionSubsystem(),
+  ];
+  for (const subsystem of selected) subsystem.register(context);
+  return selected;
 }

@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { fork, type ChildProcess } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
-import type { EventKind, EventPayload } from '../contracts/events.js';
+import type { CommandFrame, CommandServerFrame } from '../contracts/commands.js';
+import type { CapabilityTokenManager } from '../notify/index.js';
 import type {
   CommandHandler,
   EventHandler,
@@ -17,7 +16,16 @@ import { registerSubsystems } from '../subsystems/index.js';
 import { Authority } from './authority.js';
 import type { ScopedAction } from './authority.js';
 import { EventStore } from './event-store.js';
-import type { StartWorkerMessage, WorkerOutputMessage } from './session-worker.js';
+import { LegacySessionManager } from './legacy-session-manager.js';
+import {
+  CommandAuthorizationError,
+  CommandDispatcher,
+  capabilityVerifierFrom,
+  sessionStopHandlersFrom,
+} from './command-dispatcher.js';
+interface SocketWithAddress extends WebSocket {
+  _socket?: { remoteAddress?: string };
+}
 
 export interface ControlPlaneOptions {
   readonly dataPath: string;
@@ -25,7 +33,11 @@ export interface ControlPlaneOptions {
   readonly port?: number;
   readonly authority?: Authority;
   readonly subsystems?: readonly Subsystem[];
+  readonly capabilityTokens?: Pick<CapabilityTokenManager, 'verify' | 'consume'>;
+  readonly tokenVerifier?: Pick<CapabilityTokenManager, 'verify' | 'consume'>;
 }
+
+export type CommandTokenVerifier = Pick<CapabilityTokenManager, 'verify' | 'consume'>;
 
 export interface ControlPlaneAddress {
   readonly host: string;
@@ -35,6 +47,7 @@ export interface ControlPlaneAddress {
 }
 
 export type ClientMessage =
+  | CommandFrame
   | {
       readonly type: 'session.open';
       readonly provider: string;
@@ -44,19 +57,13 @@ export type ClientMessage =
       readonly type: 'subscribe';
       readonly streamId: string;
       readonly fromSeq?: number;
+      readonly token?: string;
     }
   | {
       readonly type: 'action.request';
       readonly requestId?: string;
       readonly action: ScopedAction;
     };
-
-interface SessionState {
-  readonly sessionId: string;
-  readonly streamId: string;
-  readonly worker: ChildProcess;
-  terminal: boolean;
-}
 
 export class ControlPlane {
   public readonly eventStore: EventStore;
@@ -70,14 +77,16 @@ export class ControlPlane {
   };
   private readonly host: string;
   private readonly port: number;
-  private readonly workerPath = fileURLToPath(new URL('./session-worker.js', import.meta.url));
-  private readonly sessions = new Map<string, SessionState>();
+  private readonly legacySessions: LegacySessionManager;
   private readonly projectors = new Map<string, EventHandler>();
   private readonly projectorSubscriptions = new Map<string, () => void>();
   private readonly commands = new Map<string, CommandHandler>();
   private readonly listeners = new Map<string, EventHandler>();
   private readonly listenerSubscriptions = new Map<string, () => void>();
   private readonly clientSubscriptions = new Map<WebSocket, Map<string, () => void>>();
+  private readonly tokenVerifier: CommandTokenVerifier | undefined;
+  private readonly commandDispatcher: CommandDispatcher;
+  private readonly sessionStopAll: readonly (() => void)[];
   private httpServer: Server | undefined;
   private websocketServer: WebSocketServer | undefined;
   private boundAddress: ControlPlaneAddress | undefined;
@@ -96,12 +105,19 @@ export class ControlPlane {
       });
     this.host = options.host ?? '127.0.0.1';
     this.port = options.port ?? 4310;
-    if (this.host !== '127.0.0.1' && this.host !== 'localhost' && this.host !== '::1') {
-      throw new Error('control plane must bind to localhost');
-    }
-    registerSubsystems(this.context, options.subsystems);
+    this.legacySessions = new LegacySessionManager({
+      authority: this.authority,
+      appendEvent: (stream_id, type, payload) => this.eventStore.append(stream_id, type, payload),
+    });
+    const registeredSubsystems = registerSubsystems(this.context, options.subsystems);
+    this.tokenVerifier =
+      options.tokenVerifier ??
+      options.capabilityTokens ??
+      capabilityVerifierFrom(registeredSubsystems);
+    this.sessionStopAll = sessionStopHandlersFrom(registeredSubsystems);
+    this.commandDispatcher = new CommandDispatcher(this.commands, this.tokenVerifier);
+    this.commandDispatcher.registerWorkflowRun();
   }
-
   public async start(): Promise<ControlPlaneAddress> {
     if (this.boundAddress) return this.boundAddress;
     this.httpServer = createServer((request, response) => this.handleHttp(request, response));
@@ -133,10 +149,8 @@ export class ControlPlane {
       socket.close();
     }
     this.clientSubscriptions.clear();
-    for (const session of this.sessions.values()) {
-      if (session.worker.connected) session.worker.kill();
-    }
-    this.sessions.clear();
+    this.legacySessions.stopAll();
+    for (const stopAll of this.sessionStopAll) stopAll();
     await new Promise<void>((resolve) => {
       if (!this.websocketServer) return resolve();
       this.websocketServer.close(() => resolve());
@@ -182,12 +196,36 @@ export class ControlPlane {
     this.listenerSubscriptions.set(name, unsubscribe);
   }
 
-  private appendEvent(stream_id: string, type: EventKind, payload: EventPayload): number {
-    return this.context.append(stream_id, type, payload);
-  }
-
   private handleHttp(request: IncomingMessage, response: ServerResponse): void {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
+    const commandPrefix = '/commands/';
+    if (
+      request.method === 'POST' &&
+      requestUrl.pathname.startsWith(commandPrefix) &&
+      requestUrl.pathname.length > commandPrefix.length
+    ) {
+      let commandName: string;
+      try {
+        commandName = decodeURIComponent(requestUrl.pathname.slice(commandPrefix.length));
+      } catch {
+        this.sendJson(response, 400, { error: 'invalid_command_name' });
+        return;
+      }
+      void this.handleCommandHttp(
+        request,
+        response,
+        commandName,
+        bearerToken(request.headers.authorization),
+      );
+      return;
+    }
+    if (
+      !isLoopbackAddress(request.socket.remoteAddress) &&
+      !this.commandDispatcher.verifyToken(bearerToken(request.headers.authorization))
+    ) {
+      this.sendJson(response, 401, { error: 'unauthorized' });
+      return;
+    }
     if (request.method === 'GET' && requestUrl.pathname === '/healthz') {
       this.sendJson(response, 200, { ok: true, service: 'vibecodium-control-plane' });
       return;
@@ -207,6 +245,33 @@ export class ControlPlane {
     this.sendJson(response, 404, { error: 'not_found' });
   }
 
+  private async handleCommandHttp(
+    request: IncomingMessage,
+    response: ServerResponse,
+    commandName: string,
+    headerToken: string | undefined,
+  ): Promise<void> {
+    let args: unknown;
+    try {
+      args = await readJsonBody(request);
+    } catch {
+      this.sendJson(response, 400, { error: 'request body must be valid JSON' });
+      return;
+    }
+    try {
+      const value = await this.commandDispatcher.dispatch(
+        commandName,
+        args,
+        headerToken,
+        request.socket.remoteAddress,
+      );
+      this.sendJson(response, 200, { value });
+    } catch (error: unknown) {
+      const statusCode = error instanceof CommandAuthorizationError ? 401 : 400;
+      this.sendJson(response, statusCode, { error: errorMessage(error) });
+    }
+  }
+
   private handleConnection(socket: WebSocket): void {
     this.clientSubscriptions.set(socket, new Map());
     socket.on('message', (data) => {
@@ -219,11 +284,31 @@ export class ControlPlane {
   }
 
   private async handleClientMessage(socket: WebSocket, serialized: string): Promise<void> {
-    let message: ClientMessage;
+    let parsed: unknown;
     try {
-      message = JSON.parse(serialized) as ClientMessage;
+      parsed = JSON.parse(serialized) as unknown;
     } catch {
       this.send(socket, { type: 'error', code: 'invalid_json', message: 'message must be JSON' });
+      return;
+    }
+    if (isCommandFrame(parsed)) {
+      await this.handleCommandWebSocket(socket, parsed);
+      return;
+    }
+    if (!isClientMessage(parsed)) {
+      this.send(socket, {
+        type: 'error',
+        code: 'invalid_message',
+        message: 'unknown message type',
+      });
+      return;
+    }
+    const message = parsed;
+    if (
+      !isLoopbackAddress(remoteAddress(socket)) &&
+      !this.commandDispatcher.verifyToken('token' in message ? message.token : undefined)
+    ) {
+      this.send(socket, { type: 'error', code: 'unauthorized', message: 'unauthorized' });
       return;
     }
     if (message.type === 'session.open') {
@@ -241,61 +326,32 @@ export class ControlPlane {
     this.send(socket, { type: 'error', code: 'invalid_message', message: 'unknown message type' });
   }
 
+  private async handleCommandWebSocket(socket: WebSocket, frame: CommandFrame): Promise<void> {
+    const id = frame.id;
+    if (!id || !frame.name) {
+      this.send(socket, { id, type: 'error', message: 'command id and name are required' });
+      return;
+    }
+    try {
+      const value = await this.commandDispatcher.dispatch(
+        frame.name,
+        frame.args,
+        frame.token,
+        remoteAddress(socket),
+      );
+      const reply: CommandServerFrame = { id, type: 'result', value };
+      this.send(socket, reply);
+    } catch (error: unknown) {
+      const reply: CommandServerFrame = { id, type: 'error', message: errorMessage(error) };
+      this.send(socket, reply);
+    }
+  }
+
   private async openSession(
     socket: WebSocket,
     message: Extract<ClientMessage, { type: 'session.open' }>,
   ): Promise<void> {
-    if (!message.provider || typeof message.prompt !== 'string') {
-      this.send(socket, {
-        type: 'error',
-        code: 'invalid_session',
-        message: 'provider and prompt are required',
-      });
-      return;
-    }
-    const decision = this.authority.evaluate({
-      type: 'session.open',
-      scope: { provider: message.provider },
-    });
-    if (!decision.allowed) {
-      this.send(socket, { type: 'action.result', allowed: false, reason: decision.reason });
-      return;
-    }
-    const sessionId = randomUUID();
-    const streamId = `session:${sessionId}`;
-    const openedSeq = this.appendEvent(streamId, 'session_started', {
-      session_id: sessionId,
-      provider: message.provider,
-      prompt: message.prompt,
-    });
-    const worker = fork(this.workerPath, [], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
-    const state: SessionState = { sessionId, streamId, worker, terminal: false };
-    this.sessions.set(sessionId, state);
-    worker.on('message', (workerMessage: WorkerOutputMessage) =>
-      this.handleWorkerMessage(state, workerMessage),
-    );
-    worker.on('error', (error) => this.failSession(state, errorMessage(error)));
-    worker.on('exit', (code) => {
-      if (code !== 0 && !state.terminal)
-        this.failSession(state, `session worker exited with code ${code ?? 'unknown'}`);
-      this.sessions.delete(sessionId);
-    });
-    this.send(socket, {
-      type: 'session.opened',
-      sessionId,
-      streamId,
-      cursor: openedSeq,
-    });
-    const startMessage: StartWorkerMessage = {
-      type: 'start',
-      session_id: sessionId,
-      stream_id: streamId,
-      provider: message.provider,
-      prompt: message.prompt,
-    };
-    worker.send(startMessage, (error) => {
-      if (error) this.failSession(state, errorMessage(error));
-    });
+    await this.legacySessions.open(message, (reply) => this.send(socket, reply));
   }
 
   private subscribe(
@@ -314,15 +370,22 @@ export class ControlPlane {
     const subscriptions = this.clientSubscriptions.get(socket);
     if (!subscriptions) return;
     subscriptions.get(message.streamId)?.();
-    const unsubscribe = this.eventStore.subscribe(message.streamId, fromSeq, (event) => {
+    const onEvent = (event: Parameters<EventHandler>[0]): void => {
       this.send(socket, { type: 'event', event });
-    });
+    };
+    const unsubscribe =
+      message.streamId === '*'
+        ? this.eventStore.subscribeAll(fromSeq, onEvent)
+        : this.eventStore.subscribe(message.streamId, fromSeq, onEvent);
     subscriptions.set(message.streamId, unsubscribe);
     this.send(socket, {
       type: 'subscribed',
       streamId: message.streamId,
       fromSeq,
-      cursor: this.eventStore.latestSequence(message.streamId),
+      cursor:
+        message.streamId === '*'
+          ? this.eventStore.latestSequence()
+          : this.eventStore.latestSequence(message.streamId),
     });
   }
 
@@ -337,50 +400,22 @@ export class ControlPlane {
       action: message.action.type,
       scope: message.action.scope,
     };
-    this.appendEvent(stream_id, 'action_requested', requestedPayload);
+    this.eventStore.append(stream_id, 'action_requested', requestedPayload);
     const decision = this.authority.evaluate(message.action);
     const decisionType = decision.allowed ? 'action_approved' : 'action_denied';
-    this.appendEvent(stream_id, decisionType, {
+    this.eventStore.append(stream_id, decisionType, {
       ...requestedPayload,
       reason: decision.reason,
     });
-    const response = {
+    this.send(socket, {
       type: 'action.result',
       allowed: decision.allowed,
       reason: decision.reason,
       ...(message.requestId ? { requestId: message.requestId } : {}),
-    };
-    this.send(socket, response);
+    });
     if (!decision.allowed || message.action.type !== 'session.stop') return;
     const sessionId = message.action.scope.session_id;
-    if (!sessionId) return;
-    const session = this.sessions.get(sessionId);
-    if (!session || session.terminal) return;
-    session.terminal = true;
-    session.worker.kill();
-  }
-
-  private handleWorkerMessage(state: SessionState, message: WorkerOutputMessage): void {
-    if (!message || message.stream_id !== state.streamId) return;
-    if (message.type === 'event') {
-      this.appendEvent(message.stream_id, message.event_type, message.payload);
-      if (message.event_type === 'session_complete') state.terminal = true;
-      return;
-    }
-    if (message.type === 'error') {
-      this.failSession(state, message.message);
-      return;
-    }
-  }
-
-  private failSession(state: SessionState, message: string): void {
-    if (state.terminal) return;
-    state.terminal = true;
-    this.appendEvent(state.streamId, 'verify_failed', {
-      session_id: state.sessionId,
-      stage: 'session',
-      error: message,
-    });
+    if (sessionId) this.legacySessions.stop(sessionId);
   }
 
   private cleanupClient(socket: WebSocket): void {
@@ -403,6 +438,55 @@ export class ControlPlane {
     });
     response.end(serialized);
   }
+}
+
+function isCommandFrame(value: unknown): value is CommandFrame {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate.type === 'command';
+}
+
+function isClientMessage(value: unknown): value is ClientMessage {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const type = (value as Record<string, unknown>).type;
+  return type === 'session.open' || type === 'subscribe' || type === 'action.request';
+}
+
+function bearerToken(authorization: string | undefined): string | undefined {
+  if (!authorization) return undefined;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || undefined;
+}
+
+function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return true;
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
+function remoteAddress(socket: WebSocket): string | undefined {
+  return (socket as SocketWithAddress)._socket?.remoteAddress;
+}
+
+function readJsonBody(request: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let serialized = '';
+    request.setEncoding('utf8');
+    request.on('data', (chunk: string) => {
+      serialized += chunk;
+    });
+    request.on('end', () => {
+      if (!serialized.trim()) {
+        resolve(undefined);
+        return;
+      }
+      try {
+        resolve(JSON.parse(serialized) as unknown);
+      } catch (error: unknown) {
+        reject(error);
+      }
+    });
+    request.on('error', reject);
+  });
 }
 
 function errorMessage(error: unknown): string {
