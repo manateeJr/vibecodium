@@ -180,7 +180,7 @@ function renderSwitcher() {
     chip.dataset.status = entry.status;
     chip.setAttribute('role', 'tab');
     chip.setAttribute('aria-selected', String(entry.stream_id === selectedStreamId));
-    chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${shortId(entry.stream_id)}`);
+    chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${shortId}`);
     chip.addEventListener('click', () => selectStream(entry.stream_id));
     const dot = document.createElement('span');
     dot.className = 'stream-chip__dot';
@@ -189,7 +189,7 @@ function renderSwitcher() {
     chip.append(dot);
     const text = document.createElement('span');
     text.className = 'stream-chip__text';
-    text.textContent = `${entry.kind} · ${entry.label} · ${shortId(entry.stream_id)}`;
+    text.textContent = `${entry.kind} · ${entry.label} · ${shortId}`;
     chip.append(text);
     elements.streamSwitcher.append(chip);
   }
