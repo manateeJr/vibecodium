@@ -7,16 +7,33 @@
     "pnpm-lock.yaml",
     "dist/**",
     "node_modules/**",
-    ".vibecodium/evidence/**"
+    ".vibecodium/evidence/**",
+    "vendor/**",
+    "**/vendor/**",
+    "third_party/**",
+    "**/third_party/**",
+    "generated/**",
+    "**/generated/**"
   ],
+  "branchNamePattern": "^(build|fix|feat|chore|docs)/.+$",
+  "branchBindingFile": ".vibecodium/branch.json",
+  "lockfiles": ["package-lock.json"],
+  "staleWorktreeDays": 14,
+  "forbiddenTestPatterns": [
+    "\\.only\\s*\\(",
+    "\\bfdescribe\\s*\\(",
+    "\\bit\\.skip\\s*\\(",
+    "\\bdescribe\\.skip\\s*\\("
+  ],
+  "debugWarningPatterns": ["\\bconsole\\.log\\s*\\(", "\\bdebugger\\b"],
   "format": "npm run format:check",
   "lint": "npm run lint",
   "typecheck": "npm run typecheck",
   "test": "npm test",
   "gate": "npm run gate",
   "hooks": {
-    "pre_commit": "staged format + lint + secret scan + issue-link + max-file-lines checks",
-    "pre_push": "npm run gate"
+    "pre_commit": "staged format + lint + secret scan + branch/worktree/dependency/test guards",
+    "pre_push": "npm run gate + protected merge evidence"
   },
   "evidence_directory": ".vibecodium/evidence"
 }

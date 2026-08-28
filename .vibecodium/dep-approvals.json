@@ -1,0 +1,45 @@
+{
+  "approvals": {
+    "better-sqlite3": {
+      "reason": "Ratified append-only SQLite event store for the control plane",
+      "approver": "owner-ratified-design"
+    },
+    "ws": {
+      "reason": "Ratified localhost WebSocket transport for session event streaming",
+      "approver": "owner-ratified-design"
+    },
+    "@eslint/js": {
+      "reason": "Strict quality gate lint baseline",
+      "approver": "owner-ratified-design"
+    },
+    "@types/better-sqlite3": {
+      "reason": "Type declarations for the SQLite adapter",
+      "approver": "owner-ratified-design"
+    },
+    "@types/node": {
+      "reason": "Node.js TypeScript declarations",
+      "approver": "owner-ratified-design"
+    },
+    "@types/ws": {
+      "reason": "Type declarations for the WebSocket adapter",
+      "approver": "owner-ratified-design"
+    },
+    "eslint": {
+      "reason": "Strict quality gate lint runner",
+      "approver": "owner-ratified-design"
+    },
+    "prettier": {
+      "reason": "Strict quality gate formatting runner",
+      "approver": "owner-ratified-design"
+    },
+    "typescript": {
+      "reason": "Strict TypeScript compiler",
+      "approver": "owner-ratified-design"
+    },
+    "typescript-eslint": {
+      "reason": "Strict TypeScript-aware ESLint rules",
+      "approver": "owner-ratified-design"
+    }
+  },
+  "note": "Agents cannot self-approve dependencies; owner approval is required for new entries."
+}

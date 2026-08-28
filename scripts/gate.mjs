@@ -2,12 +2,23 @@ import { spawnSync } from 'node:child_process';
 import { writeEvidence, repositoryRoot } from './evidence.mjs';
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const node = process.execPath;
 const checks = [
-  ['max-file-lines', process.execPath, ['scripts/max-file-lines.mjs', '--all']],
+  ['max-file-lines', node, ['scripts/max-file-lines.mjs', '--all']],
+  ['branch-name', node, ['scripts/checks/branch-name.mjs']],
+  ['branch-issue', node, ['scripts/checks/branch-issue.mjs']],
+  ['worktree-nesting', node, ['scripts/checks/worktree-nesting.mjs']],
+  ['main-guard', node, ['scripts/checks/main-guard.mjs']],
+  ['focused-tests', node, ['scripts/checks/focused-tests.mjs']],
+  ['lockfile-sync', node, ['scripts/checks/lockfile-sync.mjs']],
+  ['dependency-approval', node, ['scripts/checks/dependency-approval.mjs']],
+  ['debug-leftovers', node, ['scripts/checks/debug-leftovers.mjs']],
+  ['npm-audit', node, ['scripts/checks/npm-audit.mjs']],
   ['typecheck', npm, ['run', 'typecheck']],
   ['lint', npm, ['run', 'lint']],
   ['format', npm, ['run', 'format:check']],
   ['test', npm, ['test']],
+  ['merge-gate', node, ['scripts/merge-gate.mjs']],
 ];
 
 let overallStatus = 0;
@@ -35,7 +46,14 @@ for (const [name, command, args] of checks) {
 
   const output = `${result.stdout ?? ''}${result.stderr ? `\n${result.stderr}` : ''}`;
   const exitStatus = typeof result.status === 'number' ? result.status : 127;
-  const status = exitStatus === 0 ? 'passed' : result.error ? 'not_configured' : 'failed';
+  const status =
+    exitStatus === 0
+      ? output.includes('VIBECODIUM_WARN')
+        ? 'warn'
+        : 'passed'
+      : result.error
+        ? 'not_configured'
+        : 'failed';
   writeEvidence({
     checkName: `gate-${name}`,
     command: `${command} ${args.join(' ')}`,
@@ -58,7 +76,8 @@ writeEvidence({
   exitStatus: overallStatus,
   startedAt: gateStartedAt,
   endedAt: new Date(),
-  status: overallStatus === 0 ? 'passed' : 'failed',
+  status:
+    overallStatus === 0 ? (gateOutput.includes('VIBECODIUM_WARN') ? 'warn' : 'passed') : 'failed',
 });
 
 if (overallStatus !== 0) {

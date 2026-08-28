@@ -4,8 +4,21 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { repositoryRoot, writeEvidence } from './evidence.mjs';
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const node = process.execPath;
 const mode = process.argv[2];
 const stagedFiles = getStagedFiles();
+const governanceChecks = [
+  ['branch-name', ['scripts/checks/branch-name.mjs']],
+  ['branch-issue', ['scripts/checks/branch-issue.mjs', '--staged']],
+  ['worktree-nesting', ['scripts/checks/worktree-nesting.mjs']],
+  ['main-guard', ['scripts/checks/main-guard.mjs']],
+  ['focused-tests', ['scripts/checks/focused-tests.mjs']],
+  ['lockfile-sync', ['scripts/checks/lockfile-sync.mjs', '--staged']],
+  ['dependency-approval', ['scripts/checks/dependency-approval.mjs', '--staged']],
+  ['debug-leftovers', ['scripts/checks/debug-leftovers.mjs']],
+  ['npm-audit', ['scripts/checks/npm-audit.mjs']],
+  ['merge-gate', ['scripts/merge-gate.mjs']],
+];
 const supportedPrettier = new Set([
   '.cjs',
   '.css',
@@ -52,7 +65,14 @@ function runCheck(checkName, command, args, options = {}) {
   }
   const output = `${result.stdout ?? ''}${result.stderr ? `\n${result.stderr}` : ''}`;
   const exitStatus = typeof result.status === 'number' ? result.status : 127;
-  const status = exitStatus === 0 ? 'passed' : result.error ? 'not_configured' : 'failed';
+  const status =
+    exitStatus === 0
+      ? output.includes('VIBECODIUM_WARN')
+        ? 'warn'
+        : 'passed'
+      : result.error
+        ? 'not_configured'
+        : 'failed';
   writeEvidence({
     checkName,
     command: `${command} ${args.join(' ')}`,
@@ -91,15 +111,6 @@ function secretScan() {
     /\bsk-[A-Za-z0-9]{20,}\b/,
   ];
   return patterns.some((pattern) => pattern.test(addedLines));
-}
-
-function issueLinkPresent() {
-  const branch = execFileSync('git', ['branch', '--show-current'], {
-    cwd: repositoryRoot,
-    encoding: 'utf8',
-  }).trim();
-  const context = `${process.env.VIBECODIUM_ISSUE_REF ?? ''}\n${branch}\n${stagedDiff()}`;
-  return /(?:#\d+|issue[-_\s#]*\d+|slice[-_/]\d+)/i.test(context);
 }
 
 function writeSkipped(checkName, command) {
@@ -154,25 +165,27 @@ function runPreCommit() {
   });
   if (secretFound && status === 0) status = 1;
 
-  const issueStartedAt = new Date();
-  const issueFound = issueLinkPresent();
-  writeEvidence({
-    checkName: 'pre-commit-issue-link',
-    command: 'staged commit context issue-link check',
-    output: issueFound ? 'issue reference found\n' : 'missing issue reference\n',
-    exitStatus: issueFound ? 0 : 1,
-    startedAt: issueStartedAt,
-    endedAt: new Date(),
-    status: issueFound ? 'passed' : 'failed',
-  });
-  if (!issueFound && status === 0) status = 1;
-
-  const maxFileStatus = runCheck('pre-commit-max-file-lines', process.execPath, [
+  const maxFileStatus = runCheck('pre-commit-max-file-lines', node, [
     path.join(repositoryRoot, 'scripts', 'max-file-lines.mjs'),
     '--staged',
   ]);
   if (status === 0 && maxFileStatus !== 0) status = maxFileStatus;
+
+  for (const [name, args] of governanceChecks) {
+    const checkStatus = runCheck(`pre-commit-${name}`, node, args);
+    if (status === 0 && checkStatus !== 0) status = checkStatus;
+  }
   if (status !== 0) process.stderr.write('pre-commit failed\n');
+  process.exitCode = status;
+}
+
+function runGovernanceHook(hookName, checks) {
+  let status = 0;
+  for (const [name, args] of checks) {
+    const checkStatus = runCheck(`${hookName}-${name}`, node, args);
+    if (status === 0 && checkStatus !== 0) status = checkStatus;
+  }
+  if (status !== 0) process.stderr.write(`${hookName} failed\n`);
   process.exitCode = status;
 }
 
@@ -184,8 +197,32 @@ function runPrePush() {
   process.exitCode = status;
 }
 
+function runPostMerge() {
+  runGovernanceHook('post-merge', [
+    ['main-guard', ['scripts/checks/main-guard.mjs']],
+    ['merge-gate', ['scripts/merge-gate.mjs']],
+  ]);
+}
+
+function runPostCheckout() {
+  runGovernanceHook('post-checkout', [
+    [
+      'main-guard',
+      [
+        'scripts/checks/main-guard.mjs',
+        '--checkout',
+        process.argv[3],
+        process.argv[4],
+        process.argv[5],
+      ],
+    ],
+  ]);
+}
+
 if (mode === 'pre-commit') runPreCommit();
 else if (mode === 'pre-push') runPrePush();
+else if (mode === 'post-merge') runPostMerge();
+else if (mode === 'post-checkout') runPostCheckout();
 else {
   const startedAt = new Date();
   writeEvidence({
