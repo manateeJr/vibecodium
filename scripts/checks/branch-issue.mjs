@@ -17,7 +17,14 @@ function git(args) {
   return execFileSync('git', args, { cwd: repositoryRoot, encoding: 'utf8' }).trim();
 }
 
+function mergeInProgress() {
+  const mergeHead = git(['rev-parse', '--git-path', 'MERGE_HEAD']);
+  return fs.existsSync(mergeHead) && fs.readFileSync(mergeHead, 'utf8').trim().length > 0;
+}
+
 function loadBinding() {
+  const branch = git(['branch', '--show-current']);
+  if (branch === 'main') return { issues: [] };
   if (!fs.existsSync(bindingPath)) {
     failures.push(`missing branch binding: ${path.relative(repositoryRoot, bindingPath)}`);
     return undefined;
@@ -77,7 +84,7 @@ function checkIssueStates(issues) {
 }
 
 const binding = loadBinding();
-if (binding) checkIssueStates(binding.issues);
+if (binding && binding.issues.length > 0) checkIssueStates(binding.issues);
 
 const messageIndex = process.argv.indexOf('--commit-message');
 if (messageIndex >= 0) {
@@ -91,7 +98,7 @@ if (messageIndex >= 0) {
       `cannot read commit message: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (binding && message) {
+  if (binding && binding.issues.length > 0 && message && !mergeInProgress()) {
     const references = [...message.matchAll(/(?:#|issue[-_\s#]*)(\d+)/gi)].map((match) =>
       Number(match[1]),
     );

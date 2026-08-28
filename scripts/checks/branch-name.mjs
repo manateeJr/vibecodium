@@ -22,6 +22,8 @@ if (process.exitCode === 2) {
 } else if (typeof pattern !== 'string' || !pattern) {
   process.stderr.write('not_configured: branchNamePattern is missing\n');
   process.exitCode = 2;
+} else if (branch === 'main' && isPrimary()) {
+  process.stdout.write('branch-name passed: main merge station\n');
 } else if (!branch || !new RegExp(pattern).test(branch)) {
   process.stderr.write(
     `branch-name failed: ${branch || 'detached HEAD'} does not match ${pattern}\n`,
@@ -29,4 +31,22 @@ if (process.exitCode === 2) {
   process.exitCode = 1;
 } else {
   process.stdout.write(`branch-name passed: ${branch}\n`);
+}
+
+function isPrimary() {
+  const gitDir = path.resolve(
+    repositoryRoot,
+    execFileSync('git', ['rev-parse', '--git-dir'], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    }).trim(),
+  );
+  const commonDir = path.resolve(
+    repositoryRoot,
+    execFileSync('git', ['rev-parse', '--git-common-dir'], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    }).trim(),
+  );
+  return gitDir === commonDir;
 }
