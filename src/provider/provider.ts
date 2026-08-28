@@ -2,14 +2,23 @@ import { randomUUID } from 'node:crypto';
 import type {
   ProviderCapabilityMatrix,
   ProviderChunk,
+  ProviderOutputEvent,
+  ProviderOutputEventInput,
+  ProviderOutputEventMapper,
   ProviderSession,
   ProviderSessionRef,
   ProviderSpawnRequest,
 } from '../contracts/provider-contract.js';
+import { CodexProvider } from './codex-provider.js';
+import { OmpProvider } from './omp-provider.js';
+export { CodexProvider, OmpProvider };
 
 export type {
   ProviderCapabilityMatrix,
   ProviderChunk,
+  ProviderOutputEvent,
+  ProviderOutputEventInput,
+  ProviderOutputEventMapper,
   ProviderSession,
   ProviderSessionRef,
   ProviderSpawnRequest,
@@ -53,6 +62,17 @@ export class EchoProvider implements ProviderSessionRef {
   }
 }
 
+export const mapProviderOutputEvent: ProviderOutputEventMapper = (
+  input: ProviderOutputEventInput,
+): ProviderOutputEvent => ({
+  type: 'session_output',
+  payload: {
+    session_id: input.session_id,
+    index: input.chunk.index,
+    text: input.chunk.text,
+  },
+});
+
 export class NotImplementedProvider implements ProviderSessionRef {
   public constructor(public readonly name: string) {}
 
@@ -75,7 +95,8 @@ export class NotImplementedProvider implements ProviderSessionRef {
 
 export function providerByName(name: string): ProviderSessionRef {
   if (name === 'fake' || name === 'echo') return new EchoProvider();
-  if (name === 'claude' || name === 'omp' || name === 'codex')
-    return new NotImplementedProvider(name);
+  if (name === 'omp') return new OmpProvider();
+  if (name === 'codex') return new CodexProvider();
+  if (name === 'claude') return new NotImplementedProvider(name);
   throw new Error(`unknown provider: ${name}`);
 }
