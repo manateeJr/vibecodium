@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS signatures (
   kind TEXT NOT NULL,
   stage TEXT NOT NULL,
   occurrences INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL CHECK (status IN ('active', 'resolved', 'ignored')),
+  status TEXT NOT NULL CHECK (status IN ('open', 'proposed', 'resolved', 'ignored')),
   updated_at TEXT NOT NULL
 );
 
@@ -58,7 +58,7 @@ export interface TelemetryEventRow {
   readonly ts: string;
 }
 
-export type SignatureStatus = 'active' | 'resolved' | 'ignored';
+export type SignatureStatus = 'open' | 'proposed' | 'resolved' | 'ignored';
 
 export interface TelemetrySignatureRow {
   readonly signature: string;
