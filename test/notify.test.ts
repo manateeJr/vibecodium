@@ -286,6 +286,7 @@ test('ntfy adapter posts action buttons and listener refuses public binds', asyn
     String(captured?.init?.headers && (captured.init.headers as Record<string, string>).Actions),
     /Approve/,
   );
+  assert.equal(isSafeInboundHost('100.64.999.1'), false);
   assert.throws(() => new InboundListener(async () => ({ accepted: true }), { host: '0.0.0.0' }));
   assert.equal(isSafeInboundHost('100.100.10.5'), true);
   assert.equal(isSafeInboundHost('203.0.113.10'), false);

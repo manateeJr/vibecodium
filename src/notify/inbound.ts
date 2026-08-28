@@ -286,7 +286,9 @@ function keyFor(keys: HmacKeyRing, kid: string): HmacKey | undefined {
 
 function isTailnetIpv4(value: string): boolean {
   const parts = value.split('.');
-  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return false;
+  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part) || Number(part) > 255)) {
+    return false;
+  }
   const [first, second] = parts.map(Number);
   return first === 100 && second !== undefined && second >= 64 && second <= 127;
 }
