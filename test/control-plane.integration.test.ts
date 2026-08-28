@@ -146,27 +146,12 @@ test('opens an echo session, streams ordered events, and catches up after reconn
     const cursor = firstOutput.seq;
     await close(firstSocket);
 
-    await waitUntil(() =>
-      controlPlane.eventStore
-        .read(opened.streamId!, cursor)
-        .some((event) => event.type === 'session_complete'),
-    );
-    const expectedMissed = controlPlane.eventStore.read(opened.streamId!, cursor);
-
     secondSocket = await connect(address);
     const secondInbox = new Inbox(secondSocket);
     secondSocket.send(
       JSON.stringify({ type: 'subscribe', streamId: opened.streamId, fromSeq: cursor }),
     );
     await secondInbox.wait((message) => message.type === 'subscribed');
-    const replayed: EventEnvelope[] = [];
-    while (!replayed.some((event) => event.type === 'session_complete')) {
-      const message = await secondInbox.wait(
-        (candidate) => candidate.type === 'event' && !!candidate.event,
-      );
-      replayed.push(message.event!);
-    }
-    assert.deepEqual(replayed, expectedMissed);
 
     secondSocket.send(
       JSON.stringify({
@@ -194,6 +179,21 @@ test('opens an echo session, streams ordered events, and catches up after reconn
       ),
       { type: 'action.result', allowed: true, reason: 'permitted', requestId: 'allow-stop' },
     );
+
+    await waitUntil(() =>
+      controlPlane.eventStore
+        .read(opened.streamId!, cursor)
+        .some((event) => event.type === 'session_complete'),
+    );
+    const expectedMissed = controlPlane.eventStore.read(opened.streamId!, cursor);
+    const replayed: EventEnvelope[] = [];
+    while (!replayed.some((event) => event.type === 'session_complete')) {
+      const message = await secondInbox.wait(
+        (candidate) => candidate.type === 'event' && !!candidate.event,
+      );
+      replayed.push(message.event!);
+    }
+    assert.deepEqual(replayed, expectedMissed);
   } finally {
     if (firstSocket) await close(firstSocket);
     if (secondSocket) await close(secondSocket);

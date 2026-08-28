@@ -71,18 +71,53 @@ test('POST session.open returns ids and streams ordered fake-provider events', a
     const body = (await response.json()) as { value: { session_id: string; stream_id: string } };
     assert.match(body.value.session_id, /^[0-9a-f-]{36}$/);
     assert.equal(body.value.stream_id, `session:${body.value.session_id}`);
-    const events = await waitForEvents(plane, body.value.stream_id, (items) =>
+    const firstTurn = await waitForEvents(plane, body.value.stream_id, (items) =>
+      items.some((event) => event.type === 'turn_complete'),
+    );
+    const sendResponse = await fetch(`${address.httpUrl}/commands/session.send`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: body.value.session_id, prompt: 'second prompt' }),
+    });
+    assert.equal(sendResponse.status, 200);
+    assert.deepEqual((await sendResponse.json()).value, {
+      stream_id: body.value.stream_id,
+      turn: 2,
+    });
+    const events = await waitForEvents(
+      plane,
+      body.value.stream_id,
+      (items) => items.filter((event) => event.type === 'turn_complete').length >= 2,
+    );
+    assert.deepEqual(firstTurn.filter((event) => event.type === 'turn_complete').length, 1);
+    const stopResponse = await fetch(`${address.httpUrl}/commands/session.stop`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session_id: body.value.session_id }),
+    });
+    assert.equal(stopResponse.status, 200);
+    const completed = await waitForEvents(plane, body.value.stream_id, (items) =>
       items.some((event) => event.type === 'session_complete'),
     );
     assert.deepEqual(
-      events.map((event) => event.type),
-      ['session_started', 'session_output', 'session_output', 'session_complete'],
+      completed.map((event) => event.type),
+      [
+        'session_started',
+        'session_output',
+        'session_output',
+        'turn_complete',
+        'session_input',
+        'session_output',
+        'session_output',
+        'turn_complete',
+        'session_complete',
+      ],
     );
     assert.deepEqual(
       events
         .filter((event) => event.type === 'session_output')
         .map((event) => (event.payload as SessionOutputPayload).index),
-      [0, 1],
+      [0, 1, 0, 1],
     );
   } finally {
     await plane.stop();

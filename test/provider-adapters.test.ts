@@ -69,15 +69,7 @@ test('OMP maps mocked stdout chunks to ordered provider output', async () => {
     { index: 0, text: 'first' },
     { index: 1, text: ' second' },
   ]);
-  assert.deepEqual(calls[0], [
-    'omp',
-    '--print',
-    '--mode',
-    'text',
-    '--no-session',
-    '--',
-    'say hello',
-  ]);
+  assert.deepEqual(calls[0], ['omp', '--print', '--mode', 'text', '--', 'say hello']);
 });
 
 test('Codex maps JSONL agent messages and ignores lifecycle frames', async () => {
@@ -95,7 +87,7 @@ test('Codex maps JSONL agent messages and ignores lifecycle frames', async () =>
   child.complete();
 
   assert.deepEqual(await stream, [{ index: 0, text: 'hello' }]);
-  assert.deepEqual(calls[0], ['codex', 'exec', '--json', '--ephemeral', '--', 'say hello']);
+  assert.deepEqual(calls[0], ['codex', 'exec', '--json', '--', 'say hello']);
 });
 
 test('stop marks a CLI session and terminates its child', async () => {

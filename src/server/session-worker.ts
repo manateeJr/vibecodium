@@ -1,8 +1,10 @@
+import { mkdir } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { EventKind, EventPayload } from '../contracts/events.js';
+import type { ProviderSession, ProviderSessionRef } from '../contracts/provider-contract.js';
 import { providerByName } from '../provider/provider.js';
-import type { ProviderSessionRef } from '../contracts/provider-contract.js';
 
 export interface StartWorkerMessage {
   readonly type: 'start';
@@ -10,6 +12,18 @@ export interface StartWorkerMessage {
   readonly stream_id: string;
   readonly provider: string;
   readonly prompt: string;
+  readonly cwd?: string;
+}
+
+export interface TurnWorkerMessage {
+  readonly type: 'turn';
+  readonly stream_id: string;
+  readonly prompt: string;
+}
+
+export interface StopWorkerMessage {
+  readonly type: 'stop';
+  readonly stream_id: string;
 }
 
 export interface WorkerEventMessage {
@@ -30,8 +44,21 @@ export interface WorkerErrorMessage {
   readonly message: string;
 }
 
-export type WorkerMessage = StartWorkerMessage;
+export type WorkerMessage = StartWorkerMessage | TurnWorkerMessage | StopWorkerMessage;
 export type WorkerOutputMessage = WorkerEventMessage | WorkerDoneMessage | WorkerErrorMessage;
+
+interface ConversationState {
+  readonly session_id: string;
+  readonly stream_id: string;
+  readonly provider: ProviderSessionRef;
+  readonly cwd?: string;
+  readonly storageDir: string;
+  turn: number;
+  currentSession: ProviderSession | undefined;
+  stopping: boolean;
+  turnChain: Promise<void>;
+  stopPromise: Promise<void> | undefined;
+}
 
 function send(message: WorkerOutputMessage): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -43,47 +70,141 @@ function send(message: WorkerOutputMessage): Promise<void> {
   });
 }
 
-async function runSession(message: StartWorkerMessage): Promise<void> {
-  let provider: ProviderSessionRef;
+async function runTurn(
+  state: ConversationState,
+  prompt: string,
+  resume: boolean,
+  turn: number,
+): Promise<void> {
+  let session: ProviderSession | undefined;
   try {
-    provider = providerByName(message.provider);
-    const session = await provider.spawn({ sessionId: message.session_id, prompt: message.prompt });
-    for await (const chunk of provider.stream(session)) {
+    session = await state.provider.spawn({
+      sessionId: state.session_id,
+      prompt,
+      ...(state.cwd === undefined ? {} : { cwd: state.cwd }),
+      storageDir: state.storageDir,
+      resume,
+    });
+    state.currentSession = session;
+    if (state.stopping) {
+      await state.provider.stop(session);
+      return;
+    }
+    for await (const chunk of state.provider.stream(session)) {
       await send({
         type: 'event',
-        stream_id: message.stream_id,
+        stream_id: state.stream_id,
         event_type: 'session_output',
         payload: {
-          session_id: message.session_id,
+          session_id: state.session_id,
           index: chunk.index,
           text: chunk.text,
         },
       });
     }
-    await provider.stop(session);
+    await state.provider.stop(session);
+    if (state.stopping) return;
     await send({
       type: 'event',
-      stream_id: message.stream_id,
-      event_type: 'session_complete',
-      payload: { session_id: message.session_id, provider: provider.name },
+      stream_id: state.stream_id,
+      event_type: 'turn_complete',
+      payload: { session_id: state.session_id, turn },
     });
   } catch (error) {
-    await send({
-      type: 'error',
-      stream_id: message.stream_id,
-      message: error instanceof Error ? error.message : String(error),
-    });
+    if (session && !session.stopped) {
+      try {
+        await state.provider.stop(session);
+      } catch {
+        // Preserve the original turn failure.
+      }
+    }
+    if (state.stopping) return;
+    try {
+      await send({
+        type: 'error',
+        stream_id: state.stream_id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } catch {
+      // The parent may have stopped and disconnected while the turn failed.
+    }
   } finally {
-    await send({ type: 'done', stream_id: message.stream_id });
+    if (state.currentSession === session) state.currentSession = undefined;
   }
 }
 
 export function startSessionWorker(): void {
+  let state: ConversationState | undefined;
   process.on('message', (message: WorkerMessage) => {
-    if (!message || message.type !== 'start') return;
-    void runSession(message).then(() => {
+    if (!message) return;
+    if (message.type === 'start') {
+      if (state) return;
+      let provider: ProviderSessionRef;
+      try {
+        provider = providerByName(message.provider);
+      } catch (error) {
+        void send({
+          type: 'error',
+          stream_id: message.stream_id,
+          message: error instanceof Error ? error.message : String(error),
+        }).catch(() => undefined);
+        return;
+      }
+      const storageDir = path.join(os.tmpdir(), 'vibecodium-sessions', message.session_id);
+      state = {
+        session_id: message.session_id,
+        stream_id: message.stream_id,
+        provider,
+        ...(message.cwd === undefined ? {} : { cwd: message.cwd }),
+        storageDir,
+        turn: 1,
+        stopping: false,
+        turnChain: Promise.resolve(),
+        currentSession: undefined,
+        stopPromise: undefined,
+      };
+      state.turnChain = mkdir(storageDir, { recursive: true })
+        .then(() => runTurn(state!, message.prompt, false, 1))
+        .catch(async (error: unknown) => {
+          if (state?.stopping) return;
+          try {
+            await send({
+              type: 'error',
+              stream_id: message.stream_id,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          } catch {
+            // The parent may have stopped and disconnected while starting.
+          }
+        });
+      return;
+    }
+    if (!state) return;
+    if (message.type === 'turn') {
+      if (state.stopping) return;
+      const turn = ++state.turn;
+      state.turnChain = state.turnChain.then(() => runTurn(state!, message.prompt, true, turn));
+      return;
+    }
+    if (state.stopping || state.stopPromise) return;
+    state.stopping = true;
+    const currentSession = state.currentSession;
+    state.stopPromise = (async () => {
+      if (currentSession) {
+        try {
+          await state!.provider.stop(currentSession);
+        } catch {
+          // Stopping is best effort; the parent owns the terminal event.
+        }
+      }
+      await state!.turnChain.catch(() => undefined);
+      try {
+        await send({ type: 'done', stream_id: message.stream_id });
+      } catch {
+        // The parent has already disconnected.
+      }
       if (process.connected) process.disconnect();
-    });
+    })();
   });
 }
 
