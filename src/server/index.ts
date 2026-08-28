@@ -8,4 +8,4 @@ export type {
 export { ControlPlane } from './control-plane.js';
 export type { ClientMessage, ControlPlaneAddress, ControlPlaneOptions } from './control-plane.js';
 export { EventStore } from './event-store.js';
-export type { EventStoreOptions, StoredEvent } from './event-store.js';
+export type { EventStoreOptions } from './event-store.js';

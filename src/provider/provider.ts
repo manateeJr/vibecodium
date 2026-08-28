@@ -1,35 +1,19 @@
 import { randomUUID } from 'node:crypto';
+import type {
+  ProviderCapabilityMatrix,
+  ProviderChunk,
+  ProviderSession,
+  ProviderSessionRef,
+  ProviderSpawnRequest,
+} from '../contracts/provider-contract.js';
 
-export interface ProviderSpawnRequest {
-  readonly sessionId: string;
-  readonly prompt: string;
-}
-
-export interface ProviderSession {
-  readonly id: string;
-  readonly request: ProviderSpawnRequest;
-  stopped: boolean;
-}
-
-export interface ProviderChunk {
-  readonly index: number;
-  readonly text: string;
-}
-
-export interface ProviderCapabilityMatrix {
-  readonly provider: string;
-  readonly streaming: boolean;
-  readonly stop: boolean;
-  readonly models: readonly string[];
-}
-
-export interface ProviderSessionRef {
-  readonly name: string;
-  spawn(request: ProviderSpawnRequest): Promise<ProviderSession>;
-  stream(session: ProviderSession): AsyncIterable<ProviderChunk>;
-  stop(session: ProviderSession): Promise<void>;
-  capabilityMatrix(): ProviderCapabilityMatrix;
-}
+export type {
+  ProviderCapabilityMatrix,
+  ProviderChunk,
+  ProviderSession,
+  ProviderSessionRef,
+  ProviderSpawnRequest,
+} from '../contracts/provider-contract.js';
 
 export class ProviderNotImplementedError extends Error {
   public constructor(provider: string) {

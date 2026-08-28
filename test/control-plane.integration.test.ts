@@ -4,14 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { WebSocket } from 'ws';
+import type { EventEnvelope } from '../src/contracts/events.js';
 import { Authority } from '../src/server/authority.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import type { ControlPlaneAddress } from '../src/server/control-plane.js';
-import type { StoredEvent } from '../src/server/event-store.js';
 
 type WireMessage = {
   type: string;
-  event?: StoredEvent;
+  event?: EventEnvelope;
   streamId?: string;
   sessionId?: string;
   cursor?: number;
@@ -113,19 +113,19 @@ test('opens an echo session, streams ordered events, and catches up after reconn
     firstSocket.send(JSON.stringify({ type: 'subscribe', streamId: opened.streamId, fromSeq: 0 }));
     await firstInbox.wait((message) => message.type === 'subscribed');
 
-    const receivedBeforeDisconnect: StoredEvent[] = [];
-    let firstOutput: StoredEvent | undefined;
+    const receivedBeforeDisconnect: EventEnvelope[] = [];
+    let firstOutput: EventEnvelope | undefined;
     while (!firstOutput) {
       const message = await firstInbox.wait(
         (candidate) => candidate.type === 'event' && !!candidate.event,
       );
       receivedBeforeDisconnect.push(message.event!);
-      if (message.event!.type === 'provider.output') firstOutput = message.event;
+      if (message.event!.type === 'session_output') firstOutput = message.event;
     }
     assert.ok(firstOutput);
     assert.deepEqual(
       receivedBeforeDisconnect.map((event) => event.seq),
-      [1, 2, 3],
+      [1, 2],
     );
     const cursor = firstOutput.seq;
     await close(firstSocket);
@@ -133,7 +133,7 @@ test('opens an echo session, streams ordered events, and catches up after reconn
     await waitUntil(() =>
       controlPlane.eventStore
         .read(opened.streamId!, cursor)
-        .some((event) => event.type === 'session.completed'),
+        .some((event) => event.type === 'session_complete'),
     );
     const expectedMissed = controlPlane.eventStore.read(opened.streamId!, cursor);
 
@@ -143,8 +143,8 @@ test('opens an echo session, streams ordered events, and catches up after reconn
       JSON.stringify({ type: 'subscribe', streamId: opened.streamId, fromSeq: cursor }),
     );
     await secondInbox.wait((message) => message.type === 'subscribed');
-    const replayed: StoredEvent[] = [];
-    while (!replayed.some((event) => event.type === 'session.completed')) {
+    const replayed: EventEnvelope[] = [];
+    while (!replayed.some((event) => event.type === 'session_complete')) {
       const message = await secondInbox.wait(
         (candidate) => candidate.type === 'event' && !!candidate.event,
       );

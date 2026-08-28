@@ -1,31 +1,32 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { EventKind, EventPayload } from '../contracts/events.js';
 import { providerByName } from '../provider/provider.js';
-import type { ProviderSessionRef } from '../provider/provider.js';
+import type { ProviderSessionRef } from '../contracts/provider-contract.js';
 
 export interface StartWorkerMessage {
   readonly type: 'start';
-  readonly sessionId: string;
-  readonly streamId: string;
+  readonly session_id: string;
+  readonly stream_id: string;
   readonly provider: string;
   readonly prompt: string;
 }
 
 export interface WorkerEventMessage {
   readonly type: 'event';
-  readonly streamId: string;
-  readonly eventType: string;
-  readonly payload: unknown;
+  readonly stream_id: string;
+  readonly event_type: EventKind;
+  readonly payload: EventPayload;
 }
 
 export interface WorkerDoneMessage {
   readonly type: 'done';
-  readonly streamId: string;
+  readonly stream_id: string;
 }
 
 export interface WorkerErrorMessage {
   readonly type: 'error';
-  readonly streamId: string;
+  readonly stream_id: string;
   readonly message: string;
 }
 
@@ -46,36 +47,34 @@ async function runSession(message: StartWorkerMessage): Promise<void> {
   let provider: ProviderSessionRef;
   try {
     provider = providerByName(message.provider);
-    const session = await provider.spawn({ sessionId: message.sessionId, prompt: message.prompt });
-    await send({
-      type: 'event',
-      streamId: message.streamId,
-      eventType: 'provider.started',
-      payload: { provider: provider.name, providerSessionId: session.id },
-    });
+    const session = await provider.spawn({ sessionId: message.session_id, prompt: message.prompt });
     for await (const chunk of provider.stream(session)) {
       await send({
         type: 'event',
-        streamId: message.streamId,
-        eventType: 'provider.output',
-        payload: { index: chunk.index, text: chunk.text },
+        stream_id: message.stream_id,
+        event_type: 'session_output',
+        payload: {
+          session_id: message.session_id,
+          index: chunk.index,
+          text: chunk.text,
+        },
       });
     }
     await provider.stop(session);
     await send({
       type: 'event',
-      streamId: message.streamId,
-      eventType: 'session.completed',
-      payload: { provider: provider.name },
+      stream_id: message.stream_id,
+      event_type: 'session_complete',
+      payload: { session_id: message.session_id, provider: provider.name },
     });
   } catch (error) {
     await send({
       type: 'error',
-      streamId: message.streamId,
+      stream_id: message.stream_id,
       message: error instanceof Error ? error.message : String(error),
     });
   } finally {
-    await send({ type: 'done', streamId: message.streamId });
+    await send({ type: 'done', stream_id: message.stream_id });
   }
 }
 
