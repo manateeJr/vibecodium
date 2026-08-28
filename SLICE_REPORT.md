@@ -23,32 +23,33 @@
 
 ## Governance status
 
-| Check                    | Status                                                                                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Max file lines (`500`)   | Enforced in staged pre-commit and all-tracked gate; lockfiles, generated, vendored, and evidence paths are explicitly exempted.                                     |
-| Branch/issue binding     | Enforced by `.vibecodium/branch.json`, staged hook, and commit-msg hook; current issues are `#1 #2 #5 #6 #8 #11`. `gh` labeling/state checks warn when unavailable. |
-| Branch naming            | Enforced from `branchNamePattern` in the manifest.                                                                                                                  |
-| Nested worktrees         | Enforced in pre-commit and gate; sibling-only paths pass.                                                                                                           |
-| Main guard               | Enforced in pre-commit/gate plus post-checkout and post-merge hooks.                                                                                                |
-| Focused/skipped tests    | Enforced from manifest regexes.                                                                                                                                     |
-| Lockfile sync            | Enforced for package/lock presence, root dependency parity, and staged package changes.                                                                             |
-| Debug leftovers          | Warn-tier scan for `console.log`/`debugger` in `src`.                                                                                                               |
-| Stale worktree sweep     | Maintenance-only `scripts/worktree-sweep`; dry-run default, `--prune` removes merged+aged+clean candidates.                                                         |
-| Dependency approvals     | Enforced against `HEAD`; approvals require a reason and approver, and the file states agents cannot self-approve.                                                   |
-| npm audit                | Warn-tier, offline-safe advisory scan; high/critical findings do not block this phase.                                                                              |
-| Protected merge evidence | `post-merge`, pre-push gate, and `scripts/merge-gate` require a passing strict gate evidence record for the exact main head.                                        |
+| Check                    | Status                                                                                                                                                                 |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Max file lines (`500`)   | Enforced in staged pre-commit and all-tracked gate; lockfiles, generated, vendored, and evidence paths are explicitly exempted.                                        |
+| Branch/issue binding     | Enforced by `.vibecodium/branch.json`, staged hook, and commit-msg hook; current issues are `#1 #2 #5 #6 #8 #11`. `gh` labeling/state checks warn when unavailable.    |
+| Branch naming            | Enforced from `branchNamePattern` in the manifest.                                                                                                                     |
+| Nested worktrees         | Enforced in pre-commit and gate; sibling-only paths pass.                                                                                                              |
+| Main guard               | Enforced in pre-commit/gate plus post-checkout and post-merge hooks.                                                                                                   |
+| Primary merge-only       | `primaryCheckout: merge-only` allows merge-in-progress/multi-parent commits in the primary and rejects authored commits; sibling worktrees remain authoring checkouts. |
+| Focused/skipped tests    | Enforced from manifest regexes.                                                                                                                                        |
+| Lockfile sync            | Enforced for package/lock presence, root dependency parity, and staged package changes.                                                                                |
+| Debug leftovers          | Warn-tier scan for `console.log`/`debugger` in `src`.                                                                                                                  |
+| Stale worktree sweep     | Maintenance-only `scripts/worktree-sweep`; dry-run default, `--prune` removes merged+aged+clean candidates.                                                            |
+| Dependency approvals     | Enforced against `HEAD`; approvals require a reason and approver, and the file states agents cannot self-approve.                                                      |
+| npm audit                | Warn-tier, offline-safe advisory scan; high/critical findings do not block this phase.                                                                                 |
+| Protected merge evidence | `post-merge`, pre-push gate, and `scripts/merge-gate` require a passing strict gate evidence record for the exact main head.                                           |
 
 ## Exact gate result
 
 Real `npm run gate` / pre-push output:
 
 ```text
-> node scripts/gate.mjs
-max-file-lines passed: 50 tracked candidate(s), max 500
+max-file-lines passed: 51 tracked candidate(s), max 500
 branch-name passed: build/slice-0-1
 branch-issue passed
 worktree-nesting passed: 7 worktree(s)
 main-guard passed: build/slice-0-1
+primary-merge-only passed: primary validation run
 focused-tests passed: 3 test file(s)
 lockfile-sync passed: package-lock.json
 dependency-approval passed: no new dependencies

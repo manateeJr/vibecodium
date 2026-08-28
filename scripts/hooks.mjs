@@ -12,6 +12,7 @@ const governanceChecks = [
   ['branch-issue', ['scripts/checks/branch-issue.mjs', '--staged']],
   ['worktree-nesting', ['scripts/checks/worktree-nesting.mjs']],
   ['main-guard', ['scripts/checks/main-guard.mjs']],
+  ['primary-merge-only', ['scripts/checks/primary-merge-only.mjs', '--commit']],
   ['focused-tests', ['scripts/checks/focused-tests.mjs']],
   ['lockfile-sync', ['scripts/checks/lockfile-sync.mjs', '--staged']],
   ['dependency-approval', ['scripts/checks/dependency-approval.mjs', '--staged']],

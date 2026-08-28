@@ -15,7 +15,7 @@
     "generated/**",
     "**/generated/**"
   ],
-  "branchNamePattern": "^(build|fix|feat|chore|docs)/.+$",
+  "primaryCheckout": "merge-only",
   "branchBindingFile": ".vibecodium/branch.json",
   "lockfiles": ["package-lock.json"],
   "staleWorktreeDays": 14,
