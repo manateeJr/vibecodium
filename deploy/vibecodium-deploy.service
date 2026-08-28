@@ -1,0 +1,10 @@
+[Unit]
+Description=Vibecodium auto-deploy (build + restart when main advances)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/vibecodium
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/var/lib/snapd/snap/bin
+ExecStart=/usr/bin/node scripts/deploy.mjs
+SyslogIdentifier=vibecodium-deploy
