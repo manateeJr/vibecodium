@@ -2,11 +2,98 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#06130d" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Vibecodium" />
     <title>Vibecodium</title>
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/tokens.css" />
+    <link rel="stylesheet" href="/pocket.css" />
   </head>
   <body>
-    <p style="color: var(--ink); font-family: var(--mono)">Vibecodium</p>
+    <main class="app-shell">
+      <header class="top-strip">
+        <div>
+          <p class="brand-kicker">CONTROL PLANE</p>
+          <p class="brand-name">Vibecodium</p>
+        </div>
+        <div class="connection" aria-live="polite">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connection-status">READY</span>
+        </div>
+      </header>
+
+      <section class="stream-panel" aria-labelledby="stream-title">
+        <div class="section-heading">
+          <h1 id="stream-title">STREAM</h1>
+          <span id="stream-caption">No active stream</span>
+        </div>
+        <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
+          <li id="stream-empty" class="stream-empty">Open a session or run a workflow to begin.</li>
+        </ol>
+      </section>
+
+      <form id="prompt-form" class="prompt-bar">
+        <div class="prompt-label">
+          <span>PROMPT</span>
+          <span class="prompt-hint">SESSION.OPEN</span>
+        </div>
+        <div class="prompt-grid">
+          <label class="sr-only" for="provider">Provider</label>
+          <select id="provider" name="provider" autocomplete="off">
+            <option value="fake">fake</option>
+            <option value="omp">omp</option>
+            <option value="codex">codex</option>
+            <option value="claude">claude</option>
+          </select>
+          <label class="sr-only" for="prompt">Prompt</label>
+          <input
+            id="prompt"
+            name="prompt"
+            type="text"
+            autocomplete="off"
+            placeholder="What should this session do?"
+            required
+          />
+          <button id="open-session" class="button button--open" type="submit">OPEN</button>
+        </div>
+      </form>
+
+      <section class="action-row" aria-label="Control actions">
+        <button id="stop-session" class="button button--stop" type="button" disabled>STOP</button>
+        <button id="run-workflow" class="button button--run" type="button">RUN BUILD</button>
+        <button id="approve-workflow" class="button button--approve" type="button" disabled>
+          APPROVE
+        </button>
+      </section>
+
+      <details class="token-panel">
+        <summary>
+          <span>CAPABILITY TOKEN</span>
+          <span id="token-state" class="token-state">not set</span>
+        </summary>
+        <label for="capability-token">Paste the token for remote commands</label>
+        <input
+          id="capability-token"
+          name="capability-token"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="cap_..."
+        />
+        <p class="token-note">Stored only in this browser on this device.</p>
+      </details>
+    </main>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      }
+    </script>
+    <script type="module" src="/app.js"></script>
   </body>
 </html>

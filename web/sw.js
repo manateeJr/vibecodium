@@ -1,0 +1,88 @@
+/* global self */
+
+const CACHE_NAME = 'vibecodium-shell-v1';
+const SHELL_ASSETS = Object.freeze([
+  '/',
+  '/index.html',
+  '/app.js',
+  '/pocket.css',
+  '/tokens.css',
+  '/client.js',
+  '/manifest.webmanifest',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png',
+  '/icons/maskable-512.png',
+  '/icons/apple-touch-icon.png',
+  '/favicon.ico',
+]);
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    globalThis.caches
+      .open(CACHE_NAME)
+      .then((cache) => cache.addAll(SHELL_ASSETS))
+      .then(() => self.skipWaiting()),
+  );
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    globalThis.caches
+      .keys()
+      .then((names) =>
+        Promise.all(
+          names
+            .filter((name) => name.startsWith('vibecodium-shell-') && name !== CACHE_NAME)
+            .map((name) => globalThis.caches.delete(name)),
+        ),
+      )
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+
+  const url = new globalThis.URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  if (isControlPlanePath(url.pathname)) {
+    event.respondWith(globalThis.fetch(request));
+    return;
+  }
+  if (request.mode === 'navigate' || SHELL_ASSETS.includes(url.pathname)) {
+    event.respondWith(cacheFirst(request));
+  }
+});
+
+function isControlPlanePath(pathname) {
+  return (
+    pathname === '/events' ||
+    pathname.startsWith('/events/') ||
+    pathname === '/commands' ||
+    pathname.startsWith('/commands/') ||
+    pathname === '/healthz' ||
+    pathname.startsWith('/api/')
+  );
+}
+
+async function cacheFirst(request) {
+  const cached = await globalThis.caches.match(request);
+  if (cached) return cached;
+
+  try {
+    const response = await globalThis.fetch(request);
+    if (response.ok) {
+      const cache = await globalThis.caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const fallback = await globalThis.caches.match('/index.html');
+    if (fallback) return fallback;
+    return new globalThis.Response('Vibecodium is offline.', {
+      status: 503,
+      headers: { 'content-type': 'text/plain' },
+    });
+  }
+}
