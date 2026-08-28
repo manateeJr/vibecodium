@@ -1,6 +1,6 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v1';
+const CACHE_NAME = 'vibecodium-shell-v2';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
@@ -51,7 +51,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
   if (request.mode === 'navigate' || SHELL_ASSETS.includes(url.pathname)) {
-    event.respondWith(cacheFirst(request));
+    event.respondWith(staleWhileRevalidate(request));
   }
 });
 
@@ -66,23 +66,22 @@ function isControlPlanePath(pathname) {
   );
 }
 
-async function cacheFirst(request) {
-  const cached = await globalThis.caches.match(request);
-  if (cached) return cached;
-
-  try {
-    const response = await globalThis.fetch(request);
-    if (response.ok) {
-      const cache = await globalThis.caches.open(CACHE_NAME);
-      await cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    const fallback = await globalThis.caches.match('/index.html');
-    if (fallback) return fallback;
-    return new globalThis.Response('Vibecodium is offline.', {
-      status: 503,
-      headers: { 'content-type': 'text/plain' },
-    });
-  }
+async function staleWhileRevalidate(request) {
+  const cache = await globalThis.caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+  const network = globalThis
+    .fetch(request)
+    .then((response) => {
+      if (response.ok) cache.put(request, response.clone());
+      return response;
+    })
+    .catch(() => undefined);
+  const response = cached ?? (await network);
+  if (response) return response;
+  const fallback = await cache.match('/index.html');
+  if (fallback) return fallback;
+  return new globalThis.Response('Vibecodium is offline.', {
+    status: 503,
+    headers: { 'content-type': 'text/plain' },
+  });
 }
