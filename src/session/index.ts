@@ -5,11 +5,17 @@ import {
   COMMAND_NAMES,
   type SessionOpenArgs,
   type SessionOpenResult,
+  type SessionSendArgs,
+  type SessionSendResult,
   type SessionStopArgs,
   type SessionStopResult,
 } from '../contracts/commands.js';
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
-import type { StartWorkerMessage, WorkerOutputMessage } from '../server/session-worker.js';
+import type {
+  StartWorkerMessage,
+  TurnWorkerMessage,
+  WorkerOutputMessage,
+} from '../server/session-worker.js';
 import { AdmissionBudget, admissionConfigFromEnv, SessionThrottledError } from './admission.js';
 
 export type SessionFork = (
@@ -28,7 +34,10 @@ export interface SessionSubsystemOptions {
 interface SessionState {
   readonly session_id: string;
   readonly stream_id: string;
+  readonly provider: string;
   readonly worker: ChildProcess;
+  turn: number;
+  busy: boolean;
   terminal: boolean;
 }
 
@@ -55,6 +64,7 @@ export class SessionSubsystem implements Subsystem {
     this.registered = true;
     this.context = context;
     context.registerCommand(COMMAND_NAMES.sessionOpen, (command: unknown) => this.open(command));
+    context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
   }
 
@@ -85,6 +95,7 @@ export class SessionSubsystem implements Subsystem {
       session_id,
       provider: args.provider,
       prompt: args.prompt,
+      ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
     });
 
     let worker: ChildProcess;
@@ -103,15 +114,24 @@ export class SessionSubsystem implements Subsystem {
       throw error;
     }
 
-    const state: SessionState = { session_id, stream_id, worker, terminal: false };
+    const state: SessionState = {
+      session_id,
+      stream_id,
+      provider: args.provider,
+      worker,
+      turn: 1,
+      busy: true,
+      terminal: false,
+    };
     this.sessions.set(session_id, state);
     worker.on('message', (message: WorkerOutputMessage) =>
       this.handleWorkerMessage(state, message),
     );
-    worker.on('error', (error) => this.failSession(state, errorMessage(error)));
+    worker.on('error', (error) => this.failSession(state, errorMessage(error), true));
     worker.on('exit', (code) => {
-      if (code !== 0 && !state.terminal)
-        this.failSession(state, `session worker exited with code ${code ?? 'unknown'}`);
+      if (code !== 0 && !state.terminal) {
+        this.failSession(state, `session worker exited with code ${code ?? 'unknown'}`, true);
+      }
       this.sessions.delete(session_id);
     });
 
@@ -121,6 +141,7 @@ export class SessionSubsystem implements Subsystem {
       stream_id,
       provider: args.provider,
       prompt: args.prompt,
+      ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
     };
     try {
       worker.send(startMessage, (error) => {
@@ -132,13 +153,49 @@ export class SessionSubsystem implements Subsystem {
     return { session_id, stream_id };
   }
 
+  public send(command: unknown): SessionSendResult {
+    const args = sessionSendArgs(command);
+    const state = this.sessions.get(args.session_id);
+    if (!state || state.terminal) throw new Error('session not found');
+    if (state.busy) throw new Error('session is busy');
+    const turn = ++state.turn;
+    this.requireContext().append(state.stream_id, 'session_input', {
+      session_id: state.session_id,
+      turn,
+      text: args.prompt,
+    });
+    state.busy = true;
+    const message: TurnWorkerMessage = {
+      type: 'turn',
+      stream_id: state.stream_id,
+      prompt: args.prompt,
+    };
+    try {
+      state.worker.send(message, (error) => {
+        if (error) this.failSession(state, errorMessage(error));
+      });
+    } catch (error: unknown) {
+      this.failSession(state, errorMessage(error));
+    }
+    return { stream_id: state.stream_id, turn };
+  }
+
   public async stop(command: unknown): Promise<SessionStopResult> {
     const args = sessionStopArgs(command);
     const state = this.sessions.get(args.session_id);
     if (!state || state.terminal) return { stopped: false };
     state.terminal = true;
-    this.sessions.delete(args.session_id);
+    this.requireContext().append(state.stream_id, 'session_complete', {
+      session_id: state.session_id,
+      provider: state.provider,
+    });
+    try {
+      state.worker.send({ type: 'stop', stream_id: state.stream_id });
+    } catch {
+      // Stopping is best effort; the terminal event is already durable.
+    }
     if (state.worker.connected || !state.worker.killed) state.worker.kill();
+    this.sessions.delete(args.session_id);
     return { stopped: true };
   }
 
@@ -151,23 +208,27 @@ export class SessionSubsystem implements Subsystem {
   }
 
   private handleWorkerMessage(state: SessionState, message: WorkerOutputMessage): void {
-    if (!message || message.stream_id !== state.stream_id) return;
+    if (state.terminal || !message || message.stream_id !== state.stream_id) return;
     if (message.type === 'event') {
       this.requireContext().append(message.stream_id, message.event_type, message.payload);
-      if (message.event_type === 'session_complete') state.terminal = true;
+      if (message.event_type === 'turn_complete') state.busy = false;
       return;
     }
     if (message.type === 'error') this.failSession(state, message.message);
   }
 
-  private failSession(state: SessionState, message: string): void {
+  private failSession(state: SessionState, message: string, terminal = false): void {
     if (state.terminal) return;
-    state.terminal = true;
     this.requireContext().append(state.stream_id, 'verify_failed', {
       session_id: state.session_id,
       stage: 'session',
       error: message,
     });
+    state.busy = false;
+    if (terminal) {
+      state.terminal = true;
+      this.sessions.delete(state.session_id);
+    }
   }
 
   private requireContext(): SubsystemContext {
@@ -192,6 +253,14 @@ function sessionOpenArgs(command: unknown): SessionOpenArgs {
     prompt: value.prompt,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
   };
+}
+
+function sessionSendArgs(command: unknown): SessionSendArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim())
+    throw new Error('session_id is required');
+  if (typeof value.prompt !== 'string') throw new Error('prompt is required');
+  return { session_id: value.session_id, prompt: value.prompt };
 }
 
 function sessionStopArgs(command: unknown): SessionStopArgs {

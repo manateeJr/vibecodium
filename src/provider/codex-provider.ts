@@ -18,7 +18,12 @@ export class CodexProvider extends CliProvider {
   }
 
   protected commandArgs(request: ProviderSpawnRequest): string[] {
-    return ['exec', '--json', '--ephemeral', '--', request.prompt];
+    if (request.resume) return ['exec', 'resume', '--last', '--json', '--', request.prompt];
+    return ['exec', '--json', '--', request.prompt];
+  }
+
+  protected override extraEnv(request: ProviderSpawnRequest): NodeJS.ProcessEnv | undefined {
+    return request.storageDir === undefined ? undefined : { CODEX_HOME: request.storageDir };
   }
 
   public capabilityMatrix(): ProviderCapabilityMatrix {

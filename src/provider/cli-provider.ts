@@ -61,13 +61,28 @@ export abstract class CliProvider implements ProviderSessionRef {
   }
 
   protected abstract commandArgs(request: ProviderSpawnRequest): string[];
+  protected spawnOptions(request: ProviderSpawnRequest): SpawnOptions {
+    const extra = this.extraEnv(request);
+    return {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+      ...(extra === undefined ? {} : { env: { ...process.env, ...extra } }),
+    };
+  }
+
+  protected extraEnv(request: ProviderSpawnRequest): NodeJS.ProcessEnv | undefined {
+    void request;
+    return undefined;
+  }
 
   public abstract capabilityMatrix(): ProviderCapabilityMatrix;
 
   public async spawn(request: ProviderSpawnRequest): Promise<ProviderSession> {
-    const child = this.spawnProcess(this.command, this.commandArgs(request), {
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = this.spawnProcess(
+      this.command,
+      this.commandArgs(request),
+      this.spawnOptions(request),
+    );
     const session: CliProviderSession = {
       id: randomUUID(),
       request,

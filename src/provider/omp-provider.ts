@@ -12,7 +12,11 @@ export class OmpProvider extends CliProvider {
   }
 
   protected commandArgs(request: ProviderSpawnRequest): string[] {
-    return ['--print', '--mode', 'text', '--no-session', '--', request.prompt];
+    const args = ['--print', '--mode', 'text'];
+    if (request.storageDir) args.push('--session-dir', request.storageDir);
+    if (request.resume) args.push('--continue');
+    args.push('--', request.prompt);
+    return args;
   }
 
   public capabilityMatrix(): ProviderCapabilityMatrix {
