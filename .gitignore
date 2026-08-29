@@ -9,3 +9,5 @@ dist/
 .vibecodium/*.db
 .vibecodium/*.db-shm
 .vibecodium/*.db-wal
+.vibecodium/voice-venv/
+.vibecodium/voice-models/
