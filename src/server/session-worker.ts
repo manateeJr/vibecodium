@@ -14,6 +14,7 @@ export interface StartWorkerMessage {
   readonly prompt: string;
   readonly cwd?: string;
   readonly resumeRef?: string;
+  readonly storageDir?: string;
 }
 
 export interface TurnWorkerMessage {
@@ -154,9 +155,10 @@ export function startSessionWorker(): void {
         return;
       }
       const storageDir =
-        message.resumeRef === undefined
+        message.storageDir ??
+        (message.resumeRef === undefined
           ? path.join(os.tmpdir(), 'vibecodium-sessions', message.session_id)
-          : undefined;
+          : undefined);
       state = {
         session_id: message.session_id,
         stream_id: message.stream_id,
