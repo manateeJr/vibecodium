@@ -105,12 +105,14 @@ test('SessionSubsystem keeps a conversation active across turns', async () => {
     provider: 'fake',
     prompt: 'first prompt',
     cwd: '/tmp/project',
+    project: 'vibecodium',
   });
   assert.deepEqual(context.events[0]?.payload, {
     session_id: opened.session_id,
     provider: 'fake',
     prompt: 'first prompt',
     cwd: '/tmp/project',
+    project: 'vibecodium',
   });
   assert.deepEqual(worker.messages[0], {
     type: 'start',
