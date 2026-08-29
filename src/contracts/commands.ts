@@ -7,6 +7,9 @@ export const COMMAND_NAMES = {
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
+  machineList: 'machine.list',
+  sessionResume: 'session.resume',
+  workspaceStatus: 'workspace.status',
 } as const;
 export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
 export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
@@ -15,6 +18,9 @@ export const WORKSPACE_LIST_COMMAND = COMMAND_NAMES.workspaceList;
 export const WORKFLOW_RUN_COMMAND = COMMAND_NAMES.workflowRun;
 export const WORKFLOW_APPROVE_COMMAND = COMMAND_NAMES.workflowApprove;
 export const WORKFLOW_START_COMMAND = 'workflow.start';
+export const MACHINE_LIST_COMMAND = COMMAND_NAMES.machineList;
+export const SESSION_RESUME_COMMAND = COMMAND_NAMES.sessionResume;
+export const WORKSPACE_STATUS_COMMAND = COMMAND_NAMES.workspaceStatus;
 
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
 
@@ -28,6 +34,29 @@ export interface SessionOpenResult {
   readonly session_id: string;
   readonly stream_id: string;
 }
+
+export interface MachineSessionSummary {
+  readonly source: 'omp' | 'codex';
+  readonly ref: string;
+  readonly title: string;
+  readonly cwd: string;
+  readonly updated_at: string;
+}
+
+export type MachineListArgs = Record<string, never>;
+
+export interface MachineListResult {
+  readonly sessions: readonly MachineSessionSummary[];
+}
+
+export interface SessionResumeArgs {
+  readonly source: 'omp' | 'codex';
+  readonly ref: string;
+  readonly prompt: string;
+  readonly cwd?: string;
+}
+
+export type SessionResumeResult = SessionOpenResult;
 
 export interface SessionStopArgs {
   readonly session_id: string;
@@ -56,6 +85,17 @@ export type WorkspaceListArgs = Record<string, never>;
 
 export interface WorkspaceListResult {
   readonly workspaces: readonly WorkspaceEntry[];
+}
+
+export interface WorkspaceStatusArgs {
+  readonly path: string;
+}
+
+export interface WorkspaceStatusResult {
+  readonly branch: string;
+  readonly dirty: boolean;
+  readonly ahead?: number;
+  readonly behind?: number;
 }
 
 export interface WorkflowRunArgs extends Readonly<Record<string, unknown>> {
@@ -89,6 +129,9 @@ export interface CommandArgsMap {
   'workspace.list': WorkspaceListArgs;
   'workflow.run': WorkflowRunArgs;
   'workflow.approve': WorkflowApproveArgs;
+  'machine.list': MachineListArgs;
+  'session.resume': SessionResumeArgs;
+  'workspace.status': WorkspaceStatusArgs;
 }
 
 export interface CommandResultMap {
@@ -98,6 +141,9 @@ export interface CommandResultMap {
   'session.stop': SessionStopResult;
   'workflow.run': WorkflowRunResult;
   'workflow.approve': WorkflowApproveResult;
+  'machine.list': MachineListResult;
+  'session.resume': SessionResumeResult;
+  'workspace.status': WorkspaceStatusResult;
 }
 
 export type CommandArgs<Name extends CommandName = CommandName> = CommandArgsMap[Name];

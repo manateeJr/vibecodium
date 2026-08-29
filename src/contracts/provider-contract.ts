@@ -6,6 +6,7 @@ export interface ProviderSpawnRequest {
   readonly cwd?: string;
   readonly storageDir?: string;
   readonly resume?: boolean;
+  readonly resumeRef?: string;
 }
 
 export interface ProviderSession {
