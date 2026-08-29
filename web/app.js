@@ -4,6 +4,7 @@ import { eventClock } from '/lib/time.js';
 import { createActions } from '/ui/actions.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { createProjectPicker } from '/ui/project-picker.js';
+import { createProjectManager } from '/ui/project-manager.js';
 import { createTranscriptView } from '/ui/transcript.js';
 import { applySessionEvent } from '/ui/events.js';
 
@@ -21,6 +22,21 @@ const elements = {
   composeMode: document.querySelector('#compose-mode'),
   modeChat: document.querySelector('#mode-chat'),
   modeWorkflow: document.querySelector('#mode-workflow'),
+  projectSelector: document.querySelector('#project-selector'),
+  projectAdd: document.querySelector('#add-project'),
+  projectRemove: document.querySelector('#remove-project'),
+  quickActions: document.querySelector('#quick-actions'),
+  scratchPicker: document.querySelector('#scratch-project-picker'),
+  projectFormShell: document.querySelector('#add-project-form'),
+  projectForm: document.querySelector('#project-form'),
+  projectName: document.querySelector('#project-name'),
+  projectPath: document.querySelector('#project-path'),
+  projectDescription: document.querySelector('#project-description'),
+  projectDetect: document.querySelector('#detect-project'),
+  projectSave: document.querySelector('#save-project'),
+  projectCancel: document.querySelector('#cancel-project'),
+  projectStatus: document.querySelector('#project-status'),
+  projectProposals: document.querySelector('#project-proposals'),
   chatCompose: document.querySelector('#chat-compose'),
   promptForm: document.querySelector('#prompt-form'),
   projectFilter: document.querySelector('#project-filter'),
@@ -100,6 +116,16 @@ const history = createHistoryDrawer({
   },
   onOpen: loadMachineSessions,
 });
+const projectManager = createProjectManager({
+  client,
+  elements,
+  errorMessage,
+  onError: (message) => appendError(message),
+  onProjectChange: (project) => {
+    if (project) projects.remember(project.path);
+  },
+  onQuickAction: (project, action) => void actions.openQuickAction(project, action),
+});
 const settings = createSettingsDrawer({
   drawer: elements.settingsDrawer,
   toggle: elements.settingsToggle,
@@ -123,6 +149,7 @@ const actions = createActions({
   sessions,
   state: actionState,
   getSelectedStreamId: () => selectedStreamId,
+  getActiveProject: () => projectManager.selectedProject(),
   setStatus,
   refreshControls,
   renderSwitcher,
@@ -146,6 +173,7 @@ refreshControls();
 renderSwitcher();
 renderStream();
 void loadWorkspaces();
+void projectManager.load();
 elements.promptForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void actions.openSession();
@@ -281,6 +309,7 @@ function ensureEntry(streamId, label = '') {
       busy: false,
       lines: [],
       cwd: '',
+      project: '',
     };
     sessions.set(streamId, entry);
     while (sessions.size > 20) {
@@ -302,6 +331,7 @@ function openMachineSession(session) {
     busy: false,
     lines: [],
     cwd: session.cwd || '',
+    project: '',
     resume: { source: session.source, ref: session.ref },
     updated_at: session.updated_at,
   };
@@ -361,7 +391,8 @@ function renderStream() {
 }
 function prepareRestart(entry) {
   setComposeMode('chat');
-  if (entry.cwd) projects.selectPath(entry.cwd);
+  if (entry.project) projectManager.selectProject(entry.project);
+  else if (entry.cwd) projects.selectPath(entry.cwd);
   elements.prompt.focus();
   elements.prompt.scrollIntoView?.({ block: 'nearest' });
   showTransientLine(

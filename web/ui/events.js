@@ -19,6 +19,7 @@ export function applySessionEvent(entry, event, pushLine) {
   const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
   if (typeof payload.session_id === 'string') entry.session_id = payload.session_id;
   if (typeof payload.cwd === 'string') entry.cwd = payload.cwd;
+  if (typeof payload.project === 'string') entry.project = payload.project;
   const clock = eventClock(event.ts);
   if (entry.kind === 'session') {
     if (event.type === 'session_started') {

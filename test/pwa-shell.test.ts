@@ -44,6 +44,11 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="history-toggle"/);
     assert.match(index, /id="settings-toggle"/);
     assert.match(index, /id="project-filter"/);
+    assert.match(index, /id="project-selector"/);
+    assert.match(index, /id="add-project"/);
+    assert.match(index, /id="add-project-form"/);
+    assert.match(index, /id="quick-actions"/);
+    assert.match(index, /id="project-proposals"/);
     assert.match(index, /id="history-drawer"/);
     assert.match(index, /id="history-search"/);
     assert.match(index, /id="settings-drawer"/);
@@ -76,6 +81,9 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.equal(layoutResponse.headers.get('content-type'), 'text/css');
     const eventsResponse = await fetch(`${address.httpUrl}/ui/events.js`);
     assert.equal(eventsResponse.status, 200);
+    const projectManagerResponse = await fetch(`${address.httpUrl}/ui/project-manager.js`);
+    assert.equal(projectManagerResponse.status, 200);
+    assert.equal(projectManagerResponse.headers.get('content-type'), 'text/javascript');
     assert.equal(eventsResponse.headers.get('content-type'), 'text/javascript');
     const markdownResponse = await fetch(`${address.httpUrl}/lib/markdown.js`);
     assert.equal(markdownResponse.status, 200);

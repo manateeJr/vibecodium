@@ -322,3 +322,162 @@
   margin: 0;
   padding-top: 8px;
 }
+
+.project-scope {
+  display: grid;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.project-scope__bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: end;
+}
+
+.project-scope__field,
+.project-form__field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.project-scope__field .entry-label,
+.project-form__field .entry-label {
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.project-selector,
+.project-form input,
+.project-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font: inherit;
+}
+
+.project-selector {
+  min-height: 44px;
+}
+
+.project-selector:focus,
+.project-form input:focus,
+.project-form textarea:focus {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.project-scope__button,
+.project-form__button {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.project-scope__button:hover,
+.project-form__button:hover,
+.quick-action-chip:hover {
+  border-color: var(--focus);
+}
+
+.project-scope__button--remove {
+  color: var(--bad);
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-action-chip {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ok);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.project-form-shell {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+}
+
+.project-form {
+  display: grid;
+  gap: 8px;
+}
+
+.project-form__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.project-form__status {
+  min-height: 18px;
+  color: var(--amber);
+  font-size: var(--fs-small);
+}
+
+.project-proposals {
+  display: grid;
+  gap: 8px;
+  margin: 2px 0;
+}
+
+.project-proposal {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+}
+
+.project-proposal__keep {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+}
+
+.project-proposal textarea {
+  grid-column: 2;
+  resize: vertical;
+}
+
+.history-group {
+  display: grid;
+  gap: 5px;
+}
+
+.history-group__title {
+  margin: 7px 0 0;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.history-group__list {
+  display: grid;
+  gap: 6px;
+}

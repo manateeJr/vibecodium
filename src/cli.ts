@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createClient, type VibecodiumClient } from './client/index.js';
+import { createClient, type ProjectSaveArgs, type VibecodiumClient } from './client/index.js';
 import { ControlPlane } from './server/control-plane.js';
 
 export async function main(args = process.argv.slice(2)): Promise<void> {
@@ -11,6 +11,11 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     return;
   }
   const client = createClientFromEnv();
+
+  if (command === 'project') {
+    await runProjectCommand(client, args.slice(1));
+    return;
+  }
   if (command === 'machine') {
     await runMachineCommand(client, args.slice(1));
     return;
@@ -98,6 +103,35 @@ async function runSessionCommand(client: VibecodiumClient, args: string[]): Prom
   }
   if (subcommand === 'stop' && args.length === 2) {
     printJson(await client.stopSession({ session_id: args[1]! }));
+    return;
+  }
+  usage();
+}
+
+async function runProjectCommand(client: VibecodiumClient, args: string[]): Promise<void> {
+  if (args.length === 1 && args[0] === 'list') {
+    const result = await client.listProjects();
+    for (const project of result.projects)
+      process.stdout.write(`${project.name}\t${project.path}\t${project.description}\n`);
+    return;
+  }
+  if (args.length === 2 && args[0] === 'detect' && args[1]) {
+    printJson(await client.detectProject({ path: args[1] }));
+    return;
+  }
+  if (args.length === 2 && args[0] === 'save' && args[1]) {
+    let parsed: ProjectSaveArgs;
+    try {
+      parsed = JSON.parse(args[1]) as ProjectSaveArgs;
+    } catch {
+      usage();
+      return;
+    }
+    printJson(await client.saveProject(parsed));
+    return;
+  }
+  if (args.length === 2 && args[0] === 'remove' && args[1]) {
+    printJson(await client.removeProject({ name: args[1] }));
     return;
   }
   usage();

@@ -85,6 +85,74 @@
         </div>
 
         <div id="chat-compose" class="chat-compose">
+          <section class="project-scope" aria-label="Project scope">
+            <div class="project-scope__bar">
+              <label class="project-scope__field" for="project-selector">
+                <span class="entry-label">PROJECT</span>
+                <select id="project-selector" class="project-selector" autocomplete="off">
+                  <option value="">Scratch</option>
+                </select>
+              </label>
+              <button id="add-project" class="project-scope__button" type="button">ADD</button>
+              <button
+                id="remove-project"
+                class="project-scope__button project-scope__button--remove"
+                type="button"
+                hidden
+              >
+                REMOVE
+              </button>
+            </div>
+            <div id="quick-actions" class="quick-actions" hidden aria-label="Quick actions"></div>
+          </section>
+          <section id="add-project-form" class="project-form-shell" hidden>
+            <form id="project-form" class="project-form">
+              <div class="project-form__field">
+                <label class="entry-label" for="project-path">PATH</label>
+                <input
+                  id="project-path"
+                  name="project-path"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="/path/to/project"
+                  required
+                />
+              </div>
+              <div class="project-form__field">
+                <label class="entry-label" for="project-name">NAME</label>
+                <input
+                  id="project-name"
+                  name="project-name"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Project name"
+                />
+              </div>
+              <div class="project-form__field">
+                <label class="entry-label" for="project-description">DESCRIPTION</label>
+                <input
+                  id="project-description"
+                  name="project-description"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="What is this project?"
+                />
+              </div>
+              <div id="project-proposals" class="project-proposals" hidden></div>
+              <span id="project-status" class="project-form__status" aria-live="polite"></span>
+              <div class="project-form__actions">
+                <button id="detect-project" class="project-form__button" type="submit">
+                  DETECT
+                </button>
+                <button id="save-project" class="project-form__button" type="button" disabled>
+                  SAVE
+                </button>
+                <button id="cancel-project" class="project-form__button" type="button">
+                  CANCEL
+                </button>
+              </div>
+            </form>
+          </section>
           <form id="turnForm" class="turn-bar" hidden>
             <div class="prompt-label">
               <span class="entry-label">CHAT</span>
@@ -108,25 +176,27 @@
               <span class="entry-label">FREE SESSION</span>
               <span class="prompt-hint">SESSION.OPEN</span>
             </div>
-            <label class="sr-only" for="project-filter">Filter projects</label>
-            <input
-              id="project-filter"
-              class="project-filter"
-              name="project-filter"
-              type="search"
-              autocomplete="off"
-              placeholder="Filter projects..."
-            />
-            <div
-              id="recent-projects"
-              class="recent-projects"
-              hidden
-              aria-label="Recent projects"
-            ></div>
-            <label class="sr-only" for="workspace">Project</label>
-            <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
-              <option value="">(default cwd)</option>
-            </select>
+            <div id="scratch-project-picker">
+              <label class="sr-only" for="project-filter">Filter projects</label>
+              <input
+                id="project-filter"
+                class="project-filter"
+                name="project-filter"
+                type="search"
+                autocomplete="off"
+                placeholder="Filter projects..."
+              />
+              <div
+                id="recent-projects"
+                class="recent-projects"
+                hidden
+                aria-label="Recent projects"
+              ></div>
+              <label class="sr-only" for="workspace">Project</label>
+              <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
+                <option value="">(default cwd)</option>
+              </select>
+            </div>
             <div class="prompt-grid">
               <label class="sr-only" for="prompt">Prompt</label>
               <input

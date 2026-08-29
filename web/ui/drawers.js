@@ -32,40 +32,19 @@ export function createHistoryDrawer({
     liveList.replaceChildren();
     machineList.replaceChildren();
     const live = liveEntries.filter((entry) =>
-      matchesQuery(query, entry.label, entry.cwd, entry.stream_id),
+      matchesQuery(query, entry.label, entry.cwd, entry.project, entry.stream_id),
     );
     const machine = machineEntries.filter((entry) =>
       matchesQuery(query, entry.title, entry.cwd, entry.source, entry.ref),
     );
     if (live.length === 0)
       liveList.append(emptyItem(query ? 'No matching live sessions.' : 'No live sessions.'));
-    for (const entry of live) {
-      const button = document.createElement('button');
-      button.className = 'history-item';
-      button.type = 'button';
-      button.dataset.status = entry.status;
-      button.innerHTML = `<span class="history-item__title"></span><span class="history-item__meta"></span>`;
-      button.querySelector('.history-item__title').textContent = `${entry.kind} · ${entry.label}`;
-      button.querySelector('.history-item__meta').textContent =
-        `${entry.status} · ${entry.cwd || entry.stream_id}`;
-      button.addEventListener('click', () => onLiveSelect(entry.stream_id));
-      liveList.append(button);
-    }
+    else renderLiveGroups(liveList, live, (entry) => onLiveSelect(entry.stream_id));
     if (machine.length === 0)
       machineList.append(
         emptyItem(query ? 'No matching machine sessions.' : 'No machine sessions found.'),
       );
-    for (const entry of machine) {
-      const button = document.createElement('button');
-      button.className = 'history-item';
-      button.type = 'button';
-      button.innerHTML = `<span class="history-item__title"></span><span class="history-item__meta"></span>`;
-      button.querySelector('.history-item__title').textContent = entry.title || entry.ref;
-      button.querySelector('.history-item__meta').textContent =
-        `${entry.source} · ${entry.cwd || '(default cwd)'} · ${relativeTime(entry.updated_at)}`;
-      button.addEventListener('click', () => onMachineSelect(entry));
-      machineList.append(button);
-    }
+    for (const entry of machine) machineList.append(historyItem(entry, onMachineSelect, true));
   };
 
   const close = () => {
@@ -85,6 +64,44 @@ export function createHistoryDrawer({
     },
     close,
   };
+}
+
+function renderLiveGroups(target, entries, onSelect) {
+  const groups = new Map();
+  for (const entry of entries) {
+    const project = entry.project?.trim() || 'Scratch';
+    const group = groups.get(project) ?? [];
+    group.push(entry);
+    groups.set(project, group);
+  }
+  for (const [project, grouped] of groups) {
+    const section = document.createElement('section');
+    section.className = 'history-group';
+    const heading = document.createElement('h4');
+    heading.className = 'history-group__title';
+    heading.textContent = project;
+    const list = document.createElement('div');
+    list.className = 'history-group__list';
+    for (const entry of grouped) list.append(historyItem(entry, onSelect));
+    section.append(heading, list);
+    target.append(section);
+  }
+}
+
+function historyItem(entry, onSelect, machine = false) {
+  const button = document.createElement('button');
+  button.className = 'history-item';
+  button.type = 'button';
+  button.dataset.status = entry.status;
+  button.innerHTML = `<span class="history-item__title"></span><span class="history-item__meta"></span>`;
+  button.querySelector('.history-item__title').textContent = machine
+    ? entry.title || entry.ref
+    : `${entry.kind} · ${entry.label}`;
+  button.querySelector('.history-item__meta').textContent = machine
+    ? `${entry.source} · ${entry.cwd || '(default cwd)'} · ${relativeTime(entry.updated_at)}`
+    : `${entry.status} · ${entry.cwd || entry.stream_id}`;
+  button.addEventListener('click', () => onSelect(entry));
+  return button;
 }
 
 export function createSettingsDrawer({
