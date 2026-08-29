@@ -34,12 +34,12 @@ export interface DesignTokens {
 
 export const tokens = {
   palette: {
-    bg: '#06130d',
-    bg2: '#071b12',
+    bg: '#020604',
+    bg2: '#05100b',
     ink: '#86ffc0',
     inkHi: '#e2fff0',
     inkDim: '#4b8a6b',
-    line: '#17402c',
+    line: '#1c4c34',
     amber: '#ffd28a',
     bad: '#ff9b88',
     ok: '#a8ffd2',

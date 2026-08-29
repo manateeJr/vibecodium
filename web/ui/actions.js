@@ -18,11 +18,11 @@ export function createActions({
   errorMessage,
 }) {
   const openSession = async () => {
-    const provider = elements.provider.value.trim();
+    const provider = elements.harness.value.trim();
     const prompt = elements.prompt.value.trim();
     const cwd = projects.selectedPath();
     if (!provider || !prompt) {
-      appendError('provider and prompt are required');
+      appendError('default harness and prompt are required');
       return;
     }
     if (cwd) projects.remember(cwd);
@@ -127,7 +127,11 @@ export function createActions({
   };
 
   const runWorkflow = async () => {
-    const template = 'basic-build';
+    const template = elements.workflowTemplate.value.trim();
+    if (!template) {
+      appendError('workflow template is required');
+      return;
+    }
     state.running = true;
     setStatus('STARTING WORKFLOW', 'wait');
     refreshControls();

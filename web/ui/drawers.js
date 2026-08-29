@@ -6,6 +6,7 @@ export function createHistoryDrawer({
   drawer,
   toggle,
   closeButton,
+  searchInput,
   liveList,
   machineList,
   onLiveSelect,
@@ -14,6 +15,7 @@ export function createHistoryDrawer({
 }) {
   let liveEntries = [];
   let machineEntries = [];
+  let query = '';
   toggle.addEventListener('click', () => {
     const open = drawer.hidden;
     drawer.hidden = !open;
@@ -21,12 +23,23 @@ export function createHistoryDrawer({
     if (open) void onOpen();
   });
   closeButton.addEventListener('click', () => close());
+  searchInput.addEventListener('input', () => {
+    query = searchInput.value.trim().toLowerCase();
+    render();
+  });
 
   const render = () => {
     liveList.replaceChildren();
     machineList.replaceChildren();
-    if (liveEntries.length === 0) liveList.append(emptyItem('No live sessions.'));
-    for (const entry of liveEntries) {
+    const live = liveEntries.filter((entry) =>
+      matchesQuery(query, entry.label, entry.cwd, entry.stream_id),
+    );
+    const machine = machineEntries.filter((entry) =>
+      matchesQuery(query, entry.title, entry.cwd, entry.source, entry.ref),
+    );
+    if (live.length === 0)
+      liveList.append(emptyItem(query ? 'No matching live sessions.' : 'No live sessions.'));
+    for (const entry of live) {
       const button = document.createElement('button');
       button.className = 'history-item';
       button.type = 'button';
@@ -34,12 +47,15 @@ export function createHistoryDrawer({
       button.innerHTML = `<span class="history-item__title"></span><span class="history-item__meta"></span>`;
       button.querySelector('.history-item__title').textContent = `${entry.kind} · ${entry.label}`;
       button.querySelector('.history-item__meta').textContent =
-        `${entry.status} · ${entry.stream_id}`;
+        `${entry.status} · ${entry.cwd || entry.stream_id}`;
       button.addEventListener('click', () => onLiveSelect(entry.stream_id));
       liveList.append(button);
     }
-    if (machineEntries.length === 0) machineList.append(emptyItem('No machine sessions found.'));
-    for (const entry of machineEntries) {
+    if (machine.length === 0)
+      machineList.append(
+        emptyItem(query ? 'No matching machine sessions.' : 'No machine sessions found.'),
+      );
+    for (const entry of machine) {
       const button = document.createElement('button');
       button.className = 'history-item';
       button.type = 'button';
@@ -80,10 +96,8 @@ export function createSettingsDrawer({
   harness,
   onTokenInput,
   onTokenCommit,
-  onHarness,
 }) {
   harness.value = loadDefaultHarness();
-  onHarness(harness.value);
   toggle.addEventListener('click', () => {
     const open = drawer.hidden;
     drawer.hidden = !open;
@@ -97,7 +111,6 @@ export function createSettingsDrawer({
   token.addEventListener('change', () => onTokenCommit(token.value.trim()));
   harness.addEventListener('change', () => {
     saveDefaultHarness(harness.value);
-    onHarness(harness.value);
   });
 
   const close = () => {
@@ -106,6 +119,17 @@ export function createSettingsDrawer({
   };
   renderTokenState(token, tokenState);
   return { close, renderTokenState: () => renderTokenState(token, tokenState) };
+}
+
+function matchesQuery(query, ...values) {
+  return (
+    !query ||
+    values.some((value) =>
+      String(value ?? '')
+        .toLowerCase()
+        .includes(query),
+    )
+  );
 }
 
 function renderTokenState(token, state) {

@@ -35,11 +35,17 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="workspace"/);
     assert.match(index, /id="turnForm"/);
     assert.match(index, /id="turnInput"/);
-
+    assert.match(index, /placeholder="Write something…"/);
+    assert.match(index, /placeholder="Describe a task to start a session…"/);
+    assert.doesNotMatch(index, /id="provider"/);
+    assert.match(index, /id="mode-chat"/);
+    assert.match(index, /id="mode-workflow"/);
+    assert.match(index, /id="workflow-template"/);
     assert.match(index, /id="history-toggle"/);
     assert.match(index, /id="settings-toggle"/);
     assert.match(index, /id="project-filter"/);
     assert.match(index, /id="history-drawer"/);
+    assert.match(index, /id="history-search"/);
     assert.match(index, /id="settings-drawer"/);
     assert.match(index, /JUMP TO LATEST/);
     const manifestResponse = await fetch(`${address.httpUrl}/manifest.webmanifest`);
@@ -65,6 +71,12 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     const uiResponse = await fetch(`${address.httpUrl}/ui.css`);
     assert.equal(uiResponse.status, 200);
     assert.equal(uiResponse.headers.get('content-type'), 'text/css');
+    const layoutResponse = await fetch(`${address.httpUrl}/layout.css`);
+    assert.equal(layoutResponse.status, 200);
+    assert.equal(layoutResponse.headers.get('content-type'), 'text/css');
+    const eventsResponse = await fetch(`${address.httpUrl}/ui/events.js`);
+    assert.equal(eventsResponse.status, 200);
+    assert.equal(eventsResponse.headers.get('content-type'), 'text/javascript');
     const markdownResponse = await fetch(`${address.httpUrl}/lib/markdown.js`);
     assert.equal(markdownResponse.status, 200);
     assert.match(await markdownResponse.text(), /copy-button/);

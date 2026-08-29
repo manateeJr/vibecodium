@@ -13,14 +13,15 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest }) {
     updateJump(jumpLatest, true, streamLines.childElementCount > 0);
   });
 
-  const render = (items, thinking = false) => {
+  const render = (items, thinking = false, restartAction) => {
     const shouldFollow = followLatest || isNearBottom(streamLines);
     const previousScrollTop = streamLines.scrollTop;
     streamLines.replaceChildren();
     if (!items.length && !thinking) {
       streamEmpty.hidden = false;
       streamLines.append(streamEmpty);
-      updateJump(jumpLatest, true, false);
+      if (restartAction) appendRestartAction(streamLines, restartAction);
+      updateJump(jumpLatest, true, Boolean(restartAction));
       return;
     }
     streamEmpty.hidden = true;
@@ -51,6 +52,7 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest }) {
       line.append(cursor, text);
       streamLines.append(line);
     }
+    if (restartAction) appendRestartAction(streamLines, restartAction);
     if (shouldFollow) {
       followLatest = true;
       streamLines.scrollTop = streamLines.scrollHeight;
@@ -80,6 +82,18 @@ function renderContent(target, item) {
   body.className = 'markdown-body';
   renderMarkdown(body, prefix[2]);
   target.append(label, body);
+}
+
+function appendRestartAction(target, onRestart) {
+  const item = document.createElement('li');
+  item.className = 'stream-line stream-line--restart';
+  const button = document.createElement('button');
+  button.className = 'restart-session';
+  button.type = 'button';
+  button.textContent = 'Open new session here';
+  button.addEventListener('click', onRestart);
+  item.append(button);
+  target.append(item);
 }
 
 function isNearBottom(element) {

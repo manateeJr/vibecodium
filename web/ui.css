@@ -57,7 +57,7 @@
 }
 
 .project-filter::placeholder {
-  color: var(--placeholder);
+  color: var(--ink-dim);
 }
 
 .recent-projects {

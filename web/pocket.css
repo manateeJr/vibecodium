@@ -349,7 +349,7 @@ summary:focus-visible {
 .prompt-grid input::placeholder,
 .turn-grid input::placeholder,
 .token-panel input::placeholder {
-  color: var(--placeholder);
+  color: var(--ink-dim);
 }
 
 .prompt-grid select:focus,

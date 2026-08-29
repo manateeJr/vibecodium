@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#06130d" />
+    <meta name="theme-color" content="#020604" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -15,6 +15,7 @@
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/pocket.css" />
     <link rel="stylesheet" href="/ui.css" />
+    <link rel="stylesheet" href="/layout.css" />
   </head>
   <body>
     <main class="app-shell">
@@ -59,72 +60,114 @@
         <button id="jump-latest" class="jump-latest" type="button" hidden>JUMP TO LATEST</button>
       </section>
 
-      <form id="turnForm" class="turn-bar" hidden>
-        <div class="prompt-label">
-          <span class="entry-label">CHAT</span>
-          <span class="prompt-hint">SESSION.SEND</span>
+      <section id="compose-mode" class="compose-panel" data-mode="chat" aria-label="Compose">
+        <div class="mode-toggle" role="tablist" aria-label="Compose mode">
+          <button
+            id="mode-chat"
+            class="mode-toggle__button"
+            type="button"
+            role="tab"
+            aria-selected="true"
+            data-active="yes"
+          >
+            CHAT
+          </button>
+          <button
+            id="mode-workflow"
+            class="mode-toggle__button"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            data-active="no"
+          >
+            WORKFLOW
+          </button>
         </div>
-        <div class="turn-grid">
-          <label class="sr-only" for="turnInput">Message</label>
-          <input
-            id="turnInput"
-            name="turnInput"
-            type="text"
-            autocomplete="off"
-            placeholder="Continue this session..."
-          />
-          <button id="send-turn" class="button button--send" type="submit">SEND</button>
-        </div>
-      </form>
 
-      <form id="prompt-form" class="prompt-bar">
-        <div class="prompt-label">
-          <span class="entry-label">FREE SESSION</span>
-          <span class="prompt-hint">SESSION.OPEN</span>
-        </div>
-        <label class="sr-only" for="project-filter">Filter projects</label>
-        <input
-          id="project-filter"
-          class="project-filter"
-          name="project-filter"
-          type="search"
-          autocomplete="off"
-          placeholder="Filter projects..."
-        />
-        <div id="recent-projects" class="recent-projects" hidden aria-label="Recent projects"></div>
-        <label class="sr-only" for="workspace">Project</label>
-        <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
-          <option value="">(default cwd)</option>
-        </select>
-        <div class="prompt-grid">
-          <label class="sr-only" for="provider">Provider</label>
-          <select id="provider" name="provider" autocomplete="off">
-            <option value="fake">fake</option>
-            <option value="omp">omp</option>
-            <option value="codex">codex</option>
-          </select>
-          <label class="sr-only" for="prompt">Prompt</label>
-          <input
-            id="prompt"
-            name="prompt"
-            type="text"
-            autocomplete="off"
-            placeholder="What should this session do?"
-            required
-          />
-          <button id="open-session" class="button button--open" type="submit">OPEN</button>
-        </div>
-      </form>
+        <div id="chat-compose" class="chat-compose">
+          <form id="turnForm" class="turn-bar" hidden>
+            <div class="prompt-label">
+              <span class="entry-label">CHAT</span>
+              <span class="prompt-hint">SESSION.SEND</span>
+            </div>
+            <div class="turn-grid">
+              <label class="sr-only" for="turnInput">Message</label>
+              <input
+                id="turnInput"
+                name="turnInput"
+                type="text"
+                autocomplete="off"
+                placeholder="Write something…"
+              />
+              <button id="send-turn" class="button button--send" type="submit">SEND</button>
+            </div>
+          </form>
 
-      <section class="action-row" aria-label="Control actions">
-        <button id="stop-session" class="button button--stop" type="button" disabled>STOP</button>
-        <button id="run-workflow" class="button button--run" type="button">
-          <span class="entry-label">WORKFLOW</span>
-          <span>RUN BUILD</span>
-        </button>
-        <button id="approve-workflow" class="button button--approve" type="button" disabled>
-          APPROVE
-        </button>
+          <form id="prompt-form" class="prompt-bar">
+            <div class="prompt-label">
+              <span class="entry-label">FREE SESSION</span>
+              <span class="prompt-hint">SESSION.OPEN</span>
+            </div>
+            <label class="sr-only" for="project-filter">Filter projects</label>
+            <input
+              id="project-filter"
+              class="project-filter"
+              name="project-filter"
+              type="search"
+              autocomplete="off"
+              placeholder="Filter projects..."
+            />
+            <div
+              id="recent-projects"
+              class="recent-projects"
+              hidden
+              aria-label="Recent projects"
+            ></div>
+            <label class="sr-only" for="workspace">Project</label>
+            <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
+              <option value="">(default cwd)</option>
+            </select>
+            <div class="prompt-grid">
+              <label class="sr-only" for="prompt">Prompt</label>
+              <input
+                id="prompt"
+                name="prompt"
+                type="text"
+                autocomplete="off"
+                placeholder="Describe a task to start a session…"
+                required
+              />
+              <button id="open-session" class="button button--open" type="submit">OPEN</button>
+            </div>
+          </form>
+        </div>
+
+        <section
+          id="chat-controls"
+          class="action-row chat-controls"
+          aria-label="Chat controls"
+          hidden
+        >
+          <button id="stop-session" class="button button--stop" type="button" disabled>STOP</button>
+        </section>
+
+        <section
+          id="workflow-controls"
+          class="action-row workflow-controls"
+          aria-label="Workflow controls"
+          hidden
+        >
+          <label class="workflow-template-field" for="workflow-template">
+            <span class="entry-label">TEMPLATE</span>
+            <select id="workflow-template" class="workflow-template" autocomplete="off">
+              <option value="basic-build">basic-build</option>
+            </select>
+          </label>
+          <button id="run-workflow" class="button button--run" type="button">RUN BUILD</button>
+          <button id="approve-workflow" class="button button--approve" type="button" disabled>
+            APPROVE
+          </button>
+        </section>
       </section>
 
       <aside id="history-drawer" class="drawer drawer--history" hidden aria-label="Session history">
@@ -132,6 +175,14 @@
           <h2>HISTORY</h2>
           <button id="history-close" class="header-button" type="button">CLOSE</button>
         </div>
+        <label class="sr-only" for="history-search">Search conversations</label>
+        <input
+          id="history-search"
+          class="history-search"
+          type="search"
+          autocomplete="off"
+          placeholder="Search conversations…"
+        />
         <section class="drawer-section" aria-labelledby="live-history-title">
           <h3 id="live-history-title">LIVE VIBECODIUM</h3>
           <div id="live-history" class="history-list"></div>
