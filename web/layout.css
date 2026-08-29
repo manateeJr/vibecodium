@@ -80,8 +80,7 @@ body {
 
 .prompt-grid input,
 .workspace-picker,
-.turn-grid input,
-.workflow-template {
+.turn-grid input {
   min-width: 0;
 }
 
@@ -91,69 +90,99 @@ body {
   overflow: hidden;
 }
 
-.mode-toggle {
+.quick-actions-shell {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
-  margin-bottom: 7px;
-  padding: 4px;
+  gap: 5px;
+  padding: 8px 0 2px;
+}
+
+.quick-actions__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.drawer-section__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.drawer-section__heading h3 {
+  padding-bottom: 0;
+}
+
+.managed-projects {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.managed-project {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--bg-2);
 }
 
-.mode-toggle__button {
-  min-height: 32px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--ink-dim);
-  font: inherit;
-  font-size: var(--fs-small);
-  letter-spacing: var(--track-small);
-}
-
-.mode-toggle__button[data-active='yes'] {
-  background: var(--line);
-  color: var(--ink-hi);
-}
-
-.workflow-controls {
-  grid-template-columns: minmax(0, 1fr) 90px 90px;
-}
-
-.workflow-template-field {
+.managed-project__details {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
-.workflow-template-field .entry-label {
-  line-height: 1;
-}
-
-.workflow-template {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 8px;
+.managed-project__name,
+.managed-project__remove {
+  justify-self: start;
+  min-height: 32px;
+  padding: 0 7px;
   border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg-2);
-  color: var(--ink);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink-hi);
   font: inherit;
-  font-size: var(--fs-input);
+  font-size: var(--fs-small);
 }
 
-.workflow-template:focus,
-.history-search:focus {
-  border-color: var(--focus);
-  outline: none;
+.managed-project__remove {
+  justify-self: end;
+  color: var(--bad);
+}
+
+.history-item__project {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--focus);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managed-project__path,
+.managed-project__description,
+.managed-projects__empty {
+  overflow-wrap: anywhere;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+}
+
+.managed-projects__empty {
+  margin: 0;
 }
 
 .drawer--history {
   right: auto;
   left: max(0px, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border-right: 1px solid var(--focus);
   border-left: 0;
   box-shadow: 12px 0 32px rgb(0 0 0 / 45%);
@@ -171,6 +200,7 @@ body {
 
 .history-search {
   width: 100%;
+  height: 44px;
   min-height: 44px;
   margin-top: 14px;
   padding: 0 10px;
@@ -180,6 +210,70 @@ body {
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-input);
+}
+
+.history-scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--line) var(--bg);
+}
+
+.drawer--history .drawer-heading {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  flex: 0 0 auto;
+  background: var(--bg);
+}
+
+.history-filters {
+  display: grid;
+  gap: 7px;
+  padding-top: 14px;
+}
+
+.history-search {
+  margin-top: 0;
+  transition:
+    height 0.16s ease,
+    min-height 0.16s ease,
+    margin 0.16s ease,
+    padding 0.16s ease,
+    border-color 0.16s ease,
+    opacity 0.16s ease,
+    transform 0.16s ease;
+}
+
+.history-scroll[data-search-collapsed='yes'] .history-search {
+  height: 0;
+  min-height: 0;
+  margin: -7px 0 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top-width: 0;
+  border-bottom-width: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+}
+
+.history-project-filter {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-input);
+}
+
+.history-project-filter:focus {
+  border-color: var(--focus);
+  outline: none;
 }
 
 .history-search::placeholder,

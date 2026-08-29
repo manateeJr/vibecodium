@@ -74,9 +74,10 @@ export function createActions({
       appendError('message is required', entry);
       return;
     }
+    entry.lastActivityAt = Date.now();
     entry.busy = true;
     setStatus('SENDING', 'wait');
-    refreshControls();
+    renderSwitcher();
     try {
       if (entry.resume) {
         const result = await client.resumeSession({
@@ -139,54 +140,5 @@ export function createActions({
     }
   };
 
-  const runWorkflow = async () => {
-    const template = elements.workflowTemplate.value.trim();
-    if (!template) {
-      appendError('workflow template is required');
-      return;
-    }
-    state.running = true;
-    setStatus('STARTING WORKFLOW', 'wait');
-    refreshControls();
-    try {
-      const result = await client.runWorkflow({ template });
-      const entry = ensureEntry(result.stream_id, template);
-      if (!entry) throw new Error('workflow.run returned an invalid stream');
-      selectStream(result.stream_id);
-      setStatus('LIVE', 'live');
-    } catch (error) {
-      appendError(`workflow run failed: ${errorMessage(error)}`);
-      setStatus('ERROR', 'bad');
-    } finally {
-      state.running = false;
-      refreshControls();
-    }
-  };
-
-  const approveWorkflow = async () => {
-    const entry = sessions.get(getSelectedStreamId());
-    if (!entry || entry.kind !== 'workflow' || entry.status !== 'running') return;
-    const streamId = entry.stream_id;
-    state.approving = true;
-    setStatus('APPROVING', 'wait');
-    refreshControls();
-    try {
-      const result = await client.approve({ stream_id: streamId });
-      if (result.status === 'released' || result.stage === 'release') entry.status = 'done';
-      const tone = result.approved ? 'ok' : result.blocked ? 'wait' : 'bad';
-      const reason = result.reason ? ` · ${result.reason}` : '';
-      const detail = `${result.status} · ${result.stage}${reason}`;
-      pushLine(entry, tone, `${eventClock(new Date().toISOString())} workflow.approve · ${detail}`);
-      setStatus(result.blocked ? 'WAITING' : 'LIVE', result.blocked ? 'wait' : 'live');
-    } catch (error) {
-      appendError(`workflow approval failed: ${errorMessage(error)}`, entry);
-      setStatus('APPROVAL ERROR', 'bad');
-    } finally {
-      state.approving = false;
-      renderSwitcher();
-      refreshControls();
-    }
-  };
-
-  return { openSession, openQuickAction, sendMessage, stopSession, runWorkflow, approveWorkflow };
+  return { openSession, openQuickAction, sendMessage, stopSession };
 }

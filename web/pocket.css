@@ -179,14 +179,13 @@ summary:focus-visible {
   border-radius: 50%;
   background: var(--ink-dim);
 }
-.stream-chip__dot[data-status='running'] {
+.stream-chip__dot[data-status='live'] {
   background: var(--amber);
 }
 .stream-chip__dot[data-status='done'] {
   background: var(--ok);
 }
-.stream-chip__dot[data-status='failed'],
-.stream-chip__dot[data-status='throttled'] {
+.stream-chip__dot[data-status='failed'] {
   background: var(--bad);
 }
 .stream-chip__text {
@@ -386,8 +385,7 @@ summary:focus-visible {
   opacity: 0.45;
 }
 
-.button--open,
-.button--run {
+.button--open {
   border-color: var(--ok);
   color: var(--ok);
 }
@@ -401,13 +399,9 @@ summary:focus-visible {
   color: var(--bad);
 }
 
-.button--approve {
-  color: var(--amber);
-}
-
 .action-row {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   flex: 0 0 auto;
   padding-bottom: 10px;

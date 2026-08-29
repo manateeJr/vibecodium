@@ -9,7 +9,7 @@ import { createTranscriptView } from '/ui/transcript.js';
 import { applySessionEvent } from '/ui/events.js';
 
 const TOKEN_KEY = 'vibecodium.token';
-const MODE_KEY = 'vibecodium.compose-mode';
+
 const elements = {
   status: document.querySelector('#connection-status'),
   connection: document.querySelector('.connection'),
@@ -19,17 +19,13 @@ const elements = {
   streamLines: document.querySelector('#stream-lines'),
   streamEmpty: document.querySelector('#stream-empty'),
   jumpLatest: document.querySelector('#jump-latest'),
-  composeMode: document.querySelector('#compose-mode'),
-  modeChat: document.querySelector('#mode-chat'),
-  modeWorkflow: document.querySelector('#mode-workflow'),
   projectSelector: document.querySelector('#project-selector'),
-  projectAdd: document.querySelector('#add-project'),
-  projectRemove: document.querySelector('#remove-project'),
+  quickActionsShell: document.querySelector('.quick-actions-shell'),
   quickActions: document.querySelector('#quick-actions'),
-  scratchPicker: document.querySelector('#scratch-project-picker'),
+  quickActionsRefresh: document.querySelector('#quick-actions-refresh'),
+  projectAdd: document.querySelector('#add-project'),
   projectFormShell: document.querySelector('#add-project-form'),
   projectForm: document.querySelector('#project-form'),
-  projectName: document.querySelector('#project-name'),
   projectPath: document.querySelector('#project-path'),
   projectDescription: document.querySelector('#project-description'),
   projectDetect: document.querySelector('#detect-project'),
@@ -37,7 +33,7 @@ const elements = {
   projectCancel: document.querySelector('#cancel-project'),
   projectStatus: document.querySelector('#project-status'),
   projectProposals: document.querySelector('#project-proposals'),
-  chatCompose: document.querySelector('#chat-compose'),
+  managedProjects: document.querySelector('#managed-projects'),
   promptForm: document.querySelector('#prompt-form'),
   projectFilter: document.querySelector('#project-filter'),
   workspace: document.querySelector('#workspace'),
@@ -49,17 +45,15 @@ const elements = {
   open: document.querySelector('#open-session'),
   chatControls: document.querySelector('#chat-controls'),
   stop: document.querySelector('#stop-session'),
-  workflowControls: document.querySelector('#workflow-controls'),
-  workflowTemplate: document.querySelector('#workflow-template'),
-  run: document.querySelector('#run-workflow'),
-  approve: document.querySelector('#approve-workflow'),
   tokenState: document.querySelector('#token-state'),
   token: document.querySelector('#capability-token'),
   harness: document.querySelector('#default-harness'),
   historyToggle: document.querySelector('#history-toggle'),
   historyDrawer: document.querySelector('#history-drawer'),
   historyClose: document.querySelector('#history-close'),
+  historyScroll: document.querySelector('#history-scroll'),
   historySearch: document.querySelector('#history-search'),
+  historyProjectFilter: document.querySelector('#history-project-filter'),
   liveHistory: document.querySelector('#live-history'),
   machineHistory: document.querySelector('#machine-history'),
   settingsToggle: document.querySelector('#settings-toggle'),
@@ -73,12 +67,9 @@ const clientOptions = {
 };
 const client = createClient(clientOptions);
 let selectedStreamId = '';
-let composeMode = loadComposeMode();
 const actionState = {
   opening: false,
   stopping: false,
-  running: false,
-  approving: false,
 };
 let machineLoading = false;
 let gitRequest = 0;
@@ -103,7 +94,9 @@ const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
   toggle: elements.historyToggle,
   closeButton: elements.historyClose,
+  scrollContainer: elements.historyScroll,
   searchInput: elements.historySearch,
+  projectFilter: elements.historyProjectFilter,
   liveList: elements.liveHistory,
   machineList: elements.machineHistory,
   onLiveSelect: (streamId) => {
@@ -121,6 +114,7 @@ const projectManager = createProjectManager({
   elements,
   errorMessage,
   onError: (message) => appendError(message),
+  onProjectsChange: (nextProjects) => history.setProjects(nextProjects),
   onProjectChange: (project) => {
     if (project) projects.remember(project.path);
   },
@@ -162,9 +156,6 @@ const actions = createActions({
 });
 elements.historyToggle.addEventListener('click', () => settings.close());
 elements.settingsToggle.addEventListener('click', () => history.close());
-elements.modeChat.addEventListener('click', () => setComposeMode('chat'));
-elements.modeWorkflow.addEventListener('click', () => setComposeMode('workflow'));
-setComposeMode(composeMode);
 setStatus(
   globalThis.navigator.onLine ? 'READY' : 'OFFLINE',
   globalThis.navigator.onLine ? 'idle' : 'bad',
@@ -183,8 +174,6 @@ elements.turnForm.addEventListener('submit', (event) => {
   void actions.sendMessage();
 });
 elements.stop.addEventListener('click', () => void actions.stopSession());
-elements.run.addEventListener('click', () => void actions.runWorkflow());
-elements.approve.addEventListener('click', () => void actions.approveWorkflow());
 globalThis.addEventListener('online', () => {
   setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
   if (selectedStreamId) void hydrateStream(selectedStreamId);
@@ -208,34 +197,6 @@ function saveToken(value) {
     setStatus('TOKEN UNSAVED', 'wait');
   }
 }
-function loadComposeMode() {
-  try {
-    return globalThis.localStorage.getItem(MODE_KEY) === 'workflow' ? 'workflow' : 'chat';
-  } catch {
-    return 'chat';
-  }
-}
-
-function saveComposeMode(value) {
-  try {
-    globalThis.localStorage.setItem(MODE_KEY, value);
-  } catch {
-    // The in-memory mode still applies when browser storage is disabled.
-  }
-}
-
-function setComposeMode(value) {
-  composeMode = value === 'workflow' ? 'workflow' : 'chat';
-  saveComposeMode(composeMode);
-  const chat = composeMode === 'chat';
-  elements.composeMode.dataset.mode = composeMode;
-  elements.modeChat.dataset.active = chat ? 'yes' : 'no';
-  elements.modeWorkflow.dataset.active = chat ? 'no' : 'yes';
-  elements.modeChat.setAttribute('aria-selected', String(chat));
-  elements.modeWorkflow.setAttribute('aria-selected', String(!chat));
-  refreshControls();
-}
-
 function refreshClient(value = elements.token.value.trim()) {
   if (value === clientToken) return;
   clientToken = value;
@@ -276,53 +237,38 @@ function refreshControls() {
   const sessionReady =
     entry?.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
   const sessionLive = entry?.kind === 'session' && entry.status === 'running';
-  const chatMode = composeMode === 'chat';
-  const workflowMode = composeMode === 'workflow';
-  elements.composeMode.dataset.mode = composeMode;
-  elements.chatCompose.hidden = !chatMode;
-  elements.chatControls.hidden = !chatMode || !sessionLive;
-  elements.workflowControls.hidden = !workflowMode;
+  elements.chatControls.hidden = !sessionLive;
   elements.open.disabled = actionState.opening;
   elements.stop.hidden = !sessionLive;
   elements.stop.disabled = !sessionLive || actionState.stopping;
-  elements.turnForm.hidden = !chatMode || !sessionReady;
+  elements.turnForm.hidden = !sessionReady;
   elements.turnSend.disabled = !sessionReady || Boolean(entry?.busy);
-  elements.run.disabled = !workflowMode || actionState.running;
-  elements.approve.disabled =
-    !workflowMode ||
-    !entry ||
-    entry.kind !== 'workflow' ||
-    entry.status !== 'running' ||
-    actionState.approving;
 }
 
 function ensureEntry(streamId, label = '') {
   const kind = streamId.split(':', 1)[0];
-  if (kind !== 'session' && kind !== 'workflow') return null;
+  if (kind !== 'session') return null;
   let entry = sessions.get(streamId);
   if (!entry) {
     entry = {
       stream_id: streamId,
       kind,
-      label: label || (kind === 'session' ? 'session' : 'workflow'),
+      label: label || 'session',
       status: 'running',
       busy: false,
       lines: [],
       cwd: '',
       project: '',
+      lastActivityAt: Date.now(),
     };
     sessions.set(streamId, entry);
-    while (sessions.size > 20) {
-      const oldest = sessions.keys().next().value;
-      if (typeof oldest !== 'string') break;
-      sessions.delete(oldest);
-    }
   } else if (label) entry.label = label;
   return entry;
 }
 
 function openMachineSession(session) {
   const streamId = `machine:${session.source}:${session.ref}`;
+  const updatedAt = Date.parse(session.updated_at);
   const entry = {
     stream_id: streamId,
     kind: 'session',
@@ -334,6 +280,7 @@ function openMachineSession(session) {
     project: '',
     resume: { source: session.source, ref: session.ref },
     updated_at: session.updated_at,
+    lastActivityAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
   };
   sessions.set(streamId, entry);
   selectStream(streamId);
@@ -353,30 +300,50 @@ function selectStream(streamId) {
 
 function renderSwitcher() {
   elements.streamSwitcher.replaceChildren();
-  for (const entry of [...sessions.values()].reverse()) {
-    const id = entry.stream_id.split(':', 2)[1] ?? '';
+  const recent = [...sessions.values()]
+    .sort((left, right) => activityTime(right) - activityTime(left))
+    .slice(0, 10);
+  for (const entry of recent) {
+    const id = entry.stream_id.split(':').pop() ?? '';
     const shortId = id.length > 8 ? `${id.slice(0, 8)}…` : id;
+    const status = displayStatus(entry.status);
     const chip = document.createElement('button');
     chip.className = 'stream-chip';
     chip.type = 'button';
     chip.dataset.active = entry.stream_id === selectedStreamId ? 'yes' : 'no';
-    chip.dataset.status = entry.status;
+    chip.dataset.status = status;
     chip.setAttribute('role', 'tab');
     chip.setAttribute('aria-selected', String(entry.stream_id === selectedStreamId));
-    chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${shortId}`);
+    chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${status}`);
     chip.addEventListener('click', () => selectStream(entry.stream_id));
     const dot = document.createElement('span');
     dot.className = 'stream-chip__dot';
-    dot.dataset.status = entry.status;
+    dot.dataset.status = status;
     dot.setAttribute('aria-hidden', 'true');
     chip.append(dot);
     const text = document.createElement('span');
     text.className = 'stream-chip__text';
-    text.textContent = `${entry.kind} · ${entry.label} · ${shortId}`;
+    text.textContent = `${status} · ${entry.label} · ${shortId}`;
     chip.append(text);
     elements.streamSwitcher.append(chip);
   }
-  history.renderLive([...sessions.values()].filter((entry) => entry.kind === 'session'));
+  history.renderLive(
+    [...sessions.values()].filter(
+      (entry) => entry.kind === 'session' && !entry.stream_id.startsWith('machine:'),
+    ),
+  );
+}
+
+function activityTime(entry) {
+  if (Number.isFinite(entry.lastActivityAt)) return entry.lastActivityAt;
+  const updatedAt = Date.parse(entry.updated_at ?? '');
+  return Number.isFinite(updatedAt) ? updatedAt : 0;
+}
+
+function displayStatus(status) {
+  if (status === 'running') return 'live';
+  if (status === 'failed' || status === 'throttled') return 'failed';
+  return 'done';
 }
 
 function renderStream() {
@@ -390,7 +357,6 @@ function renderStream() {
   );
 }
 function prepareRestart(entry) {
-  setComposeMode('chat');
   if (entry.project) projectManager.selectProject(entry.project);
   else if (entry.cwd) projects.selectPath(entry.cwd);
   elements.prompt.focus();
@@ -402,6 +368,7 @@ function prepareRestart(entry) {
 }
 
 function pushLine(entry, cls, text, markdown = false) {
+  entry.lastActivityAt = Date.now();
   entry.lines.push({ cls, text, markdown });
   if (entry.stream_id === selectedStreamId) renderStream();
 }
@@ -443,8 +410,10 @@ function onEvent(event) {
     return;
   }
   const entry = ensureEntry(event.stream_id);
-  if (!entry) return setStatus('LIVE', 'live');
+  if (!entry) return;
   applySessionEvent(entry, event, pushLine);
+  const eventTime = Date.parse(event.ts);
+  entry.lastActivityAt = Number.isFinite(eventTime) ? eventTime : Date.now();
   renderSwitcher();
   renderStream();
   refreshControls();

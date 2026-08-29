@@ -5,6 +5,7 @@ export function createProjectManager({
   elements,
   errorMessage,
   onError,
+  onProjectsChange,
   onProjectChange,
   onQuickAction,
 }) {
@@ -27,17 +28,18 @@ export function createProjectManager({
       elements.projectSelector.add(option);
     }
     elements.projectSelector.value = selected ? selected.name : '';
-    elements.projectRemove.hidden = !selected;
-    elements.scratchPicker.hidden = Boolean(selected);
     renderQuickActions(selected);
+    renderManagedProjects();
+    onProjectsChange(projects);
     updateButtons();
   };
 
   const renderQuickActions = (project) => {
     elements.quickActions.replaceChildren();
     const actions = project?.quickActions ?? [];
-    elements.quickActions.hidden = !project || actions.length === 0;
-    for (const action of actions) {
+    elements.quickActionsShell.hidden = !project || actions.length === 0;
+    elements.quickActionsRefresh.hidden = !project || actions.length === 0;
+    for (const action of chooseActions(actions)) {
       const button = document.createElement('button');
       button.className = 'quick-action-chip';
       button.type = 'button';
@@ -48,18 +50,62 @@ export function createProjectManager({
     }
   };
 
+  const renderManagedProjects = () => {
+    elements.managedProjects.replaceChildren();
+    if (projects.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'managed-projects__empty';
+      empty.textContent = 'No registered projects.';
+      elements.managedProjects.append(empty);
+      return;
+    }
+    for (const project of projects) {
+      const row = document.createElement('div');
+      row.className = 'managed-project';
+      const details = document.createElement('div');
+      details.className = 'managed-project__details';
+      const name = document.createElement('button');
+      name.className = 'managed-project__name';
+      name.type = 'button';
+      name.textContent = project.name;
+      name.title = 'Use this project';
+      name.addEventListener('click', () => selectProject(project.name));
+      const path = document.createElement('span');
+      path.className = 'managed-project__path';
+      path.textContent = project.path;
+      details.append(name, path);
+      if (project.description) {
+        const description = document.createElement('span');
+        description.className = 'managed-project__description';
+        description.textContent = project.description;
+        details.append(description);
+      }
+      const removeButton = document.createElement('button');
+      removeButton.className = 'managed-project__remove';
+      removeButton.type = 'button';
+      removeButton.textContent = 'REMOVE';
+      removeButton.addEventListener('click', () => void remove(project));
+      row.append(details, removeButton);
+      elements.managedProjects.append(row);
+    }
+  };
+
   const updateButtons = () => {
     elements.projectDetect.disabled = detecting || saving;
     elements.projectSave.disabled = detecting || saving || !detected;
     elements.projectCancel.disabled = detecting || saving;
     elements.projectAdd.disabled = detecting || saving;
-    elements.projectRemove.disabled = detecting || saving;
   };
 
   const showForm = () => {
     elements.projectFormShell.hidden = false;
+    elements.projectPath.value = '';
+    elements.projectDescription.value = '';
     elements.projectStatus.textContent = '';
     elements.projectProposals.hidden = true;
+    proposed = [];
+    detected = false;
+    updateButtons();
     elements.projectPath.focus();
   };
 
@@ -120,7 +166,6 @@ export function createProjectManager({
       return;
     }
     const description = elements.projectDescription.value.trim();
-    elements.projectName.value = basename(projectPath);
     detecting = true;
     proposed = [];
     detected = false;
@@ -160,9 +205,9 @@ export function createProjectManager({
 
   const save = async () => {
     const projectPath = elements.projectPath.value.trim();
-    const name = elements.projectName.value.trim() || basename(projectPath);
+    const name = basename(projectPath);
     if (!projectPath || !name) {
-      elements.projectStatus.textContent = 'project name and path are required';
+      elements.projectStatus.textContent = 'project path is required';
       return;
     }
     saving = true;
@@ -181,9 +226,6 @@ export function createProjectManager({
       ];
       selectedName = result.project.name;
       render();
-      await load();
-      selectedName = result.project.name;
-      render();
       hideForm();
       onProjectChange(activeProject());
     } catch (error) {
@@ -194,11 +236,10 @@ export function createProjectManager({
     }
   };
 
-  const remove = async () => {
-    const project = activeProject();
-    if (!project) return;
+  const remove = async (project) => {
+    if (!project || saving) return;
     saving = true;
-    elements.projectStatus.textContent = 'removing…';
+    elements.projectStatus.textContent = `removing ${project.name}…`;
     updateButtons();
     try {
       const result = await client.removeProject({ name: project.name });
@@ -206,11 +247,13 @@ export function createProjectManager({
         elements.projectStatus.textContent = 'project was not removed';
         return;
       }
-      selectedName = '';
+      if (selectedName === project.name) {
+        selectedName = '';
+        onProjectChange(undefined);
+      }
       projects = projects.filter((item) => item.name !== project.name);
       render();
-      await load();
-      onProjectChange(undefined);
+      elements.projectStatus.textContent = '';
     } catch (error) {
       reportError('project removal failed', error);
     } finally {
@@ -232,13 +275,17 @@ export function createProjectManager({
     }
   };
 
-  elements.projectSelector.addEventListener('change', () => {
-    selectedName = elements.projectSelector.value;
+  const selectProject = (name) => {
+    selectedName = projects.some((project) => project.name === name) ? name : '';
     render();
     onProjectChange(activeProject());
-  });
+  };
+
+  elements.projectSelector.addEventListener('change', () =>
+    selectProject(elements.projectSelector.value),
+  );
   elements.projectAdd.addEventListener('click', showForm);
-  elements.projectRemove.addEventListener('click', () => void remove());
+  elements.quickActionsRefresh.addEventListener('click', () => renderQuickActions(activeProject()));
   elements.projectForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void detect();
@@ -251,15 +298,20 @@ export function createProjectManager({
   return {
     load,
     selectedProject: activeProject,
-    selectProject(name) {
-      selectedName = projects.some((project) => project.name === name) ? name : '';
-      render();
-      onProjectChange(activeProject());
-    },
+    selectProject,
   };
 }
 
 function basename(value) {
   const normalized = value.replace(/[\\/]+$/, '');
   return normalized.split(/[\\/]/).pop() || normalized;
+}
+
+function chooseActions(actions) {
+  const shuffled = [...actions];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled.slice(0, 2);
 }
