@@ -1,6 +1,8 @@
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
+import { createHostSubsystem } from '../host/index.js';
 import { createMachineSessionsSubsystem } from '../machine-sessions/index.js';
 import { createNotifySubsystem } from '../notify/index.js';
+import { createVoiceSubsystem } from '../voice/index.js';
 import { createSessionSubsystem } from '../session/index.js';
 import { createWorkspaceSubsystem } from '../workspace/index.js';
 import { createProjectsSubsystem } from '../projects/index.js';
@@ -15,6 +17,8 @@ export function registerSubsystems(
     createTelemetrySubsystem(),
     createWorkflowSubsystem(),
     createNotifySubsystem(),
+    createHostSubsystem(),
+    createVoiceSubsystem(),
     createMachineSessionsSubsystem(),
     createSessionSubsystem(),
     createWorkspaceSubsystem(),

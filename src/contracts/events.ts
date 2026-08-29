@@ -1,5 +1,6 @@
 export type EventKind =
   | 'session_started'
+  | 'session_forked'
   | 'session_output'
   | 'session_complete'
   | 'session_input'
@@ -20,6 +21,12 @@ export interface SessionStartedPayload {
   readonly prompt: string;
   readonly cwd?: string;
   readonly project?: string;
+}
+
+export interface SessionForkedPayload {
+  readonly session_id: string;
+  readonly source_session_id: string;
+  readonly provider: string;
 }
 
 export interface SessionOutputPayload {
@@ -104,6 +111,7 @@ export interface EventPayloadMap {
   readonly proposal_approved: ProposalApprovedPayload;
   readonly notify_emitted: NotifyEmittedPayload;
   readonly inbound_received: InboundReceivedPayload;
+  readonly session_forked: SessionForkedPayload;
 }
 
 export type EventPayload<K extends EventKind = EventKind> = EventPayloadMap[K];

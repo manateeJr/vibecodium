@@ -4,6 +4,8 @@ export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
   sessionStop: 'session.stop',
   sessionSend: 'session.send',
+  sessionList: 'session.list',
+  sessionFork: 'session.fork',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
@@ -14,10 +16,15 @@ export const COMMAND_NAMES = {
   projectDetect: 'project.detect',
   projectSave: 'project.save',
   projectRemove: 'project.remove',
+  voiceTranscribe: 'voice.transcribe',
+  hostStats: 'host.stats',
+  hostSetSessionCap: 'host.set_session_cap',
 } as const;
 export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
 export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
 export const SESSION_SEND_COMMAND = COMMAND_NAMES.sessionSend;
+export const SESSION_LIST_COMMAND = COMMAND_NAMES.sessionList;
+export const SESSION_FORK_COMMAND = COMMAND_NAMES.sessionFork;
 export const WORKSPACE_LIST_COMMAND = COMMAND_NAMES.workspaceList;
 export const WORKFLOW_RUN_COMMAND = COMMAND_NAMES.workflowRun;
 export const WORKFLOW_APPROVE_COMMAND = COMMAND_NAMES.workflowApprove;
@@ -29,6 +36,9 @@ export const PROJECT_LIST_COMMAND = COMMAND_NAMES.projectList;
 export const PROJECT_DETECT_COMMAND = COMMAND_NAMES.projectDetect;
 export const PROJECT_SAVE_COMMAND = COMMAND_NAMES.projectSave;
 export const PROJECT_REMOVE_COMMAND = COMMAND_NAMES.projectRemove;
+export const VOICE_TRANSCRIBE_COMMAND = COMMAND_NAMES.voiceTranscribe;
+export const HOST_STATS_COMMAND = COMMAND_NAMES.hostStats;
+export const HOST_SET_SESSION_CAP_COMMAND = COMMAND_NAMES.hostSetSessionCap;
 
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
 
@@ -180,6 +190,66 @@ export interface WorkflowApproveResult {
   readonly blocked: boolean;
   readonly reason: string | null;
 }
+export interface SessionListArgs {
+  readonly project?: string;
+  readonly limit?: number;
+}
+
+export interface SessionSummary {
+  readonly session_id: string;
+  readonly stream_id: string;
+  readonly provider: string;
+  readonly project?: string;
+  readonly cwd?: string;
+  readonly status: 'live' | 'done' | 'failed' | 'stopped';
+  readonly prompt?: string;
+  readonly started_at?: string;
+  readonly updated_at?: string;
+}
+
+export interface SessionListResult {
+  readonly sessions: readonly SessionSummary[];
+}
+
+export interface SessionForkArgs {
+  readonly session_id: string;
+}
+
+export interface SessionForkResult {
+  readonly new_session_id: string;
+  readonly provider: string;
+  readonly continue_command: string;
+}
+
+export interface VoiceTranscribeArgs {
+  readonly audio_base64: string;
+  readonly mime?: string;
+}
+
+export interface VoiceTranscribeResult {
+  readonly text: string;
+}
+
+export type HostStatsArgs = Record<string, never>;
+
+export interface HostStatsResult {
+  readonly mem_total: number;
+  readonly mem_used: number;
+  readonly load: readonly number[];
+  readonly uptime_seconds: number;
+  readonly vibecodium_sessions: number;
+  readonly global_sessions: number;
+  readonly max_concurrent: number;
+}
+
+export interface HostSetSessionCapArgs {
+  readonly max_concurrent: number;
+}
+
+export interface HostSetSessionCapResult {
+  readonly max_concurrent: number;
+}
+
 export interface CommandArgsMap {
   'session.open': SessionOpenArgs;
   'session.stop': SessionStopArgs;
@@ -194,6 +264,11 @@ export interface CommandArgsMap {
   'project.detect': ProjectDetectArgs;
   'project.save': ProjectSaveArgs;
   'project.remove': ProjectRemoveArgs;
+  'session.list': SessionListArgs;
+  'session.fork': SessionForkArgs;
+  'voice.transcribe': VoiceTranscribeArgs;
+  'host.stats': HostStatsArgs;
+  'host.set_session_cap': HostSetSessionCapArgs;
 }
 
 export interface CommandResultMap {
@@ -210,6 +285,11 @@ export interface CommandResultMap {
   'project.detect': ProjectDetectResult;
   'project.save': ProjectSaveResult;
   'project.remove': ProjectRemoveResult;
+  'session.list': SessionListResult;
+  'session.fork': SessionForkResult;
+  'voice.transcribe': VoiceTranscribeResult;
+  'host.stats': HostStatsResult;
+  'host.set_session_cap': HostSetSessionCapResult;
 }
 
 export type CommandArgs<Name extends CommandName = CommandName> = CommandArgsMap[Name];

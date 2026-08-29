@@ -1,5 +1,8 @@
 import type {
   EventsHttpResponse,
+  HostSetSessionCapArgs,
+  HostSetSessionCapResult,
+  HostStatsResult,
   MachineListResult,
   ProjectDetectArgs,
   ProjectDetectResult,
@@ -16,11 +19,17 @@ import type {
   SessionSendResult,
   SessionStopArgs,
   SessionStopResult,
+  SessionForkArgs,
+  SessionForkResult,
+  SessionListArgs,
+  SessionListResult,
   SubscribeFrame,
   WorkflowApproveArgs,
   WorkflowApproveResult,
   WorkflowRunArgs,
   WorkflowRunResult,
+  VoiceTranscribeArgs,
+  VoiceTranscribeResult,
   WorkspaceListResult,
   WorkspaceStatusArgs,
   WorkspaceStatusResult,
@@ -32,6 +41,8 @@ const COMMAND_NAMES = {
   sessionOpen: 'session.open',
   sessionStop: 'session.stop',
   sessionSend: 'session.send',
+  sessionList: 'session.list',
+  sessionFork: 'session.fork',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
@@ -42,6 +53,9 @@ const COMMAND_NAMES = {
   projectDetect: 'project.detect',
   projectSave: 'project.save',
   projectRemove: 'project.remove',
+  voiceTranscribe: 'voice.transcribe',
+  hostStats: 'host.stats',
+  hostSetSessionCap: 'host.set_session_cap',
 } as const;
 
 export type {
@@ -57,8 +71,15 @@ export type {
   CommandResultFrame,
   CommandResultMap,
   EventsHttpResponse,
+  HostSetSessionCapArgs,
+  HostSetSessionCapResult,
+  HostStatsResult,
   MachineListResult,
   MachineSessionSummary,
+  SessionForkArgs,
+  SessionForkResult,
+  SessionListArgs,
+  SessionListResult,
   Project,
   ProjectDetectArgs,
   ProjectDetectResult,
@@ -76,6 +97,8 @@ export type {
   SessionSendResult,
   SessionStopArgs,
   SessionStopResult,
+  VoiceTranscribeArgs,
+  VoiceTranscribeResult,
   SubscribeFrame,
   WorkflowApproveArgs,
   WorkflowApproveResult,
@@ -99,6 +122,8 @@ export interface VibecodiumClient {
   resumeSession(args: SessionResumeArgs): Promise<SessionResumeResult>;
   stopSession(args: SessionStopArgs): Promise<SessionStopResult>;
   sendMessage(args: SessionSendArgs): Promise<SessionSendResult>;
+  listSessions(args: SessionListArgs): Promise<SessionListResult>;
+  forkSession(args: SessionForkArgs): Promise<SessionForkResult>;
   listWorkspaces(): Promise<WorkspaceListResult>;
   machineList(): Promise<MachineListResult>;
   workspaceStatus(args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult>;
@@ -106,6 +131,9 @@ export interface VibecodiumClient {
   detectProject(args: ProjectDetectArgs): Promise<ProjectDetectResult>;
   saveProject(args: ProjectSaveArgs): Promise<ProjectSaveResult>;
   removeProject(args: ProjectRemoveArgs): Promise<ProjectRemoveResult>;
+  transcribe(args: VoiceTranscribeArgs): Promise<VoiceTranscribeResult>;
+  hostStats(): Promise<HostStatsResult>;
+  setSessionCap(args: HostSetSessionCapArgs): Promise<HostSetSessionCapResult>;
   runWorkflow(args: WorkflowRunArgs): Promise<WorkflowRunResult>;
   approve(args: WorkflowApproveArgs): Promise<WorkflowApproveResult>;
   getEvents(stream_id: string, from_seq: number): Promise<readonly EventEnvelope[]>;
@@ -158,6 +186,10 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<SessionStopResult>(baseUrl, COMMAND_NAMES.sessionStop, args, options.token);
   const sendMessage = (args: SessionSendArgs): Promise<SessionSendResult> =>
     post<SessionSendResult>(baseUrl, COMMAND_NAMES.sessionSend, args, options.token);
+  const listSessions = (args: SessionListArgs): Promise<SessionListResult> =>
+    post<SessionListResult>(baseUrl, COMMAND_NAMES.sessionList, args, options.token);
+  const forkSession = (args: SessionForkArgs): Promise<SessionForkResult> =>
+    post<SessionForkResult>(baseUrl, COMMAND_NAMES.sessionFork, args, options.token);
 
   const listWorkspaces = (): Promise<WorkspaceListResult> =>
     post<WorkspaceListResult>(baseUrl, COMMAND_NAMES.workspaceList, {}, options.token);
@@ -174,6 +206,12 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<ProjectSaveResult>(baseUrl, COMMAND_NAMES.projectSave, args, options.token);
   const removeProject = (args: ProjectRemoveArgs): Promise<ProjectRemoveResult> =>
     post<ProjectRemoveResult>(baseUrl, COMMAND_NAMES.projectRemove, args, options.token);
+  const transcribe = (args: VoiceTranscribeArgs): Promise<VoiceTranscribeResult> =>
+    post<VoiceTranscribeResult>(baseUrl, COMMAND_NAMES.voiceTranscribe, args, options.token);
+  const hostStats = (): Promise<HostStatsResult> =>
+    post<HostStatsResult>(baseUrl, COMMAND_NAMES.hostStats, {}, options.token);
+  const setSessionCap = (args: HostSetSessionCapArgs): Promise<HostSetSessionCapResult> =>
+    post<HostSetSessionCapResult>(baseUrl, COMMAND_NAMES.hostSetSessionCap, args, options.token);
 
   const runWorkflow = async (args: WorkflowRunArgs): Promise<WorkflowRunResult> => {
     const result = await post<WorkflowRunResult>(
@@ -288,6 +326,8 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     resumeSession,
     stopSession,
     sendMessage,
+    listSessions,
+    forkSession,
     listWorkspaces,
     machineList,
     workspaceStatus,
@@ -295,6 +335,9 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     detectProject,
     saveProject,
     removeProject,
+    transcribe,
+    hostStats,
+    setSessionCap,
     runWorkflow,
     approve,
     getEvents,
