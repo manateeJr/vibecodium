@@ -10,6 +10,10 @@ export const COMMAND_NAMES = {
   machineList: 'machine.list',
   sessionResume: 'session.resume',
   workspaceStatus: 'workspace.status',
+  projectList: 'project.list',
+  projectDetect: 'project.detect',
+  projectSave: 'project.save',
+  projectRemove: 'project.remove',
 } as const;
 export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
 export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
@@ -21,6 +25,10 @@ export const WORKFLOW_START_COMMAND = 'workflow.start';
 export const MACHINE_LIST_COMMAND = COMMAND_NAMES.machineList;
 export const SESSION_RESUME_COMMAND = COMMAND_NAMES.sessionResume;
 export const WORKSPACE_STATUS_COMMAND = COMMAND_NAMES.workspaceStatus;
+export const PROJECT_LIST_COMMAND = COMMAND_NAMES.projectList;
+export const PROJECT_DETECT_COMMAND = COMMAND_NAMES.projectDetect;
+export const PROJECT_SAVE_COMMAND = COMMAND_NAMES.projectSave;
+export const PROJECT_REMOVE_COMMAND = COMMAND_NAMES.projectRemove;
 
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
 
@@ -28,6 +36,7 @@ export interface SessionOpenArgs {
   readonly provider: string;
   readonly prompt: string;
   readonly cwd?: string;
+  readonly project?: string;
 }
 
 export interface SessionOpenResult {
@@ -54,6 +63,7 @@ export interface SessionResumeArgs {
   readonly ref: string;
   readonly prompt: string;
   readonly cwd?: string;
+  readonly project?: string;
 }
 
 export type SessionResumeResult = SessionOpenResult;
@@ -98,6 +108,54 @@ export interface WorkspaceStatusResult {
   readonly behind?: number;
 }
 
+export interface QuickAction {
+  readonly id: string;
+  readonly label: string;
+  readonly prompt: string;
+}
+
+export interface Project {
+  readonly name: string;
+  readonly path: string;
+  readonly description: string;
+  readonly quickActions: readonly QuickAction[];
+  readonly scope: 'project';
+}
+
+export type ProjectListArgs = Record<string, never>;
+
+export interface ProjectListResult {
+  readonly projects: readonly Project[];
+}
+
+export interface ProjectDetectArgs {
+  readonly path: string;
+  readonly description?: string;
+}
+
+export interface ProjectDetectResult {
+  readonly proposed: readonly QuickAction[];
+}
+
+export interface ProjectSaveArgs {
+  readonly name: string;
+  readonly path: string;
+  readonly description: string;
+  readonly quickActions: readonly QuickAction[];
+}
+
+export interface ProjectSaveResult {
+  readonly project: Project;
+}
+
+export interface ProjectRemoveArgs {
+  readonly name: string;
+}
+
+export interface ProjectRemoveResult {
+  readonly removed: boolean;
+}
+
 export interface WorkflowRunArgs extends Readonly<Record<string, unknown>> {
   readonly template: string;
 }
@@ -132,6 +190,10 @@ export interface CommandArgsMap {
   'machine.list': MachineListArgs;
   'session.resume': SessionResumeArgs;
   'workspace.status': WorkspaceStatusArgs;
+  'project.list': ProjectListArgs;
+  'project.detect': ProjectDetectArgs;
+  'project.save': ProjectSaveArgs;
+  'project.remove': ProjectRemoveArgs;
 }
 
 export interface CommandResultMap {
@@ -144,6 +206,10 @@ export interface CommandResultMap {
   'machine.list': MachineListResult;
   'session.resume': SessionResumeResult;
   'workspace.status': WorkspaceStatusResult;
+  'project.list': ProjectListResult;
+  'project.detect': ProjectDetectResult;
+  'project.save': ProjectSaveResult;
+  'project.remove': ProjectRemoveResult;
 }
 
 export type CommandArgs<Name extends CommandName = CommandName> = CommandArgsMap[Name];

@@ -19,6 +19,7 @@ export interface SessionStartedPayload {
   readonly provider: string;
   readonly prompt: string;
   readonly cwd?: string;
+  readonly project?: string;
 }
 
 export interface SessionOutputPayload {
