@@ -26,7 +26,9 @@ class StubSocket {
   }
 
   public close(): void {
+    if (this.readyState === 3) return;
     this.readyState = 3;
+    for (const listener of this.listeners.get('close') ?? []) listener({});
   }
 
   public open(): void {
@@ -53,6 +55,24 @@ test('SDK posts command args and subscribes with the active stream frame', async
         const url = String(input);
         if (url.endsWith('/commands/session.send'))
           return { value: { stream_id: 'session:session-1', turn: 2 } };
+        if (url.endsWith('/commands/machine.list'))
+          return {
+            value: {
+              sessions: [
+                {
+                  source: 'omp',
+                  ref: 'session-ref',
+                  title: 'Existing session',
+                  cwd: '/tmp/repo',
+                  updated_at: '2026-01-01T00:00:00.000Z',
+                },
+              ],
+            },
+          };
+        if (url.endsWith('/commands/session.resume'))
+          return { value: { session_id: 'session-2', stream_id: 'session:session-2' } };
+        if (url.endsWith('/commands/workspace.status'))
+          return { value: { branch: 'main', dirty: true, ahead: 1, behind: 0 } };
         if (url.endsWith('/commands/workspace.list'))
           return { value: { workspaces: [{ name: 'repo', path: '/tmp/repo' }] } };
         return { value: { session_id: 'session-1', stream_id: 'session:session-1' } };
@@ -90,6 +110,40 @@ test('SDK posts command args and subscribes with the active stream frame', async
     assert.equal(requests[2]?.url, 'http://127.0.0.1:4310/commands/workspace.list');
     assert.equal(requests[2]?.init?.method, 'POST');
     assert.deepEqual(JSON.parse(String(requests[2]?.init?.body)), {});
+
+    const machineResult = await client.machineList();
+    assert.deepEqual(machineResult.sessions[0], {
+      source: 'omp',
+      ref: 'session-ref',
+      title: 'Existing session',
+      cwd: '/tmp/repo',
+      updated_at: '2026-01-01T00:00:00.000Z',
+    });
+    assert.equal(requests[3]?.url, 'http://127.0.0.1:4310/commands/machine.list');
+    assert.equal(requests[3]?.init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(requests[3]?.init?.body)), {});
+
+    const resumed = await client.resumeSession({
+      source: 'omp',
+      ref: 'session-ref',
+      prompt: 'continue',
+      cwd: '/tmp/repo',
+    });
+    assert.deepEqual(resumed, { session_id: 'session-2', stream_id: 'session:session-2' });
+    assert.equal(requests[4]?.url, 'http://127.0.0.1:4310/commands/session.resume');
+    assert.equal(requests[4]?.init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(requests[4]?.init?.body)), {
+      source: 'omp',
+      ref: 'session-ref',
+      prompt: 'continue',
+      cwd: '/tmp/repo',
+    });
+
+    const workspaceStatus = await client.workspaceStatus({ path: '/tmp/repo' });
+    assert.deepEqual(workspaceStatus, { branch: 'main', dirty: true, ahead: 1, behind: 0 });
+    assert.equal(requests[5]?.url, 'http://127.0.0.1:4310/commands/workspace.status');
+    assert.equal(requests[5]?.init?.method, 'POST');
+    assert.deepEqual(JSON.parse(String(requests[5]?.init?.body)), { path: '/tmp/repo' });
     const received: EventEnvelope[] = [];
     const unsubscribe = client.subscribe(0, (event) => received.push(event));
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -97,15 +151,15 @@ test('SDK posts command args and subscribes with the active stream frame', async
     socket.open();
     assert.deepEqual(JSON.parse(socket.sent[0]!), {
       type: 'subscribe',
-      streamId: 'session:session-1',
+      streamId: 'session:session-2',
       fromSeq: 0,
       token: 'token-1',
     });
     const event: EventEnvelope = {
       seq: 1,
-      stream_id: 'session:session-1',
+      stream_id: 'session:session-2',
       type: 'session_started',
-      payload: { session_id: 'session-1', provider: 'fake', prompt: 'hello' },
+      payload: { session_id: 'session-2', provider: 'fake', prompt: 'hello' },
       ts: '2026-01-01T00:00:00.000Z',
     };
     socket.message({ type: 'event', event });
@@ -133,6 +187,45 @@ test('SDK posts command args and subscribes with the active stream frame', async
     fallbackUnsubscribe();
   } finally {
     globalThis.fetch = originalFetch;
+    (globalThis as unknown as { WebSocket?: unknown }).WebSocket = originalWebSocket;
+  }
+});
+test('SDK reconnects after a socket close and backfills from the next sequence', async () => {
+  const originalWebSocket = (globalThis as unknown as { WebSocket?: unknown }).WebSocket;
+  StubSocket.instances.length = 0;
+  (globalThis as unknown as { WebSocket: typeof StubSocket }).WebSocket = StubSocket;
+  try {
+    const client = createClient({ baseUrl: 'http://127.0.0.1:4310/' });
+    const received: EventEnvelope[] = [];
+    const unsubscribe = client.subscribe(0, (event) => received.push(event), '*');
+    const firstSocket = StubSocket.instances[0]!;
+    firstSocket.open();
+    const firstEvent: EventEnvelope = {
+      seq: 7,
+      stream_id: 'session:session-1',
+      type: 'session_output',
+      payload: { session_id: 'session-1', index: 0, text: 'first' },
+      ts: '2026-01-01T00:00:00.000Z',
+    };
+    firstSocket.message({ type: 'event', event: firstEvent });
+    firstSocket.close();
+    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, 80));
+    const secondSocket = StubSocket.instances[1]!;
+    secondSocket.open();
+    assert.deepEqual(JSON.parse(secondSocket.sent[0]!), {
+      type: 'subscribe',
+      streamId: '*',
+      fromSeq: 8,
+    });
+    const secondEvent = {
+      ...firstEvent,
+      seq: 8,
+      payload: { ...firstEvent.payload, text: 'second' },
+    };
+    secondSocket.message({ type: 'event', event: secondEvent });
+    assert.deepEqual(received, [firstEvent, secondEvent]);
+    unsubscribe();
+  } finally {
     (globalThis as unknown as { WebSocket?: unknown }).WebSocket = originalWebSocket;
   }
 });

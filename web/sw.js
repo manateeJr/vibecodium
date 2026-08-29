@@ -1,11 +1,19 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v3';
+const CACHE_NAME = 'vibecodium-shell-v4';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
   '/app.js',
   '/pocket.css',
+  '/ui.css',
+  '/lib/markdown.js',
+  '/lib/storage.js',
+  '/lib/time.js',
+  '/ui/actions.js',
+  '/ui/drawers.js',
+  '/ui/project-picker.js',
+  '/ui/transcript.js',
   '/tokens.css',
   '/client.js',
   '/manifest.webmanifest',
