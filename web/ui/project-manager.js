@@ -7,7 +7,6 @@ export function createProjectManager({
   onError,
   onProjectsChange,
   onProjectChange,
-  onQuickAction,
 }) {
   let projects = [];
   let selectedName = '';
@@ -28,26 +27,9 @@ export function createProjectManager({
       elements.projectSelector.add(option);
     }
     elements.projectSelector.value = selected ? selected.name : '';
-    renderQuickActions(selected);
     renderManagedProjects();
     onProjectsChange(projects);
     updateButtons();
-  };
-
-  const renderQuickActions = (project) => {
-    elements.quickActions.replaceChildren();
-    const actions = project?.quickActions ?? [];
-    elements.quickActionsShell.hidden = !project || actions.length === 0;
-    elements.quickActionsRefresh.hidden = !project || actions.length === 0;
-    for (const action of chooseActions(actions)) {
-      const button = document.createElement('button');
-      button.className = 'quick-action-chip';
-      button.type = 'button';
-      button.textContent = action.label;
-      button.title = action.prompt;
-      button.addEventListener('click', () => onQuickAction(project, action));
-      elements.quickActions.append(button);
-    }
   };
 
   const renderManagedProjects = () => {
@@ -285,7 +267,6 @@ export function createProjectManager({
     selectProject(elements.projectSelector.value),
   );
   elements.projectAdd.addEventListener('click', showForm);
-  elements.quickActionsRefresh.addEventListener('click', () => renderQuickActions(activeProject()));
   elements.projectForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void detect();
@@ -305,13 +286,4 @@ export function createProjectManager({
 function basename(value) {
   const normalized = value.replace(/[\\/]+$/, '');
   return normalized.split(/[\\/]/).pop() || normalized;
-}
-
-function chooseActions(actions) {
-  const shuffled = [...actions];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
-  }
-  return shuffled.slice(0, 2);
 }

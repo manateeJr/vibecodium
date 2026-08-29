@@ -32,18 +32,32 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /href="\/manifest\.webmanifest"/);
     assert.match(index, /script type="module" src="\/app\.js"/);
     assert.match(index, /serviceWorker\.register\('\/sw\.js'/);
-    assert.match(index, /id="workspace"/);
-    assert.match(index, /id="turnForm"/);
-    assert.match(index, /id="turnInput"/);
-    assert.match(index, /placeholder="Write something…"/);
+    assert.match(index, /id="session-bar"/);
+    assert.match(index, /id="session-presets"/);
+    assert.match(index, /id="compose-form"/);
+    assert.match(index, /id="compose-input"/);
+    assert.match(index, /id="compose-send"/);
+    assert.match(index, /id="compose-note"/);
+    assert.match(index, /id="voice-record"/);
+    assert.match(index, /id="scope-path"/);
     assert.match(index, /placeholder="Describe a task to start a session…"/);
+    // The unified composer replaced the duplicate open/send inputs and the compose noise.
+    assert.doesNotMatch(index, /id="turnForm"/);
+    assert.doesNotMatch(index, /id="turnInput"/);
+    assert.doesNotMatch(index, /id="prompt-form"/);
+    assert.doesNotMatch(index, /id="workspace"/);
+    assert.doesNotMatch(index, /id="project-filter"/);
+    assert.doesNotMatch(index, /id="recent-projects"/);
+    assert.doesNotMatch(index, /id="quick-actions"/);
+    assert.doesNotMatch(index, /id="quick-actions-refresh"/);
+    assert.doesNotMatch(index, /id="stop-session"/);
+    assert.doesNotMatch(index, /FREE SESSION/);
     assert.doesNotMatch(index, /id="provider"/);
     assert.doesNotMatch(index, /id="mode-chat"/);
     assert.doesNotMatch(index, /id="mode-workflow"/);
     assert.doesNotMatch(index, /workflow/i);
     assert.match(index, /id="history-toggle"/);
     assert.match(index, /id="settings-toggle"/);
-    assert.match(index, /id="project-filter"/);
     assert.match(index, /id="project-selector"/);
     assert.doesNotMatch(index, /class="project-scope__button/);
     assert.match(index, /id="add-project"/);
@@ -51,9 +65,12 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="managed-projects"/);
     assert.match(index, /MANAGE PROJECTS/);
     assert.doesNotMatch(index, /id="remove-project"/);
-    assert.match(index, /id="quick-actions"/);
-    assert.match(index, /id="quick-actions-refresh"/);
     assert.match(index, /id="project-proposals"/);
+    assert.match(index, /id="host-panel"/);
+    assert.match(index, /id="host-stats"/);
+    assert.match(index, /id="host-cap"/);
+    assert.match(index, /id="host-cap-apply"/);
+    assert.match(index, /id="host-refresh"/);
     assert.match(index, /id="history-drawer"/);
     assert.match(index, /id="history-search"/);
     assert.match(index, /id="history-project-filter"/);
@@ -95,6 +112,19 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     const markdownResponse = await fetch(`${address.httpUrl}/lib/markdown.js`);
     assert.equal(markdownResponse.status, 200);
     assert.match(await markdownResponse.text(), /copy-button/);
+    for (const module of [
+      '/ui/session-bar.js',
+      '/ui/voice.js',
+      '/ui/host-panel.js',
+      '/ui/elements.js',
+      '/lib/session-items.js',
+    ]) {
+      const moduleResponse = await fetch(`${address.httpUrl}${module}`);
+      assert.equal(moduleResponse.status, 200, module);
+      assert.equal(moduleResponse.headers.get('content-type'), 'text/javascript');
+    }
+    const pickerResponse = await fetch(`${address.httpUrl}/ui/project-picker.js`);
+    assert.equal(pickerResponse.status, 404);
   } finally {
     await plane.stop();
     fs.rmSync(path.dirname(dataPath), { recursive: true, force: true });

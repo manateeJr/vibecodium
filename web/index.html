@@ -47,12 +47,6 @@
             </div>
             <span id="stream-caption">No active stream</span>
           </div>
-          <div
-            id="stream-switcher"
-            class="stream-switcher"
-            role="tablist"
-            aria-label="Open streams"
-          ></div>
         </div>
         <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
           <li id="stream-empty" class="stream-empty">Open a session to begin.</li>
@@ -61,99 +55,45 @@
       </section>
 
       <section class="compose-panel" aria-label="Compose">
-        <div id="chat-compose" class="chat-compose">
-          <section class="project-scope" aria-label="Project scope">
-            <div class="project-scope__bar">
-              <label class="project-scope__field" for="project-selector">
-                <span class="entry-label">PROJECT</span>
-                <select id="project-selector" class="project-selector" autocomplete="off">
-                  <option value="">Scratch</option>
-                </select>
-              </label>
-            </div>
-            <div class="quick-actions-shell" hidden>
-              <div class="quick-actions__bar">
-                <span class="entry-label">QUICK ACTIONS</span>
-                <button
-                  id="quick-actions-refresh"
-                  class="quick-actions__refresh"
-                  type="button"
-                  aria-label="Shuffle quick actions"
-                  title="Shuffle quick actions"
-                >
-                  ↻
-                </button>
-              </div>
-              <div id="quick-actions" class="quick-actions" aria-label="Quick actions"></div>
-            </div>
-          </section>
-          <form id="turnForm" class="turn-bar" hidden>
-            <div class="prompt-label">
-              <span class="entry-label">CHAT</span>
-              <span class="prompt-hint">SESSION.SEND</span>
-            </div>
-            <div class="turn-grid">
-              <label class="sr-only" for="turnInput">Message</label>
-              <input
-                id="turnInput"
-                name="turnInput"
-                type="text"
-                autocomplete="off"
-                placeholder="Write something…"
-              />
-              <button id="send-turn" class="button button--send" type="submit">SEND</button>
-            </div>
-          </form>
-
-          <form id="prompt-form" class="prompt-bar">
-            <div class="prompt-label">
-              <span class="entry-label">FREE SESSION</span>
-              <span class="prompt-hint">SESSION.OPEN</span>
-            </div>
-            <div id="scratch-project-picker">
-              <label class="sr-only" for="project-filter">Filter projects</label>
-              <input
-                id="project-filter"
-                class="project-filter"
-                name="project-filter"
-                type="search"
-                autocomplete="off"
-                placeholder="Filter projects..."
-              />
-              <div
-                id="recent-projects"
-                class="recent-projects"
-                hidden
-                aria-label="Recent projects"
-              ></div>
-              <label class="sr-only" for="workspace">Project</label>
-              <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
-                <option value="">(default cwd)</option>
-              </select>
-            </div>
-            <div class="prompt-grid">
-              <label class="sr-only" for="prompt">Prompt</label>
-              <input
-                id="prompt"
-                name="prompt"
-                type="text"
-                autocomplete="off"
-                placeholder="Describe a task to start a session…"
-                required
-              />
-              <button id="open-session" class="button button--open" type="submit">OPEN</button>
-            </div>
-          </form>
+        <div class="project-scope">
+          <label class="project-scope__field" for="project-selector">
+            <span class="entry-label">PROJECT</span>
+            <select id="project-selector" class="project-selector" autocomplete="off">
+              <option value="">Scratch</option>
+            </select>
+          </label>
+          <p id="scope-path" class="scope-path">(default cwd)</p>
         </div>
-
-        <section
-          id="chat-controls"
-          class="action-row chat-controls"
-          aria-label="Chat controls"
+        <div id="session-bar" class="session-bar" role="group" aria-label="Recent sessions"></div>
+        <div
+          id="session-presets"
+          class="session-presets"
+          aria-label="New session presets"
           hidden
-        >
-          <button id="stop-session" class="button button--stop" type="button" disabled>STOP</button>
-        </section>
+        ></div>
+        <form id="compose-form" class="compose-bar">
+          <label class="sr-only" for="compose-input">Message</label>
+          <input
+            id="compose-input"
+            name="compose-input"
+            type="text"
+            autocomplete="off"
+            placeholder="Describe a task to start a session…"
+            required
+          />
+          <button
+            id="voice-record"
+            class="button button--mic"
+            type="button"
+            aria-pressed="false"
+            aria-label="Record a voice note"
+            title="Record a voice note"
+          >
+            MIC
+          </button>
+          <button id="compose-send" class="button button--open" type="submit">OPEN</button>
+        </form>
+        <p id="compose-note" class="compose-note" role="status" aria-live="polite" hidden></p>
       </section>
 
       <aside id="history-drawer" class="drawer drawer--history" hidden aria-label="Session history">
@@ -214,6 +154,31 @@
           Not needed over Tailscale (loopback). Only for direct tailnet access.
         </p>
         <p class="token-note">Stored only in this browser on this device.</p>
+        <section id="host-panel" class="drawer-section host-panel" aria-labelledby="host-title">
+          <div class="drawer-section__heading">
+            <h3 id="host-title">HOST</h3>
+            <button id="host-refresh" class="project-form__button" type="button">REFRESH</button>
+          </div>
+          <dl id="host-stats" class="host-stats"></dl>
+          <div class="host-cap">
+            <label class="entry-label" for="host-cap">MAX CONCURRENT</label>
+            <div class="host-cap__grid">
+              <input
+                id="host-cap"
+                class="host-cap__input"
+                name="host-cap"
+                type="number"
+                min="1"
+                max="64"
+                step="1"
+                inputmode="numeric"
+                autocomplete="off"
+              />
+              <button id="host-cap-apply" class="project-form__button" type="button">APPLY</button>
+            </div>
+          </div>
+          <span id="host-status" class="project-form__status" aria-live="polite"></span>
+        </section>
         <section
           class="drawer-section project-management"
           aria-labelledby="project-management-title"
