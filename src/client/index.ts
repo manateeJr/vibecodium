@@ -1,7 +1,10 @@
 import type {
   EventsHttpResponse,
+  MachineListResult,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionResumeArgs,
+  SessionResumeResult,
   SessionSendArgs,
   SessionSendResult,
   SessionStopArgs,
@@ -12,6 +15,8 @@ import type {
   WorkflowRunArgs,
   WorkflowRunResult,
   WorkspaceListResult,
+  WorkspaceStatusArgs,
+  WorkspaceStatusResult,
 } from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
 
@@ -23,6 +28,9 @@ const COMMAND_NAMES = {
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
+  machineList: 'machine.list',
+  sessionResume: 'session.resume',
+  workspaceStatus: 'workspace.status',
 } as const;
 
 export type {
@@ -39,8 +47,12 @@ export type {
   CommandResultMap,
   CommandServerFrame,
   EventsHttpResponse,
+  MachineListResult,
+  MachineSessionSummary,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionResumeArgs,
+  SessionResumeResult,
   SessionSendArgs,
   SessionSendResult,
   SessionStopArgs,
@@ -53,6 +65,8 @@ export type {
   WorkspaceEntry,
   WorkspaceListArgs,
   WorkspaceListResult,
+  WorkspaceStatusArgs,
+  WorkspaceStatusResult,
 } from '../contracts/commands.js';
 
 export interface ClientOptions {
@@ -63,9 +77,12 @@ export interface ClientOptions {
 
 export interface VibecodiumClient {
   openSession(args: SessionOpenArgs): Promise<SessionOpenResult>;
+  resumeSession(args: SessionResumeArgs): Promise<SessionResumeResult>;
   stopSession(args: SessionStopArgs): Promise<SessionStopResult>;
   sendMessage(args: SessionSendArgs): Promise<SessionSendResult>;
   listWorkspaces(): Promise<WorkspaceListResult>;
+  machineList(): Promise<MachineListResult>;
+  workspaceStatus(args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult>;
   runWorkflow(args: WorkflowRunArgs): Promise<WorkflowRunResult>;
   approve(args: WorkflowApproveArgs): Promise<WorkflowApproveResult>;
   getEvents(stream_id: string, from_seq: number): Promise<readonly EventEnvelope[]>;
@@ -103,6 +120,17 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     return result;
   };
 
+  const resumeSession = async (args: SessionResumeArgs): Promise<SessionResumeResult> => {
+    const result = await post<SessionResumeResult>(
+      baseUrl,
+      COMMAND_NAMES.sessionResume,
+      args,
+      options.token,
+    );
+    activeStreamId = result.stream_id;
+    return result;
+  };
+
   const stopSession = (args: SessionStopArgs): Promise<SessionStopResult> =>
     post<SessionStopResult>(baseUrl, COMMAND_NAMES.sessionStop, args, options.token);
   const sendMessage = (args: SessionSendArgs): Promise<SessionSendResult> =>
@@ -110,6 +138,11 @@ export function createClient(options: ClientOptions): VibecodiumClient {
 
   const listWorkspaces = (): Promise<WorkspaceListResult> =>
     post<WorkspaceListResult>(baseUrl, COMMAND_NAMES.workspaceList, {}, options.token);
+
+  const machineList = (): Promise<MachineListResult> =>
+    post<MachineListResult>(baseUrl, COMMAND_NAMES.machineList, {}, options.token);
+  const workspaceStatus = (args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult> =>
+    post<WorkspaceStatusResult>(baseUrl, COMMAND_NAMES.workspaceStatus, args, options.token);
 
   const runWorkflow = async (args: WorkflowRunArgs): Promise<WorkflowRunResult> => {
     const result = await post<WorkflowRunResult>(
@@ -149,44 +182,84 @@ export function createClient(options: ClientOptions): VibecodiumClient {
   ): (() => void) => {
     let cancelled = false;
     let socket: SocketLike | undefined;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectAttempt = 0;
+    let lastSeq = from_seq;
+    let firstConnection = true;
     const browserWebSocket: unknown = globalThis.WebSocket;
     const Socket =
       options.webSocket ??
       (typeof browserWebSocket === 'function'
         ? (browserWebSocket as SocketConstructor)
         : undefined);
-    if (Socket) {
+    const subscribedStreamId = streamId ?? activeStreamId ?? '*';
+    const scheduleReconnect = (): void => {
+      if (cancelled || reconnectTimer !== undefined || !Socket) return;
+      const delay = Math.min(5_000, 50 * 2 ** Math.min(reconnectAttempt, 7));
+      reconnectAttempt += 1;
+      reconnectTimer = globalThis.setTimeout(() => {
+        reconnectTimer = undefined;
+        connect();
+      }, delay);
+    };
+    const connect = (): void => {
+      if (cancelled || !Socket) return;
+      let nextSocket: SocketLike;
       try {
-        socket = new Socket(websocketUrl(baseUrl));
+        nextSocket = new Socket(websocketUrl(baseUrl));
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      socket = nextSocket;
+      const frameFromSeq = firstConnection ? from_seq : lastSeq + 1;
+      firstConnection = false;
+      const sendFrame = (): void => {
+        if (cancelled || socket !== nextSocket || nextSocket.readyState !== OPEN_STATE) return;
         const frame: SubscribeFrame = {
           type: 'subscribe',
-          streamId: streamId ?? activeStreamId ?? '*',
-          fromSeq: from_seq,
+          streamId: subscribedStreamId,
+          fromSeq: frameFromSeq,
           ...(options.token === undefined ? {} : { token: options.token }),
         };
-        const sendFrame = (): void => {
-          if (!cancelled && socket?.readyState === OPEN_STATE) socket.send(JSON.stringify(frame));
-        };
-        addSocketListener(socket, 'open', sendFrame);
-        addSocketListener(socket, 'message', (event) => {
-          const message = parseSocketMessage(event);
-          if (message?.type === 'event' && isEventEnvelope(message.event)) onEvent(message.event);
-        });
-      } catch {
-        socket?.close();
-      }
-    }
+        nextSocket.send(JSON.stringify(frame));
+      };
+      addSocketListener(nextSocket, 'open', () => {
+        reconnectAttempt = 0;
+        sendFrame();
+      });
+      addSocketListener(nextSocket, 'message', (event) => {
+        if (cancelled || socket !== nextSocket) return;
+        const message = parseSocketMessage(event);
+        if (message?.type !== 'event' || !isEventEnvelope(message.event)) return;
+        lastSeq = Math.max(lastSeq, message.event.seq);
+        onEvent(message.event);
+      });
+      addSocketListener(nextSocket, 'close', () => {
+        if (cancelled || socket !== nextSocket) return;
+        socket = undefined;
+        scheduleReconnect();
+      });
+    };
+    if (Socket) connect();
     return () => {
       cancelled = true;
-      socket?.close();
+      if (reconnectTimer !== undefined) globalThis.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+      const currentSocket = socket;
+      socket = undefined;
+      currentSocket?.close();
     };
   };
 
   return {
     openSession,
+    resumeSession,
     stopSession,
     sendMessage,
     listWorkspaces,
+    machineList,
+    workspaceStatus,
     runWorkflow,
     approve,
     getEvents,

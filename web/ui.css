@@ -1,0 +1,324 @@
+/* UX wave additions to the pocket phosphor shell. */
+.top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.header-button {
+  min-height: 32px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.header-button:hover {
+  border-color: var(--focus);
+  color: var(--ink-hi);
+}
+
+.chat-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.git-status {
+  overflow: hidden;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-filter {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: var(--fs-input);
+}
+
+.project-filter:focus {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.project-filter::placeholder {
+  color: var(--placeholder);
+}
+
+.recent-projects {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 7px;
+  overflow-x: auto;
+}
+
+.project-chip {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.project-chip:hover {
+  border-color: var(--focus);
+  color: var(--ink-hi);
+}
+
+.jump-latest {
+  align-self: center;
+  min-height: 32px;
+  margin: 8px auto 0;
+  padding: 0 10px;
+  border: 1px solid var(--focus);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-hi);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.stream-line--thinking {
+  color: var(--amber);
+}
+
+.thinking-cursor {
+  color: var(--ok);
+  animation: thinking-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes thinking-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.stream-line__text p,
+.stream-line__text ul,
+.stream-line__text ol {
+  margin: 0;
+}
+
+.stream-line__text p + p,
+.stream-line__text p + ul,
+.stream-line__text p + ol,
+.stream-line__text ul + p,
+.stream-line__text ol + p {
+  margin-top: 7px;
+}
+
+.stream-line__text ul,
+.stream-line__text ol {
+  padding-left: 20px;
+}
+
+.stream-line__prefix {
+  color: var(--ink-dim);
+}
+
+.markdown-body {
+  min-width: 0;
+}
+
+.stream-line__text code,
+.markdown-code pre {
+  font-family: var(--mono);
+}
+
+.stream-line__text code {
+  padding: 1px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--ink-hi);
+}
+
+.markdown-code {
+  position: relative;
+  margin: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.markdown-code pre {
+  max-width: 100%;
+  margin: 0;
+  padding: 9px 48px 9px 9px;
+  overflow-x: auto;
+  color: var(--ink-hi);
+  white-space: pre;
+}
+
+.copy-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 10px;
+  letter-spacing: var(--track-small);
+}
+
+.copy-button:hover {
+  border-color: var(--focus);
+  color: var(--ink-hi);
+}
+
+.drawer {
+  position: fixed;
+  z-index: 5;
+  top: 0;
+  right: max(0px, env(safe-area-inset-right));
+  bottom: 0;
+  width: min(88vw, 380px);
+  padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  border-left: 1px solid var(--focus);
+  background: var(--bg);
+  box-shadow: -12px 0 32px rgb(0 0 0 / 45%);
+  animation: drawer-in 0.16s ease-out;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.drawer-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-heading h2,
+.drawer-section h3 {
+  margin: 0;
+  color: var(--ink-hi);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+}
+
+.drawer-section {
+  padding-top: 16px;
+}
+
+.drawer-section h3 {
+  padding-bottom: 7px;
+  color: var(--ink-dim);
+}
+
+.history-list {
+  display: grid;
+  gap: 6px;
+}
+
+.history-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  min-height: 48px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--ink);
+  text-align: left;
+}
+
+.history-item:hover {
+  border-color: var(--focus);
+}
+
+.history-item[data-status='running'] .history-item__title {
+  color: var(--ok);
+}
+
+.history-item__title {
+  overflow: hidden;
+  color: var(--ink-hi);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item__meta,
+.drawer-empty {
+  overflow-wrap: anywhere;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+}
+
+.drawer-empty {
+  margin: 0;
+  padding: 8px 0;
+}
+
+.drawer > label {
+  display: block;
+  margin-top: 18px;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.drawer-control {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: var(--fs-input);
+}
+
+.drawer-control:focus {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.drawer .token-state {
+  display: block;
+  margin-top: 6px;
+}
+
+.drawer .token-hint,
+.drawer .token-note {
+  display: block;
+  margin: 0;
+  padding-top: 8px;
+}

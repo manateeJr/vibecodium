@@ -36,6 +36,12 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="turnForm"/);
     assert.match(index, /id="turnInput"/);
 
+    assert.match(index, /id="history-toggle"/);
+    assert.match(index, /id="settings-toggle"/);
+    assert.match(index, /id="project-filter"/);
+    assert.match(index, /id="history-drawer"/);
+    assert.match(index, /id="settings-drawer"/);
+    assert.match(index, /JUMP TO LATEST/);
     const manifestResponse = await fetch(`${address.httpUrl}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200);
     assert.equal(manifestResponse.headers.get('content-type'), 'application/manifest+json');
@@ -55,6 +61,13 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     const pocketCssResponse = await fetch(`${address.httpUrl}/pocket.css`);
     assert.equal(pocketCssResponse.status, 200);
     assert.equal(pocketCssResponse.headers.get('content-type'), 'text/css');
+
+    const uiResponse = await fetch(`${address.httpUrl}/ui.css`);
+    assert.equal(uiResponse.status, 200);
+    assert.equal(uiResponse.headers.get('content-type'), 'text/css');
+    const markdownResponse = await fetch(`${address.httpUrl}/lib/markdown.js`);
+    assert.equal(markdownResponse.status, 200);
+    assert.match(await markdownResponse.text(), /copy-button/);
   } finally {
     await plane.stop();
     fs.rmSync(path.dirname(dataPath), { recursive: true, force: true });

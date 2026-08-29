@@ -14,6 +14,7 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="stylesheet" href="/tokens.css" />
     <link rel="stylesheet" href="/pocket.css" />
+    <link rel="stylesheet" href="/ui.css" />
   </head>
   <body>
     <main class="app-shell">
@@ -22,16 +23,27 @@
           <p class="brand-kicker">CONTROL PLANE</p>
           <p class="brand-name">Vibecodium</p>
         </div>
-        <div class="connection" aria-live="polite">
-          <span class="connection-dot" aria-hidden="true"></span>
-          <span id="connection-status">READY</span>
+        <div class="top-actions">
+          <button id="history-toggle" class="header-button" type="button" aria-expanded="false">
+            HISTORY
+          </button>
+          <button id="settings-toggle" class="header-button" type="button" aria-expanded="false">
+            SETTINGS
+          </button>
+          <div class="connection" aria-live="polite">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="connection-status">READY</span>
+          </div>
         </div>
       </header>
 
       <section class="stream-panel" aria-labelledby="stream-title">
         <div class="section-heading">
           <div class="section-heading__title">
-            <h1 id="stream-title">CHAT</h1>
+            <div class="chat-heading">
+              <h1 id="stream-title">CHAT</h1>
+              <span id="git-status" class="git-status" hidden></span>
+            </div>
             <span id="stream-caption">No active stream</span>
           </div>
           <div
@@ -44,7 +56,9 @@
         <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
           <li id="stream-empty" class="stream-empty">Open a session or run a workflow to begin.</li>
         </ol>
+        <button id="jump-latest" class="jump-latest" type="button" hidden>JUMP TO LATEST</button>
       </section>
+
       <form id="turnForm" class="turn-bar" hidden>
         <div class="prompt-label">
           <span class="entry-label">CHAT</span>
@@ -68,6 +82,16 @@
           <span class="entry-label">FREE SESSION</span>
           <span class="prompt-hint">SESSION.OPEN</span>
         </div>
+        <label class="sr-only" for="project-filter">Filter projects</label>
+        <input
+          id="project-filter"
+          class="project-filter"
+          name="project-filter"
+          type="search"
+          autocomplete="off"
+          placeholder="Filter projects..."
+        />
+        <div id="recent-projects" class="recent-projects" hidden aria-label="Recent projects"></div>
         <label class="sr-only" for="workspace">Project</label>
         <select id="workspace" class="workspace-picker" name="workspace" autocomplete="off">
           <option value="">(default cwd)</option>
@@ -78,7 +102,6 @@
             <option value="fake">fake</option>
             <option value="omp">omp</option>
             <option value="codex">codex</option>
-            <option value="claude">claude</option>
           </select>
           <label class="sr-only" for="prompt">Prompt</label>
           <input
@@ -104,25 +127,48 @@
         </button>
       </section>
 
-      <details class="token-panel">
-        <summary>
-          <span>CAPABILITY TOKEN</span>
-          <span id="token-state" class="token-state">not set</span>
-        </summary>
-        <label for="capability-token">Paste the token for remote commands</label>
+      <aside id="history-drawer" class="drawer drawer--history" hidden aria-label="Session history">
+        <div class="drawer-heading">
+          <h2>HISTORY</h2>
+          <button id="history-close" class="header-button" type="button">CLOSE</button>
+        </div>
+        <section class="drawer-section" aria-labelledby="live-history-title">
+          <h3 id="live-history-title">LIVE VIBECODIUM</h3>
+          <div id="live-history" class="history-list"></div>
+        </section>
+        <section class="drawer-section" aria-labelledby="machine-history-title">
+          <h3 id="machine-history-title">MACHINE SESSIONS</h3>
+          <div id="machine-history" class="history-list"></div>
+        </section>
+      </aside>
+
+      <aside id="settings-drawer" class="drawer drawer--settings" hidden aria-label="Settings">
+        <div class="drawer-heading">
+          <h2>SETTINGS</h2>
+          <button id="settings-close" class="header-button" type="button">CLOSE</button>
+        </div>
+        <label for="default-harness">DEFAULT HARNESS</label>
+        <select id="default-harness" class="drawer-control" autocomplete="off">
+          <option value="fake">fake</option>
+          <option value="omp">omp</option>
+          <option value="codex">codex</option>
+        </select>
+        <label for="capability-token">CAPABILITY TOKEN</label>
         <input
           id="capability-token"
+          class="drawer-control"
           name="capability-token"
           type="password"
           autocomplete="off"
           spellcheck="false"
           placeholder="cap_..."
         />
+        <span id="token-state" class="token-state">not set</span>
         <p class="token-hint">
           Not needed over Tailscale (loopback). Only for direct tailnet access.
         </p>
         <p class="token-note">Stored only in this browser on this device.</p>
-      </details>
+      </aside>
     </main>
 
     <script>
