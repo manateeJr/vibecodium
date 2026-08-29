@@ -83,13 +83,20 @@ test('SDK posts command args and subscribes with the active stream frame', async
   StubSocket.instances.length = 0;
   try {
     const client = createClient({ baseUrl: 'http://127.0.0.1:4310/', token: 'token-1' });
-    const result = await client.openSession({ provider: 'fake', prompt: 'hello' });
+    const result = await client.openSession({
+      provider: 'fake',
+      prompt: 'hello',
+      cwd: '/tmp/repo',
+      project: 'repo',
+    });
     assert.deepEqual(result, { session_id: 'session-1', stream_id: 'session:session-1' });
     assert.equal(requests[0]?.url, 'http://127.0.0.1:4310/commands/session.open');
     assert.equal(requests[0]?.init?.method, 'POST');
     assert.deepEqual(JSON.parse(String(requests[0]?.init?.body)), {
       provider: 'fake',
       prompt: 'hello',
+      cwd: '/tmp/repo',
+      project: 'repo',
     });
     const sendResult = await client.sendMessage({
       session_id: 'session-1',
@@ -128,6 +135,7 @@ test('SDK posts command args and subscribes with the active stream frame', async
       ref: 'session-ref',
       prompt: 'continue',
       cwd: '/tmp/repo',
+      project: 'repo',
     });
     assert.deepEqual(resumed, { session_id: 'session-2', stream_id: 'session:session-2' });
     assert.equal(requests[4]?.url, 'http://127.0.0.1:4310/commands/session.resume');
@@ -137,6 +145,7 @@ test('SDK posts command args and subscribes with the active stream frame', async
       ref: 'session-ref',
       prompt: 'continue',
       cwd: '/tmp/repo',
+      project: 'repo',
     });
 
     const workspaceStatus = await client.workspaceStatus({ path: '/tmp/repo' });
@@ -188,6 +197,79 @@ test('SDK posts command args and subscribes with the active stream frame', async
   } finally {
     globalThis.fetch = originalFetch;
     (globalThis as unknown as { WebSocket?: unknown }).WebSocket = originalWebSocket;
+  }
+});
+test('SDK frames project commands as POST requests', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; init: RequestInit | undefined }> = [];
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), init });
+    const url = String(input);
+    const value = url.endsWith('/commands/project.list')
+      ? { projects: [] }
+      : url.endsWith('/commands/project.detect')
+        ? { proposed: [{ id: 'test', label: 'Test', prompt: 'run tests' }] }
+        : url.endsWith('/commands/project.save')
+          ? {
+              project: {
+                name: 'repo',
+                path: '/tmp/repo',
+                description: 'A repo',
+                quickActions: [{ id: 'test', label: 'Test', prompt: 'run tests' }],
+                scope: 'project',
+              },
+            }
+          : { removed: true };
+    return { ok: true, status: 200, json: async () => ({ value }) } as Response;
+  };
+  try {
+    const client = createClient({ baseUrl: 'http://127.0.0.1:4310' });
+    assert.deepEqual(await client.listProjects(), { projects: [] });
+    assert.deepEqual(await client.detectProject({ path: '/tmp/repo', description: 'A repo' }), {
+      proposed: [{ id: 'test', label: 'Test', prompt: 'run tests' }],
+    });
+    const quickActions = [{ id: 'test', label: 'Test', prompt: 'run tests' }];
+    assert.deepEqual(
+      await client.saveProject({
+        name: 'repo',
+        path: '/tmp/repo',
+        description: 'A repo',
+        quickActions,
+      }),
+      {
+        project: {
+          name: 'repo',
+          path: '/tmp/repo',
+          description: 'A repo',
+          quickActions,
+          scope: 'project',
+        },
+      },
+    );
+    assert.deepEqual(await client.removeProject({ name: 'repo' }), { removed: true });
+    assert.deepEqual(
+      requests.map((request) => [
+        request.url,
+        request.init?.method,
+        JSON.parse(String(request.init?.body)),
+      ]),
+      [
+        ['http://127.0.0.1:4310/commands/project.list', 'POST', {}],
+        [
+          'http://127.0.0.1:4310/commands/project.detect',
+          'POST',
+          { path: '/tmp/repo', description: 'A repo' },
+        ],
+        [
+          'http://127.0.0.1:4310/commands/project.save',
+          'POST',
+          { name: 'repo', path: '/tmp/repo', description: 'A repo', quickActions },
+        ],
+        ['http://127.0.0.1:4310/commands/project.remove', 'POST', { name: 'repo' }],
+      ],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 test('SDK reconnects after a socket close and backfills from the next sequence', async () => {

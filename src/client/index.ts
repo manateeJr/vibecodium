@@ -1,6 +1,13 @@
 import type {
   EventsHttpResponse,
   MachineListResult,
+  ProjectDetectArgs,
+  ProjectDetectResult,
+  ProjectListResult,
+  ProjectRemoveArgs,
+  ProjectRemoveResult,
+  ProjectSaveArgs,
+  ProjectSaveResult,
   SessionOpenArgs,
   SessionOpenResult,
   SessionResumeArgs,
@@ -31,6 +38,10 @@ const COMMAND_NAMES = {
   machineList: 'machine.list',
   sessionResume: 'session.resume',
   workspaceStatus: 'workspace.status',
+  projectList: 'project.list',
+  projectDetect: 'project.detect',
+  projectSave: 'project.save',
+  projectRemove: 'project.remove',
 } as const;
 
 export type {
@@ -45,10 +56,18 @@ export type {
   CommandResult,
   CommandResultFrame,
   CommandResultMap,
-  CommandServerFrame,
   EventsHttpResponse,
   MachineListResult,
   MachineSessionSummary,
+  Project,
+  ProjectDetectArgs,
+  ProjectDetectResult,
+  ProjectListResult,
+  ProjectRemoveArgs,
+  ProjectRemoveResult,
+  ProjectSaveArgs,
+  ProjectSaveResult,
+  QuickAction,
   SessionOpenArgs,
   SessionOpenResult,
   SessionResumeArgs,
@@ -83,6 +102,10 @@ export interface VibecodiumClient {
   listWorkspaces(): Promise<WorkspaceListResult>;
   machineList(): Promise<MachineListResult>;
   workspaceStatus(args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult>;
+  listProjects(): Promise<ProjectListResult>;
+  detectProject(args: ProjectDetectArgs): Promise<ProjectDetectResult>;
+  saveProject(args: ProjectSaveArgs): Promise<ProjectSaveResult>;
+  removeProject(args: ProjectRemoveArgs): Promise<ProjectRemoveResult>;
   runWorkflow(args: WorkflowRunArgs): Promise<WorkflowRunResult>;
   approve(args: WorkflowApproveArgs): Promise<WorkflowApproveResult>;
   getEvents(stream_id: string, from_seq: number): Promise<readonly EventEnvelope[]>;
@@ -143,6 +166,14 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<MachineListResult>(baseUrl, COMMAND_NAMES.machineList, {}, options.token);
   const workspaceStatus = (args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult> =>
     post<WorkspaceStatusResult>(baseUrl, COMMAND_NAMES.workspaceStatus, args, options.token);
+  const listProjects = (): Promise<ProjectListResult> =>
+    post<ProjectListResult>(baseUrl, COMMAND_NAMES.projectList, {}, options.token);
+  const detectProject = (args: ProjectDetectArgs): Promise<ProjectDetectResult> =>
+    post<ProjectDetectResult>(baseUrl, COMMAND_NAMES.projectDetect, args, options.token);
+  const saveProject = (args: ProjectSaveArgs): Promise<ProjectSaveResult> =>
+    post<ProjectSaveResult>(baseUrl, COMMAND_NAMES.projectSave, args, options.token);
+  const removeProject = (args: ProjectRemoveArgs): Promise<ProjectRemoveResult> =>
+    post<ProjectRemoveResult>(baseUrl, COMMAND_NAMES.projectRemove, args, options.token);
 
   const runWorkflow = async (args: WorkflowRunArgs): Promise<WorkflowRunResult> => {
     const result = await post<WorkflowRunResult>(
@@ -260,6 +291,10 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     listWorkspaces,
     machineList,
     workspaceStatus,
+    listProjects,
+    detectProject,
+    saveProject,
+    removeProject,
     runWorkflow,
     approve,
     getEvents,

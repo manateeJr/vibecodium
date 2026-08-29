@@ -7,6 +7,7 @@ export function createActions({
   sessions,
   state,
   getSelectedStreamId,
+  getActiveProject,
   setStatus,
   refreshControls,
   renderSwitcher,
@@ -17,10 +18,8 @@ export function createActions({
   appendError,
   errorMessage,
 }) {
-  const openSession = async () => {
+  const openSessionWith = async (prompt, cwd, projectName) => {
     const provider = elements.harness.value.trim();
-    const prompt = elements.prompt.value.trim();
-    const cwd = projects.selectedPath();
     if (!provider || !prompt) {
       appendError('default harness and prompt are required');
       return;
@@ -30,11 +29,15 @@ export function createActions({
     setStatus('OPENING', 'wait');
     refreshControls();
     try {
-      const result = await client.openSession({ provider, prompt, ...(cwd ? { cwd } : {}) });
+      const openArgs = { provider, prompt };
+      if (cwd) openArgs.cwd = cwd;
+      if (projectName) openArgs.project = projectName;
+      const result = await client.openSession(openArgs);
       const entry = ensureEntry(result.stream_id, provider);
       if (!entry) throw new Error('session.open returned an invalid stream');
       entry.session_id = result.session_id;
-      entry.cwd = cwd;
+      entry.cwd = cwd || '';
+      entry.project = projectName || '';
       entry.busy = true;
       selectStream(result.stream_id);
       setStatus('LIVE', 'live');
@@ -47,6 +50,15 @@ export function createActions({
       refreshControls();
     }
   };
+
+  const openSession = async () => {
+    const project = getActiveProject();
+    const cwd = project?.path || projects.selectedPath();
+    return openSessionWith(elements.prompt.value.trim(), cwd, project?.name);
+  };
+
+  const openQuickAction = async (project, action) =>
+    openSessionWith(action.prompt.trim(), project.path, project.name);
 
   const sendMessage = async () => {
     const entry = sessions.get(getSelectedStreamId());
@@ -72,6 +84,7 @@ export function createActions({
           ref: entry.resume.ref,
           prompt,
           ...(entry.cwd ? { cwd: entry.cwd } : {}),
+          ...(entry.project ? { project: entry.project } : {}),
         });
         sessions.delete(entry.stream_id);
         entry.stream_id = result.stream_id;
@@ -175,5 +188,5 @@ export function createActions({
     }
   };
 
-  return { openSession, sendMessage, stopSession, runWorkflow, approveWorkflow };
+  return { openSession, openQuickAction, sendMessage, stopSession, runWorkflow, approveWorkflow };
 }
