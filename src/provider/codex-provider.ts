@@ -1,5 +1,6 @@
 import type {
   ProviderCapabilityMatrix,
+  ProviderSession,
   ProviderSpawnRequest,
 } from '../contracts/provider-contract.js';
 import { CliProvider, type CliProviderOptions, type CliProviderSession } from './cli-provider.js';
@@ -12,12 +13,21 @@ interface CodexDecoderState {
 
 export class CodexProvider extends CliProvider {
   public readonly name = 'codex';
+  private readonly resumedRefs = new Map<string, string>();
 
   public constructor(options: CliProviderOptions = {}) {
     super('codex', options);
   }
 
+  public override async spawn(request: ProviderSpawnRequest): Promise<ProviderSession> {
+    if (request.resumeRef) this.resumedRefs.set(request.sessionId, request.resumeRef);
+    return super.spawn(request);
+  }
+
   protected commandArgs(request: ProviderSpawnRequest): string[] {
+    const resumeRef =
+      request.resumeRef ?? (request.resume ? this.resumedRefs.get(request.sessionId) : undefined);
+    if (resumeRef) return ['exec', 'resume', resumeRef, '--json', '--', request.prompt];
     if (request.resume) return ['exec', 'resume', '--last', '--json', '--', request.prompt];
     return ['exec', '--json', '--', request.prompt];
   }

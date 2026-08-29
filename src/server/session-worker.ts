@@ -13,6 +13,7 @@ export interface StartWorkerMessage {
   readonly provider: string;
   readonly prompt: string;
   readonly cwd?: string;
+  readonly resumeRef?: string;
 }
 
 export interface TurnWorkerMessage {
@@ -52,7 +53,7 @@ interface ConversationState {
   readonly stream_id: string;
   readonly provider: ProviderSessionRef;
   readonly cwd?: string;
-  readonly storageDir: string;
+  readonly storageDir?: string;
   turn: number;
   currentSession: ProviderSession | undefined;
   stopping: boolean;
@@ -75,6 +76,7 @@ async function runTurn(
   prompt: string,
   resume: boolean,
   turn: number,
+  resumeRef?: string,
 ): Promise<void> {
   let session: ProviderSession | undefined;
   try {
@@ -82,8 +84,9 @@ async function runTurn(
       sessionId: state.session_id,
       prompt,
       ...(state.cwd === undefined ? {} : { cwd: state.cwd }),
-      storageDir: state.storageDir,
+      ...(state.storageDir === undefined ? {} : { storageDir: state.storageDir }),
       resume,
+      ...(resumeRef === undefined ? {} : { resumeRef }),
     });
     state.currentSession = session;
     if (state.stopping) {
@@ -150,21 +153,26 @@ export function startSessionWorker(): void {
         }).catch(() => undefined);
         return;
       }
-      const storageDir = path.join(os.tmpdir(), 'vibecodium-sessions', message.session_id);
+      const storageDir =
+        message.resumeRef === undefined
+          ? path.join(os.tmpdir(), 'vibecodium-sessions', message.session_id)
+          : undefined;
       state = {
         session_id: message.session_id,
         stream_id: message.stream_id,
         provider,
         ...(message.cwd === undefined ? {} : { cwd: message.cwd }),
-        storageDir,
+        ...(storageDir === undefined ? {} : { storageDir }),
         turn: 1,
         stopping: false,
         turnChain: Promise.resolve(),
         currentSession: undefined,
         stopPromise: undefined,
       };
-      state.turnChain = mkdir(storageDir, { recursive: true })
-        .then(() => runTurn(state!, message.prompt, false, 1))
+      state.turnChain = (
+        storageDir === undefined ? Promise.resolve() : mkdir(storageDir, { recursive: true })
+      )
+        .then(() => runTurn(state!, message.prompt, false, 1, message.resumeRef))
         .catch(async (error: unknown) => {
           if (state?.stopping) return;
           try {
