@@ -136,6 +136,7 @@ function isEventKind(value: string): value is EventKind {
     'session_output',
     'session_complete',
     'verify_failed',
+    'turn_complete',
     'action_requested',
     'action_approved',
     'action_denied',

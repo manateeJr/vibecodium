@@ -74,10 +74,36 @@ export const DEFAULT_NOTIFY_RULES: readonly NotifyRule[] = [
   { event_kind: 'action_requested', severity: 'action', channels: ['ntfy', 'in-app'] },
   { event_kind: 'action_denied', severity: 'action', channels: ['ntfy', 'in-app'] },
   { event_kind: 'verify_failed', severity: 'warn', channels: ['ntfy', 'in-app'] },
+  { event_kind: 'turn_complete', severity: 'info', channels: ['ntfy'] },
   { event_kind: 'proposal_queued', severity: 'info', channels: ['in-app'] },
   { event_kind: 'proposal_approved', severity: 'info', channels: ['in-app'] },
   { event_kind: 'merge_to_main', severity: 'info', channels: ['in-app'] },
 ];
+
+function notificationText(event: EventEnvelope): { readonly title: string; readonly body: string } {
+  if (event.type === 'turn_complete') {
+    return { title: 'omp turn done', body: `stream ${event.stream_id}` };
+  }
+  if (event.type === 'verify_failed') {
+    const payload = asRecord(event.payload);
+    const error = typeof payload?.error === 'string' ? payload.error : 'unknown error';
+    return { title: 'omp verify failed', body: error.slice(0, 240) };
+  }
+  return {
+    title: event.type.replaceAll('_', ' '),
+    body: JSON.stringify(event.payload),
+  };
+}
+
+function isNtfyConfigured(options: NotifyOptions): boolean {
+  if (options.notifiers?.ntfy !== undefined) return true;
+  const baseUrl = options.ntfy?.baseUrl ?? process.env.VIBECODIUM_NTFY_URL;
+  const topic =
+    options.ntfy?.topic ??
+    process.env.VIBECODIUM_NTFY_TOPIC ??
+    (options.ntfy?.baseUrl !== undefined ? 'vibecodium' : undefined);
+  return Boolean(baseUrl && topic && !/[\r\n]/.test(topic));
+}
 
 const DEFAULT_INBOUND_BASE_URL = 'http://127.0.0.1:4311';
 
@@ -88,13 +114,15 @@ export class NotifySubsystem implements Subsystem {
   public readonly inboxVerifier: InboxVerifier;
   public readonly inboundListener: InboundListener;
   private readonly now: () => Date;
-  private readonly notifiers: Readonly<Record<string, Notifier>>;
+  private readonly ntfyConfigured: boolean;
   private readonly inboundBaseUrl: string;
+  private readonly notifiers: Readonly<Record<string, Notifier>>;
   private context: SubsystemContext | undefined;
   private registered = false;
 
   public constructor(options: NotifyOptions = {}) {
     this.now = options.now ?? (() => new Date());
+    this.ntfyConfigured = isNtfyConfigured(options);
     this.store = new NotifyStore({ filename: databasePath(options) });
     for (const rule of options.defaultRules ?? DEFAULT_NOTIFY_RULES) this.setRule(rule);
     if (options.masterSwitch !== undefined) this.store.setMasterSwitch(options.masterSwitch);
@@ -207,11 +235,12 @@ export class NotifySubsystem implements Subsystem {
     if (event.type === 'notify_emitted' || !this.store.getMasterSwitch()) return;
     const severity = severityFor(event);
     if (severity !== 'action' && inQuietHours(this.now(), this.store.getQuietHours())) return;
-    const channels = this.store.route(event.type, severity);
+    const channels = this.store
+      .route(event.type, severity)
+      .filter((channel) => channel !== 'ntfy' || this.ntfyConfigured);
     if (channels.length === 0) return;
     const signature = notificationSignature(event, severity);
-    const title = event.type.replaceAll('_', ' ');
-    const body = JSON.stringify(event.payload);
+    const { title, body } = notificationText(event);
     const record = this.store.recordNotification({
       notification_id: randomUUID(),
       signature,

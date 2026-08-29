@@ -7,24 +7,31 @@ import type {
 
 export class NtfyNotifier implements Notifier {
   public readonly name = 'ntfy';
-  private readonly baseUrl: string;
-  private readonly topic: string;
+  private readonly baseUrl: string | undefined;
+  private readonly topic: string | undefined;
   private readonly token: string | undefined;
-  private readonly fetcher: typeof globalThis.fetch;
+  private readonly fetcher: typeof globalThis.fetch | undefined;
 
   public constructor(options: NtfyNotifierOptions = {}) {
-    const configuredBaseUrl =
-      options.baseUrl ?? process.env.VIBECODIUM_NTFY_BASE_URL ?? 'http://127.0.0.1:8080';
-    const parsedBaseUrl = new URL(configuredBaseUrl);
-    this.baseUrl = parsedBaseUrl.toString().replace(/\/$/, '');
-    this.topic = options.topic ?? process.env.VIBECODIUM_NTFY_TOPIC ?? 'vibecodium';
-    if (!this.topic || /[\r\n]/.test(this.topic)) throw new Error('ntfy topic is required');
+    const configuredBaseUrl = options.baseUrl ?? process.env.VIBECODIUM_NTFY_URL;
+    this.baseUrl = configuredBaseUrl
+      ? new URL(configuredBaseUrl).toString().replace(/\/$/, '')
+      : undefined;
+    const configuredTopic =
+      options.topic ??
+      process.env.VIBECODIUM_NTFY_TOPIC ??
+      (options.baseUrl !== undefined ? 'vibecodium' : undefined);
+    this.topic = configuredTopic && !/[\r\n]/.test(configuredTopic) ? configuredTopic : undefined;
     this.token = options.token ?? process.env.VIBECODIUM_NTFY_TOKEN;
-    this.fetcher = options.fetch ?? globalThis.fetch;
-    if (typeof this.fetcher !== 'function') throw new Error('global fetch is unavailable');
+    const fetcher = options.fetch ?? globalThis.fetch;
+    this.fetcher = typeof fetcher === 'function' ? fetcher : undefined;
+    if (this.baseUrl && this.topic && !this.fetcher) throw new Error('global fetch is unavailable');
   }
 
   public async send(message: NotificationMessage): Promise<NotificationDelivery> {
+    if (!this.baseUrl || !this.topic || !this.fetcher) {
+      return { channel: this.name, status: 'skipped' };
+    }
     const headers: Record<string, string> = {
       'Content-Type': 'text/plain; charset=utf-8',
       Title: message.title,
