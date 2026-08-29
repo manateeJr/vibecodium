@@ -72,6 +72,7 @@ test('session.resume admits, records, and forwards the provider resume reference
     ref: 'omp-session-ref',
     prompt: 'continue the old conversation',
     cwd: '/workspace',
+    project: 'vibecodium',
   });
 
   assert.deepEqual(result, {
@@ -83,6 +84,7 @@ test('session.resume admits, records, and forwards the provider resume reference
     provider: 'omp',
     prompt: 'continue the old conversation',
     cwd: '/workspace',
+    project: 'vibecodium',
   });
   assert.deepEqual(worker.messages[0], {
     type: 'start',

@@ -84,6 +84,7 @@ export class SessionSubsystem implements Subsystem {
         provider: args.source,
         prompt: args.prompt,
         ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
+        ...(args.project === undefined ? {} : { project: args.project }),
       },
       args.ref,
     );
@@ -119,6 +120,7 @@ export class SessionSubsystem implements Subsystem {
       provider: args.provider,
       prompt: args.prompt,
       ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
+      ...(args.project === undefined ? {} : { project: args.project }),
     });
 
     let worker: ChildProcess;
@@ -272,10 +274,13 @@ function sessionOpenArgs(command: unknown): SessionOpenArgs {
   if (typeof value.prompt !== 'string') throw new Error('prompt is required');
   if (value.cwd !== undefined && (typeof value.cwd !== 'string' || !value.cwd.trim()))
     throw new Error('cwd must be a non-empty string');
+  if (value.project !== undefined && (typeof value.project !== 'string' || !value.project.trim()))
+    throw new Error('project must be a non-empty string');
   return {
     provider: value.provider,
     prompt: value.prompt,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
+    ...(value.project === undefined ? {} : { project: value.project }),
   };
 }
 
@@ -287,11 +292,14 @@ function sessionResumeArgs(command: unknown): SessionResumeArgs {
   if (typeof value.prompt !== 'string') throw new Error('prompt is required');
   if (value.cwd !== undefined && (typeof value.cwd !== 'string' || !value.cwd.trim()))
     throw new Error('cwd must be a non-empty string');
+  if (value.project !== undefined && (typeof value.project !== 'string' || !value.project.trim()))
+    throw new Error('project must be a non-empty string');
   return {
     source: value.source,
     ref: value.ref,
     prompt: value.prompt,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
+    ...(value.project === undefined ? {} : { project: value.project }),
   };
 }
 

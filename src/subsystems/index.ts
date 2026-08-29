@@ -3,6 +3,7 @@ import { createMachineSessionsSubsystem } from '../machine-sessions/index.js';
 import { createNotifySubsystem } from '../notify/index.js';
 import { createSessionSubsystem } from '../session/index.js';
 import { createWorkspaceSubsystem } from '../workspace/index.js';
+import { createProjectsSubsystem } from '../projects/index.js';
 
 import { createTelemetrySubsystem } from '../telemetry/index.js';
 import { createWorkflowSubsystem } from '../workflow/index.js';
@@ -17,6 +18,7 @@ export function registerSubsystems(
     createMachineSessionsSubsystem(),
     createSessionSubsystem(),
     createWorkspaceSubsystem(),
+    createProjectsSubsystem(),
   ];
   for (const subsystem of selected) subsystem.register(context);
   return selected;
