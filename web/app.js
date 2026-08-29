@@ -1,65 +1,21 @@
-/* global document */
 import { createClient } from '/client.js';
+import { mergeSessionItems } from '/lib/session-items.js';
 import { eventClock } from '/lib/time.js';
 import { createActions } from '/ui/actions.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
-import { createProjectPicker } from '/ui/project-picker.js';
+import { queryElements } from '/ui/elements.js';
+import { createHostPanel } from '/ui/host-panel.js';
 import { createProjectManager } from '/ui/project-manager.js';
+import { createSessionBar } from '/ui/session-bar.js';
 import { createTranscriptView } from '/ui/transcript.js';
+import { createVoiceRecorder } from '/ui/voice.js';
 import { applySessionEvent } from '/ui/events.js';
 
 const TOKEN_KEY = 'vibecodium.token';
+const SESSION_LIMIT = 10;
+const SESSION_NOTE = 'recent sessions unavailable';
 
-const elements = {
-  status: document.querySelector('#connection-status'),
-  connection: document.querySelector('.connection'),
-  streamCaption: document.querySelector('#stream-caption'),
-  gitStatus: document.querySelector('#git-status'),
-  streamSwitcher: document.querySelector('#stream-switcher'),
-  streamLines: document.querySelector('#stream-lines'),
-  streamEmpty: document.querySelector('#stream-empty'),
-  jumpLatest: document.querySelector('#jump-latest'),
-  projectSelector: document.querySelector('#project-selector'),
-  quickActionsShell: document.querySelector('.quick-actions-shell'),
-  quickActions: document.querySelector('#quick-actions'),
-  quickActionsRefresh: document.querySelector('#quick-actions-refresh'),
-  projectAdd: document.querySelector('#add-project'),
-  projectFormShell: document.querySelector('#add-project-form'),
-  projectForm: document.querySelector('#project-form'),
-  projectPath: document.querySelector('#project-path'),
-  projectDescription: document.querySelector('#project-description'),
-  projectDetect: document.querySelector('#detect-project'),
-  projectSave: document.querySelector('#save-project'),
-  projectCancel: document.querySelector('#cancel-project'),
-  projectStatus: document.querySelector('#project-status'),
-  projectProposals: document.querySelector('#project-proposals'),
-  managedProjects: document.querySelector('#managed-projects'),
-  promptForm: document.querySelector('#prompt-form'),
-  projectFilter: document.querySelector('#project-filter'),
-  workspace: document.querySelector('#workspace'),
-  recentProjects: document.querySelector('#recent-projects'),
-  prompt: document.querySelector('#prompt'),
-  turnForm: document.querySelector('#turnForm'),
-  turnInput: document.querySelector('#turnInput'),
-  turnSend: document.querySelector('#send-turn'),
-  open: document.querySelector('#open-session'),
-  chatControls: document.querySelector('#chat-controls'),
-  stop: document.querySelector('#stop-session'),
-  tokenState: document.querySelector('#token-state'),
-  token: document.querySelector('#capability-token'),
-  harness: document.querySelector('#default-harness'),
-  historyToggle: document.querySelector('#history-toggle'),
-  historyDrawer: document.querySelector('#history-drawer'),
-  historyClose: document.querySelector('#history-close'),
-  historyScroll: document.querySelector('#history-scroll'),
-  historySearch: document.querySelector('#history-search'),
-  historyProjectFilter: document.querySelector('#history-project-filter'),
-  liveHistory: document.querySelector('#live-history'),
-  machineHistory: document.querySelector('#machine-history'),
-  settingsToggle: document.querySelector('#settings-toggle'),
-  settingsDrawer: document.querySelector('#settings-drawer'),
-  settingsClose: document.querySelector('#settings-close'),
-};
+const elements = queryElements();
 let clientToken = loadToken();
 const clientOptions = {
   baseUrl: globalThis.location.origin,
@@ -70,10 +26,14 @@ let selectedStreamId = '';
 const actionState = {
   opening: false,
   stopping: false,
+  forking: false,
 };
 let machineLoading = false;
+let sessionsLoading = false;
 let gitRequest = 0;
 let transientTimer = null;
+let remoteSessions = [];
+let scopePresets = [];
 const sessions = new Map();
 const transientLines = [];
 const seenEvents = new Set();
@@ -82,13 +42,13 @@ const transcript = createTranscriptView({
   streamEmpty: elements.streamEmpty,
   jumpLatest: elements.jumpLatest,
 });
-const projects = createProjectPicker({
-  filter: elements.projectFilter,
-  select: elements.workspace,
-  recent: elements.recentProjects,
-  onChange: (path) => {
-    if (path) void updateGitStatus(sessions.get(selectedStreamId));
-  },
+const sessionBar = createSessionBar({
+  bar: elements.sessionBar,
+  presetRow: elements.sessionPresets,
+  onNew: () => selectNew(),
+  onSelect: (item) => selectSessionItem(item),
+  onStop: () => void actions.stopSession(),
+  onPreset: (preset) => void actions.openPreset(preset),
 });
 const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
@@ -104,7 +64,7 @@ const history = createHistoryDrawer({
     history.close();
   },
   onMachineSelect: (session) => {
-    openMachineSession(session);
+    void actions.forkMachineSession(session);
     history.close();
   },
   onOpen: loadMachineSessions,
@@ -115,10 +75,13 @@ const projectManager = createProjectManager({
   errorMessage,
   onError: (message) => appendError(message),
   onProjectsChange: (nextProjects) => history.setProjects(nextProjects),
-  onProjectChange: (project) => {
-    if (project) projects.remember(project.path);
-  },
-  onQuickAction: (project, action) => void actions.openQuickAction(project, action),
+  onProjectChange: () => updateScope(),
+});
+const hostPanel = createHostPanel({
+  client,
+  elements,
+  errorMessage,
+  onError: (message) => appendError(message),
 });
 const settings = createSettingsDrawer({
   drawer: elements.settingsDrawer,
@@ -135,45 +98,49 @@ const settings = createSettingsDrawer({
     saveToken(value);
     refreshClient(value);
   },
+  onOpen: () => void hostPanel.refresh(),
+});
+createVoiceRecorder({
+  client,
+  button: elements.voiceRecord,
+  input: elements.composeInput,
+  note: setComposeNote,
+  onError: (message) => appendError(message),
+  errorMessage,
 });
 const actions = createActions({
   client,
   elements,
-  projects,
   sessions,
   state: actionState,
   getSelectedStreamId: () => selectedStreamId,
   getActiveProject: () => projectManager.selectedProject(),
   setStatus,
   refreshControls,
-  renderSwitcher,
+  renderSessions,
   renderStream,
   selectStream,
   ensureEntry,
   pushLine,
   appendError,
   errorMessage,
+  notify: setComposeNote,
+  reloadSessions: loadSessions,
 });
 elements.historyToggle.addEventListener('click', () => settings.close());
 elements.settingsToggle.addEventListener('click', () => history.close());
+elements.composeForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void actions.submitCompose();
+});
 setStatus(
   globalThis.navigator.onLine ? 'READY' : 'OFFLINE',
   globalThis.navigator.onLine ? 'idle' : 'bad',
 );
 refreshControls();
-renderSwitcher();
 renderStream();
-void loadWorkspaces();
+updateScope();
 void projectManager.load();
-elements.promptForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  void actions.openSession();
-});
-elements.turnForm.addEventListener('submit', (event) => {
-  event.preventDefault();
-  void actions.sendMessage();
-});
-elements.stop.addEventListener('click', () => void actions.stopSession());
 globalThis.addEventListener('online', () => {
   setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
   if (selectedStreamId) void hydrateStream(selectedStreamId);
@@ -204,15 +171,6 @@ function refreshClient(value = elements.token.value.trim()) {
   else delete clientOptions.token;
 }
 
-async function loadWorkspaces() {
-  try {
-    const result = await client.listWorkspaces();
-    projects.setWorkspaces(result.workspaces);
-  } catch (error) {
-    appendError(`workspace list failed: ${errorMessage(error)}`);
-  }
-}
-
 async function loadMachineSessions() {
   if (machineLoading) return;
   machineLoading = true;
@@ -227,22 +185,59 @@ async function loadMachineSessions() {
   }
 }
 
+async function loadSessions() {
+  if (sessionsLoading) return;
+  sessionsLoading = true;
+  const project = projectManager.selectedProject();
+  try {
+    const args = { limit: SESSION_LIMIT };
+    if (project?.name) args.project = project.name;
+    const result = await client.listSessions(args);
+    remoteSessions = [...result.sessions];
+    if (elements.composeNote.textContent.startsWith(SESSION_NOTE)) setComposeNote('');
+  } catch (error) {
+    remoteSessions = [];
+    setComposeNote(`${SESSION_NOTE}: ${errorMessage(error)}`);
+  } finally {
+    sessionsLoading = false;
+    renderSessions();
+  }
+}
+
+function updateScope() {
+  const project = projectManager.selectedProject();
+  elements.scopePath.textContent = project?.path || '(default cwd)';
+  scopePresets = [...(project?.quickActions ?? [])];
+  renderSessions();
+  void loadSessions();
+}
+
 function setStatus(label, tone) {
   elements.status.textContent = label;
   elements.connection.dataset.tone = tone;
 }
 
+function setComposeNote(text) {
+  elements.composeNote.textContent = text;
+  elements.composeNote.hidden = !text;
+}
+
 function refreshControls() {
   const entry = sessions.get(selectedStreamId);
-  const sessionReady =
+  const sendable =
     entry?.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
-  const sessionLive = entry?.kind === 'session' && entry.status === 'running';
-  elements.chatControls.hidden = !sessionLive;
-  elements.open.disabled = actionState.opening;
-  elements.stop.hidden = !sessionLive;
-  elements.stop.disabled = !sessionLive || actionState.stopping;
-  elements.turnForm.hidden = !sessionReady;
-  elements.turnSend.disabled = !sessionReady || Boolean(entry?.busy);
+  elements.composeSend.textContent = sendable ? 'SEND' : 'OPEN';
+  elements.composeSend.classList.toggle('button--send', sendable);
+  elements.composeSend.classList.toggle('button--open', !sendable);
+  elements.composeSend.disabled = actionState.opening || Boolean(sendable && entry?.busy);
+  elements.composeInput.placeholder = composePlaceholder(entry, sendable);
+  renderSessions();
+}
+
+function composePlaceholder(entry, sendable) {
+  if (sendable) return 'Write something…';
+  if (entry) return 'Continue in a new session…';
+  return 'Describe a task to start a session…';
 }
 
 function ensureEntry(streamId, label = '') {
@@ -266,24 +261,30 @@ function ensureEntry(streamId, label = '') {
   return entry;
 }
 
-function openMachineSession(session) {
-  const streamId = `machine:${session.source}:${session.ref}`;
-  const updatedAt = Date.parse(session.updated_at);
-  const entry = {
-    stream_id: streamId,
-    kind: 'session',
-    label: session.title || session.ref,
-    status: 'ready',
-    busy: false,
-    lines: [],
-    cwd: session.cwd || '',
-    project: '',
-    resume: { source: session.source, ref: session.ref },
-    updated_at: session.updated_at,
-    lastActivityAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
-  };
-  sessions.set(streamId, entry);
-  selectStream(streamId);
+function selectNew() {
+  selectedStreamId = '';
+  elements.streamCaption.textContent = 'New session';
+  elements.gitStatus.hidden = true;
+  renderStream();
+  refreshControls();
+  elements.composeInput.focus();
+}
+
+function selectSessionItem(item) {
+  const entry = sessions.get(item.stream_id) ?? adoptSessionItem(item);
+  if (!entry) return;
+  selectStream(entry.stream_id);
+}
+
+function adoptSessionItem(item) {
+  const entry = ensureEntry(item.stream_id, item.provider);
+  if (!entry) return null;
+  if (item.session_id) entry.session_id = item.session_id;
+  entry.status = item.status === 'live' ? 'running' : item.status === 'failed' ? 'failed' : 'done';
+  entry.cwd = item.cwd || '';
+  entry.project = item.project || '';
+  entry.lastActivityAt = item.time || Date.now();
+  return entry;
 }
 
 function selectStream(streamId) {
@@ -291,42 +292,20 @@ function selectStream(streamId) {
   if (!entry) return;
   selectedStreamId = streamId;
   elements.streamCaption.textContent = entry.label || streamId;
-  renderSwitcher();
   renderStream();
   refreshControls();
   void updateGitStatus(entry);
   if (!streamId.startsWith('machine:')) void hydrateStream(streamId);
+  elements.composeInput.focus();
 }
 
-function renderSwitcher() {
-  elements.streamSwitcher.replaceChildren();
-  const recent = [...sessions.values()]
-    .sort((left, right) => activityTime(right) - activityTime(left))
-    .slice(0, 10);
-  for (const entry of recent) {
-    const id = entry.stream_id.split(':').pop() ?? '';
-    const shortId = id.length > 8 ? `${id.slice(0, 8)}…` : id;
-    const status = displayStatus(entry.status);
-    const chip = document.createElement('button');
-    chip.className = 'stream-chip';
-    chip.type = 'button';
-    chip.dataset.active = entry.stream_id === selectedStreamId ? 'yes' : 'no';
-    chip.dataset.status = status;
-    chip.setAttribute('role', 'tab');
-    chip.setAttribute('aria-selected', String(entry.stream_id === selectedStreamId));
-    chip.setAttribute('aria-label', `${entry.kind} ${entry.label} ${status}`);
-    chip.addEventListener('click', () => selectStream(entry.stream_id));
-    const dot = document.createElement('span');
-    dot.className = 'stream-chip__dot';
-    dot.dataset.status = status;
-    dot.setAttribute('aria-hidden', 'true');
-    chip.append(dot);
-    const text = document.createElement('span');
-    text.className = 'stream-chip__text';
-    text.textContent = `${status} · ${entry.label} · ${shortId}`;
-    chip.append(text);
-    elements.streamSwitcher.append(chip);
-  }
+function renderSessions() {
+  sessionBar.update({
+    items: sessionItems(),
+    selectedId: selectedStreamId,
+    presets: scopePresets,
+    stopping: actionState.stopping,
+  });
   history.renderLive(
     [...sessions.values()].filter(
       (entry) => entry.kind === 'session' && !entry.stream_id.startsWith('machine:'),
@@ -334,16 +313,14 @@ function renderSwitcher() {
   );
 }
 
-function activityTime(entry) {
-  if (Number.isFinite(entry.lastActivityAt)) return entry.lastActivityAt;
-  const updatedAt = Date.parse(entry.updated_at ?? '');
-  return Number.isFinite(updatedAt) ? updatedAt : 0;
-}
-
-function displayStatus(status) {
-  if (status === 'running') return 'live';
-  if (status === 'failed' || status === 'throttled') return 'failed';
-  return 'done';
+function sessionItems() {
+  return mergeSessionItems({
+    remote: remoteSessions,
+    local: [...sessions.values()],
+    project: projectManager.selectedProject(),
+    selectedId: selectedStreamId,
+    limit: SESSION_LIMIT,
+  });
 }
 
 function renderStream() {
@@ -358,9 +335,8 @@ function renderStream() {
 }
 function prepareRestart(entry) {
   if (entry.project) projectManager.selectProject(entry.project);
-  else if (entry.cwd) projects.selectPath(entry.cwd);
-  elements.prompt.focus();
-  elements.prompt.scrollIntoView?.({ block: 'nearest' });
+  elements.composeInput.focus();
+  elements.composeInput.scrollIntoView?.({ block: 'nearest' });
   showTransientLine(
     'meta',
     `new session ready · ${entry.cwd || '(default cwd)'} · harness ${elements.harness.value}`,
@@ -414,7 +390,6 @@ function onEvent(event) {
   applySessionEvent(entry, event, pushLine);
   const eventTime = Date.parse(event.ts);
   entry.lastActivityAt = Number.isFinite(eventTime) ? eventTime : Date.now();
-  renderSwitcher();
   renderStream();
   refreshControls();
   if (entry.stream_id === selectedStreamId) void updateGitStatus(entry);

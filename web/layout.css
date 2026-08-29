@@ -25,14 +25,15 @@ body {
 }
 
 .section-heading,
-.section-heading__title,
-.stream-switcher {
+.section-heading__title {
   min-width: 0;
   max-width: 100%;
 }
 
-.stream-switcher {
+.session-bar {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .stream-lines {
@@ -69,38 +70,16 @@ body {
   overflow-x: auto;
 }
 
-.recent-projects {
+.session-presets {
   width: 100%;
   max-width: 100%;
-}
-
-.prompt-grid {
-  grid-template-columns: minmax(0, 1fr) 70px;
-}
-
-.prompt-grid input,
-.workspace-picker,
-.turn-grid input {
-  min-width: 0;
 }
 
 .compose-panel {
   min-width: 0;
   flex: 0 0 auto;
   overflow: hidden;
-}
-
-.quick-actions-shell {
-  display: grid;
-  gap: 5px;
-  padding: 8px 0 2px;
-}
-
-.quick-actions__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  padding-bottom: max(4px, env(safe-area-inset-bottom));
 }
 
 .drawer-section__heading {

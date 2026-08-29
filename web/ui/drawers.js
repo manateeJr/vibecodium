@@ -225,12 +225,14 @@ export function createSettingsDrawer({
   harness,
   onTokenInput,
   onTokenCommit,
+  onOpen,
 }) {
   harness.value = loadDefaultHarness();
   toggle.addEventListener('click', () => {
     const open = drawer.hidden;
     drawer.hidden = !open;
     toggle.setAttribute('aria-expanded', String(open));
+    if (open) onOpen();
   });
   closeButton.addEventListener('click', () => close());
   token.addEventListener('input', () => {

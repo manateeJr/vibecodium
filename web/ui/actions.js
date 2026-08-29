@@ -3,20 +3,21 @@ import { eventClock } from '../lib/time.js';
 export function createActions({
   client,
   elements,
-  projects,
   sessions,
   state,
   getSelectedStreamId,
   getActiveProject,
   setStatus,
   refreshControls,
-  renderSwitcher,
+  renderSessions,
   renderStream,
   selectStream,
   ensureEntry,
   pushLine,
   appendError,
   errorMessage,
+  notify,
+  reloadSessions,
 }) {
   const openSessionWith = async (prompt, cwd, projectName) => {
     const provider = elements.harness.value.trim();
@@ -24,7 +25,6 @@ export function createActions({
       appendError('default harness and prompt are required');
       return;
     }
-    if (cwd) projects.remember(cwd);
     state.opening = true;
     setStatus('OPENING', 'wait');
     refreshControls();
@@ -39,9 +39,10 @@ export function createActions({
       entry.cwd = cwd || '';
       entry.project = projectName || '';
       entry.busy = true;
+      elements.composeInput.value = '';
       selectStream(result.stream_id);
       setStatus('LIVE', 'live');
-      elements.prompt.value = '';
+      void reloadSessions();
     } catch (error) {
       appendError(`session open failed: ${errorMessage(error)}`);
       setStatus('ERROR', 'bad');
@@ -51,55 +52,16 @@ export function createActions({
     }
   };
 
-  const openSession = async () => {
-    const project = getActiveProject();
-    const cwd = project?.path || projects.selectedPath();
-    return openSessionWith(elements.prompt.value.trim(), cwd, project?.name);
-  };
-
-  const openQuickAction = async (project, action) =>
-    openSessionWith(action.prompt.trim(), project.path, project.name);
-
-  const sendMessage = async () => {
-    const entry = sessions.get(getSelectedStreamId());
-    if (
-      !entry ||
-      entry.kind !== 'session' ||
-      (entry.status !== 'running' && entry.status !== 'ready') ||
-      entry.busy
-    )
-      return;
-    const prompt = elements.turnInput.value.trim();
-    if (!prompt) {
-      appendError('message is required', entry);
-      return;
-    }
+  const sendTurn = async (entry, prompt) => {
     entry.lastActivityAt = Date.now();
     entry.busy = true;
     setStatus('SENDING', 'wait');
-    renderSwitcher();
+    renderSessions();
     try {
-      if (entry.resume) {
-        const result = await client.resumeSession({
-          source: entry.resume.source,
-          ref: entry.resume.ref,
-          prompt,
-          ...(entry.cwd ? { cwd: entry.cwd } : {}),
-          ...(entry.project ? { project: entry.project } : {}),
-        });
-        sessions.delete(entry.stream_id);
-        entry.stream_id = result.stream_id;
-        entry.session_id = result.session_id;
-        entry.status = 'running';
-        delete entry.resume;
-        sessions.set(entry.stream_id, entry);
-        selectStream(entry.stream_id);
-      } else {
-        const sessionId = entry.session_id || entry.stream_id.slice('session:'.length);
-        if (!sessionId) throw new Error('session id unavailable');
-        await client.sendMessage({ session_id: sessionId, prompt });
-      }
-      elements.turnInput.value = '';
+      const sessionId = entry.session_id || entry.stream_id.slice('session:'.length);
+      if (!sessionId) throw new Error('session id unavailable');
+      await client.sendMessage({ session_id: sessionId, prompt });
+      elements.composeInput.value = '';
       if (getSelectedStreamId() === entry.stream_id) setStatus('LIVE', 'live');
     } catch (error) {
       entry.busy = false;
@@ -109,6 +71,32 @@ export function createActions({
       refreshControls();
       renderStream();
     }
+  };
+
+  // One input, two verbs: send into the selected live session, otherwise open a new one.
+  const submitCompose = async () => {
+    const prompt = elements.composeInput.value.trim();
+    if (!prompt) {
+      appendError('a prompt is required');
+      return;
+    }
+    const entry = sessions.get(getSelectedStreamId());
+    if (entry && isSendable(entry)) {
+      if (entry.busy) return;
+      await sendTurn(entry, prompt);
+      return;
+    }
+    const project = getActiveProject();
+    await openSessionWith(
+      prompt,
+      entry?.cwd || project?.path || '',
+      entry?.project || project?.name || '',
+    );
+  };
+
+  const openPreset = async (preset) => {
+    const project = getActiveProject();
+    await openSessionWith(preset.prompt.trim(), project?.path, project?.name);
   };
 
   const stopSession = async () => {
@@ -135,10 +123,69 @@ export function createActions({
       setStatus('ERROR', 'bad');
     } finally {
       state.stopping = false;
-      renderSwitcher();
+      renderSessions();
       refreshControls();
     }
   };
 
-  return { openSession, openQuickAction, sendMessage, stopSession };
+  // External harness sessions are forked, never appended to: the laptop still owns the original.
+  const forkMachineSession = async (session) => {
+    const streamId = `machine:${session.source}:${session.ref}`;
+    if (sessions.has(streamId)) {
+      selectStream(streamId);
+      return;
+    }
+    state.forking = true;
+    setStatus('FORKING', 'wait');
+    refreshControls();
+    try {
+      const result = await client.forkSession({ session_id: session.ref });
+      const entry = machineEntry(session, streamId);
+      sessions.set(streamId, entry);
+      const clock = eventClock(new Date().toISOString());
+      pushLine(
+        entry,
+        'ok',
+        `${clock} resumed as a fork · ${result.new_session_id} · ${result.provider}`,
+      );
+      pushLine(
+        entry,
+        'meta',
+        `continue this fork on the laptop:\n\n\`\`\`\n${result.continue_command}\n\`\`\``,
+        true,
+      );
+      selectStream(streamId);
+      notify(`resumed as a fork · ${result.new_session_id}`);
+      setStatus('READY', 'idle');
+    } catch (error) {
+      appendError(`session fork failed: ${errorMessage(error)}`);
+      setStatus('ERROR', 'bad');
+    } finally {
+      state.forking = false;
+      renderSessions();
+      refreshControls();
+    }
+  };
+
+  return { submitCompose, openPreset, stopSession, forkMachineSession };
+}
+
+function isSendable(entry) {
+  return entry.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
+}
+
+function machineEntry(session, streamId) {
+  const updatedAt = Date.parse(session.updated_at ?? '');
+  return {
+    stream_id: streamId,
+    kind: 'session',
+    label: session.source,
+    status: 'done',
+    busy: false,
+    lines: [],
+    cwd: session.cwd || '',
+    project: '',
+    updated_at: session.updated_at,
+    lastActivityAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
+  };
 }
