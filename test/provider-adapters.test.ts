@@ -72,6 +72,26 @@ test('OMP maps mocked stdout chunks to ordered provider output', async () => {
   assert.deepEqual(calls[0], ['omp', '--print', '--mode', 'text', '--', 'say hello']);
 });
 
+test('providers target explicit resumed sessions by reference', async () => {
+  const calls: string[][] = [];
+  const ompChild = new MockChild();
+  const codexChild = new MockChild();
+  const omp = new OmpProvider({ spawn: mockSpawner(ompChild, calls) });
+  const codex = new CodexProvider({ spawn: mockSpawner(codexChild, calls) });
+
+  await omp.spawn({ sessionId: 'omp-resumed', prompt: 'first', resumeRef: 'omp-ref' });
+  await omp.spawn({ sessionId: 'omp-resumed', prompt: 'second', resume: true });
+  await codex.spawn({ sessionId: 'codex-resumed', prompt: 'first', resumeRef: 'codex-ref' });
+  await codex.spawn({ sessionId: 'codex-resumed', prompt: 'second', resume: true });
+
+  assert.deepEqual(calls, [
+    ['omp', '--print', '--mode', 'text', '--resume', 'omp-ref', '--', 'first'],
+    ['omp', '--print', '--mode', 'text', '--resume', 'omp-ref', '--', 'second'],
+    ['codex', 'exec', 'resume', 'codex-ref', '--json', '--', 'first'],
+    ['codex', 'exec', 'resume', 'codex-ref', '--json', '--', 'second'],
+  ]);
+});
+
 test('Codex maps JSONL agent messages and ignores lifecycle frames', async () => {
   const child = new MockChild();
   const calls: string[][] = [];

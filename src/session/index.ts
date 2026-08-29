@@ -5,6 +5,8 @@ import {
   COMMAND_NAMES,
   type SessionOpenArgs,
   type SessionOpenResult,
+  type SessionResumeArgs,
+  type SessionResumeResult,
   type SessionSendArgs,
   type SessionSendResult,
   type SessionStopArgs,
@@ -64,12 +66,33 @@ export class SessionSubsystem implements Subsystem {
     this.registered = true;
     this.context = context;
     context.registerCommand(COMMAND_NAMES.sessionOpen, (command: unknown) => this.open(command));
+    context.registerCommand(COMMAND_NAMES.sessionResume, (command: unknown) =>
+      this.resume(command),
+    );
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
   }
 
   public async open(command: unknown): Promise<SessionOpenResult> {
-    const args = sessionOpenArgs(command);
+    return this.startSession(sessionOpenArgs(command));
+  }
+
+  public async resume(command: unknown): Promise<SessionResumeResult> {
+    const args = sessionResumeArgs(command);
+    return this.startSession(
+      {
+        provider: args.source,
+        prompt: args.prompt,
+        ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
+      },
+      args.ref,
+    );
+  }
+
+  private async startSession(
+    args: SessionOpenArgs,
+    resumeRef?: string,
+  ): Promise<SessionOpenResult> {
     const context = this.requireContext();
     const active = [...this.sessions.values()].filter((state) => state.terminal === false).length;
     const decision = this.admission.tryAdmit(active);
@@ -142,6 +165,7 @@ export class SessionSubsystem implements Subsystem {
       provider: args.provider,
       prompt: args.prompt,
       ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
+      ...(resumeRef === undefined ? {} : { resumeRef }),
     };
     try {
       worker.send(startMessage, (error) => {
@@ -250,6 +274,22 @@ function sessionOpenArgs(command: unknown): SessionOpenArgs {
     throw new Error('cwd must be a non-empty string');
   return {
     provider: value.provider,
+    prompt: value.prompt,
+    ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
+  };
+}
+
+function sessionResumeArgs(command: unknown): SessionResumeArgs {
+  const value = asRecord(command);
+  if (!value || (value.source !== 'omp' && value.source !== 'codex'))
+    throw new Error('source must be omp or codex');
+  if (typeof value.ref !== 'string' || !value.ref.trim()) throw new Error('ref is required');
+  if (typeof value.prompt !== 'string') throw new Error('prompt is required');
+  if (value.cwd !== undefined && (typeof value.cwd !== 'string' || !value.cwd.trim()))
+    throw new Error('cwd must be a non-empty string');
+  return {
+    source: value.source,
+    ref: value.ref,
     prompt: value.prompt,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
   };
