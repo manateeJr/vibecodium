@@ -3,10 +3,12 @@ import type {
   ProviderSession,
   ProviderSpawnRequest,
 } from '../contracts/provider-contract.js';
+import { ompHarnessPlugin } from './omp-harness-plugin.js';
 import { CliProvider, type CliProviderOptions } from './cli-provider.js';
-
 export class OmpProvider extends CliProvider {
   public readonly name = 'omp';
+  public readonly persistent = true;
+  public readonly harnessPlugin = ompHarnessPlugin;
   private readonly resumedRefs = new Map<string, string>();
 
   public constructor(options: CliProviderOptions = {}) {
@@ -28,13 +30,13 @@ export class OmpProvider extends CliProvider {
     args.push('--', request.prompt);
     return args;
   }
-
   public capabilityMatrix(): ProviderCapabilityMatrix {
     return {
       provider: this.name,
       streaming: true,
       stop: true,
       models: ['configured'],
+      persistent: true,
     };
   }
 }
