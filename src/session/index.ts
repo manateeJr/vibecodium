@@ -460,6 +460,7 @@ export class SessionSubsystem implements Subsystem {
     };
   }
   private sessionStartStatus(session_id: string): SessionSummary['status'] {
+    if (this.substrate === undefined && this.sessionTable === undefined) return 'live';
     if (this.sessions.has(session_id) || this.persistentManager?.has(session_id) === true)
       return 'live';
     const record = this.sessionTable?.get(session_id);
