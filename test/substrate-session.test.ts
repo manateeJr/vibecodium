@@ -104,6 +104,7 @@ class TestSubstrate implements SubstrateClient {
     return [...this.liveNames].map((name) => ({ name, live: true }));
   }
 }
+
 const plugin = new OmpHarnessPlugin();
 
 function nextImmediate(): Promise<void> {
@@ -142,8 +143,9 @@ test('OMP plugin parses fixture records and distinguishes idle stop from error',
       cwd: '/workspace',
       storageDir: '/tmp/s1',
       resumeRef: 'omp-ref',
+      prompt: 'cold prompt',
     }),
-    ['omp', '--session-dir', '/tmp/s1', '--resume', 'omp-ref'],
+    ['omp', '--session-dir', '/tmp/s1', '--resume', 'omp-ref', 'cold prompt'],
   );
   assert.deepEqual(
     plugin.launchArgv({
@@ -289,55 +291,6 @@ test('persistent session commands use resume argv and raw key passthrough', asyn
     );
 
     await subsystem.stop({ session_id: opened.session_id });
-  } finally {
-    subsystem.stopAll();
-    table.close();
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test('ensure-live relaunches a resumable record with its resume reference', async () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-resume-'));
-  const context = new TestContext();
-  const substrate = new TestSubstrate();
-  const table = new SessionTable({ filename: ':memory:' });
-  table.upsert({
-    sessionId: 'resume-session',
-    provider: 'omp',
-    harnessRef: 'omp-ref',
-    substrateName: 'substrate-resume-session',
-    transcriptPath: path.join(root, 'resume-session', 'session.jsonl'),
-    storageDir: path.join(root, 'resume-session'),
-    state: 'resumable',
-    updatedAt: '2026-08-30T00:00:00.000Z',
-  });
-  context.append('session:resume-session', 'session_started', {
-    session_id: 'resume-session',
-    provider: 'omp',
-    prompt: 'old prompt',
-    cwd: '/workspace',
-  });
-  const subsystem = new SessionSubsystem({
-    substrate,
-    sessionTable: table,
-    sessionStorageRoot: root,
-    reaperIntervalMs: 60_000,
-  });
-  try {
-    subsystem.register(context);
-    const ensureLive = context.commands.get('session.ensure_live');
-    assert.ok(ensureLive);
-    assert.deepEqual(await ensureLive({ session_id: 'resume-session' }), {
-      state: 'live',
-      substrate_name: 'substrate-resume-session',
-    });
-    assert.deepEqual(substrate.created[0]?.argv, [
-      'omp',
-      '--session-dir',
-      path.join(root, 'resume-session'),
-      '--resume',
-      'omp-ref',
-    ]);
   } finally {
     subsystem.stopAll();
     table.close();

@@ -47,6 +47,10 @@ export interface PersistentSessionEnsureResult {
   readonly substrateName: string;
 }
 
+interface PersistentSessionRelaunchResult extends PersistentSessionEnsureResult {
+  readonly turn?: number;
+}
+
 export class PersistentSessionManager {
   private readonly substrate: SubstrateClient;
   private readonly sessionTable: SessionTable | undefined;
@@ -57,6 +61,7 @@ export class PersistentSessionManager {
   private readonly onStateChange: PersistentSessionManagerOptions['onStateChange'];
   private readonly now: () => Date;
   private readonly workers = new Map<string, PersistentSessionWorker>();
+  private readonly relaunches = new Map<string, Promise<PersistentSessionRelaunchResult>>();
   private readonly reaper: SessionIdleReaper;
 
   public constructor(options: PersistentSessionManagerOptions) {
@@ -154,7 +159,11 @@ export class PersistentSessionManager {
     if (!worker) {
       const record = this.sessionTable?.get(sessionId);
       if (!record || record.state !== 'resumable') throw new Error('session not found');
-      return this.ensureLive(sessionId).then(() => this.send(sessionId, prompt));
+      if (this.relaunches.has(sessionId)) throw new Error('session is busy');
+      return this.relaunch(record, prompt).then((result) => {
+        if (result.turn === undefined) throw new Error('session relaunch did not schedule prompt');
+        return result.turn;
+      });
     }
     if (worker.isBusy) throw new Error('session is busy');
     const turn = worker.currentTurn + 1;
@@ -199,30 +208,13 @@ export class PersistentSessionManager {
     if (record.state === 'live' && this.workers.has(sessionId)) {
       return { state: 'live', substrateName: record.substrateName };
     }
+    const relaunch = this.relaunches.get(sessionId);
+    if (relaunch) return relaunch;
     if (record.state === 'live' && (await this.substrate.isLive(record.substrateName))) {
       const attached = await this.attach(record);
       return { state: 'live', substrateName: attached.substrateName };
     }
-    const summary = this.summaryFor(sessionId);
-    const plugin = this.pluginFor(record.provider);
-    const worker = this.workerFor({
-      sessionId,
-      streamId: `session:${sessionId}`,
-      provider: record.provider,
-      plugin,
-      substrateName: record.substrateName,
-      storageDir: record.storageDir,
-      transcriptPath: record.transcriptPath,
-      harnessRef: record.harnessRef,
-      ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }),
-      startAtEnd: true,
-    });
-    const started = await worker.start(undefined, record.harnessRef);
-    const updated = this.recordFromStart(record.provider, worker, started, 'live', record);
-    this.workers.set(sessionId, worker);
-    table.upsert(updated);
-    this.onStateChange(sessionId, 'live', 'resumed');
-    return { state: 'live', substrateName: updated.substrateName };
+    return this.relaunch(record);
   }
 
   public async runReaper(): Promise<readonly string[]> {
@@ -259,6 +251,61 @@ export class PersistentSessionManager {
       append: this.append,
       now: () => this.now().getTime(),
     });
+  }
+  private relaunch(
+    record: SubstrateSessionRecord,
+    prompt?: string,
+  ): Promise<PersistentSessionRelaunchResult> {
+    const existing = this.relaunches.get(record.sessionId);
+    if (existing) return existing;
+    const task = this.startResumable(record, prompt);
+    this.relaunches.set(record.sessionId, task);
+    void task.then(
+      () => this.clearRelaunch(record.sessionId, task),
+      () => this.clearRelaunch(record.sessionId, task),
+    );
+    return task;
+  }
+
+  private clearRelaunch(sessionId: string, task: Promise<PersistentSessionRelaunchResult>): void {
+    if (this.relaunches.get(sessionId) === task) this.relaunches.delete(sessionId);
+  }
+
+  private async startResumable(
+    record: SubstrateSessionRecord,
+    prompt?: string,
+  ): Promise<PersistentSessionRelaunchResult> {
+    const summary = this.summaryFor(record.sessionId);
+    const plugin = this.pluginFor(record.provider);
+    const worker = this.workerFor({
+      sessionId: record.sessionId,
+      streamId: `session:${record.sessionId}`,
+      provider: record.provider,
+      plugin,
+      substrateName: record.substrateName,
+      storageDir: record.storageDir,
+      transcriptPath: record.transcriptPath,
+      harnessRef: record.harnessRef,
+      ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }),
+      startAtEnd: true,
+    });
+    const turn = prompt === undefined ? undefined : worker.currentTurn + 1;
+    const started = await worker.start(prompt, record.harnessRef);
+    const updated = this.recordFromStart(record.provider, worker, started, 'live', record);
+    this.workers.set(record.sessionId, worker);
+    try {
+      this.sessionTable?.upsert(updated);
+    } catch (error) {
+      this.workers.delete(record.sessionId);
+      await worker.stop();
+      throw error;
+    }
+    this.onStateChange(record.sessionId, 'live', 'resumed');
+    return {
+      state: 'live',
+      substrateName: updated.substrateName,
+      ...(turn === undefined ? {} : { turn }),
+    };
   }
 
   private pluginFor(provider: string) {

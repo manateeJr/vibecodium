@@ -205,13 +205,18 @@ test('external omp fork registers resumable copied store and send resumes it', a
     const copied = path.join(targetRoot, 'forked-session', 'session.jsonl');
     assert.equal(readFileSync(copied, 'utf8'), readFileSync(source, 'utf8'));
     assert.equal(table.get('forked-session')?.state, 'resumable');
-    await subsystem.send({ session_id: 'forked-session', prompt: 'continue from memory' });
+    const sent = await subsystem.send({
+      session_id: 'forked-session',
+      prompt: 'continue from memory',
+    });
+    assert.deepEqual(sent, { stream_id: 'session:forked-session', turn: 1 });
     assert.deepEqual(substrate.created[0]?.argv, [
       'omp',
       '--session-dir',
       path.join(targetRoot, 'forked-session'),
       '--resume',
       ref,
+      'continue from memory',
     ]);
     const eventTypes = context.events.map((event) => event.type);
     const startedIndex = eventTypes.indexOf('session_started');
