@@ -1,17 +1,41 @@
 #!/usr/bin/env node
+import { spawnSync, type SpawnSyncOptions, type SpawnSyncReturns } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient, type ProjectSaveArgs, type VibecodiumClient } from './client/index.js';
 import { ControlPlane } from './server/control-plane.js';
 
-export async function main(args = process.argv.slice(2)): Promise<void> {
+export type AttachSpawner = (
+  command: string,
+  args: string[],
+  options: SpawnSyncOptions,
+) => SpawnSyncReturns<Buffer>;
+
+export interface CliDependencies {
+  readonly client?: VibecodiumClient;
+  readonly spawn?: AttachSpawner;
+}
+
+export async function main(
+  args = process.argv.slice(2),
+  dependencies: CliDependencies = {},
+): Promise<void> {
   const command = args[0] ?? 'start';
   if (command === 'start' || command === 'dev') {
     await startControlPlane();
     return;
   }
-  const client = createClientFromEnv();
+  const client = dependencies.client ?? createClientFromEnv();
+  const spawnProcess = dependencies.spawn ?? spawnSync;
 
+  if (command === 'attach') {
+    await runAttachCommand(client, args.slice(1), spawnProcess);
+    return;
+  }
+  if (command === 'open') {
+    await runOpenCommand(client, args.slice(1), spawnProcess);
+    return;
+  }
   if (command === 'project') {
     await runProjectCommand(client, args.slice(1));
     return;
@@ -57,6 +81,72 @@ function createClientFromEnv(): VibecodiumClient {
   const baseUrl = process.env.VIBECODIUM_URL ?? `http://127.0.0.1:${configuredPort()}`;
   const token = process.env.VIBECODIUM_TOKEN;
   return createClient({ baseUrl, ...(token === undefined ? {} : { token }) });
+}
+async function runAttachCommand(
+  client: VibecodiumClient,
+  args: string[],
+  spawnProcess: AttachSpawner,
+): Promise<void> {
+  if (args.length === 0) {
+    const result = await client.listSessions({});
+    for (const session of result.sessions)
+      process.stdout.write(`${session.session_id}\t${session.status}\n`);
+    return;
+  }
+  if (args[0] === '--new') {
+    if (args.length > 2) {
+      usage();
+      return;
+    }
+    await openAndAttach(client, args[1] ?? process.cwd(), spawnProcess);
+    return;
+  }
+  if (args.length !== 1 || !args[0]) {
+    usage();
+    return;
+  }
+  await attachSession(client, args[0], spawnProcess);
+}
+
+async function runOpenCommand(
+  client: VibecodiumClient,
+  args: string[],
+  spawnProcess: AttachSpawner,
+): Promise<void> {
+  if (args.length !== 1 || !args[0]) {
+    usage();
+    return;
+  }
+  await openAndAttach(client, args[0], spawnProcess);
+}
+
+async function openAndAttach(
+  client: VibecodiumClient,
+  cwd: string,
+  spawnProcess: AttachSpawner,
+): Promise<void> {
+  const result = await client.openSession({ provider: 'omp', prompt: '', cwd });
+  await attachSession(client, result.session_id, spawnProcess);
+}
+
+async function attachSession(
+  client: VibecodiumClient,
+  session_id: string,
+  spawnProcess: AttachSpawner,
+): Promise<void> {
+  const info = await client.sessionAttachInfo({ session_id });
+  if (info.state === 'closed') throw new Error(`session is closed: ${session_id}`);
+  let substrateName = info.substrate_name;
+  if (info.state === 'resumable') {
+    const result = await client.sessionEnsureLive({ session_id });
+    if (result.state === 'closed') throw new Error(`session is closed: ${session_id}`);
+    substrateName = result.substrate_name;
+  }
+  const child = spawnProcess(info.abduco_bin_path, ['-a', substrateName], {
+    stdio: 'inherit',
+  });
+  if (child.error) throw child.error;
+  process.exitCode = child.status ?? 1;
 }
 
 async function runMachineCommand(client: VibecodiumClient, args: string[]): Promise<void> {

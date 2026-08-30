@@ -11,18 +11,24 @@ import type {
   ProjectRemoveResult,
   ProjectSaveArgs,
   ProjectSaveResult,
+  SessionAttachInfoArgs,
+  SessionAttachInfoResult,
+  SessionEnsureLiveArgs,
+  SessionEnsureLiveResult,
+  SessionForkArgs,
+  SessionForkResult,
+  SessionListArgs,
+  SessionListResult,
   SessionOpenArgs,
   SessionOpenResult,
   SessionResumeArgs,
   SessionResumeResult,
   SessionSendArgs,
+  SessionSendKeysArgs,
+  SessionSendKeysResult,
   SessionSendResult,
   SessionStopArgs,
   SessionStopResult,
-  SessionForkArgs,
-  SessionForkResult,
-  SessionListArgs,
-  SessionListResult,
   SubscribeFrame,
   WorkflowApproveArgs,
   WorkflowApproveResult,
@@ -56,6 +62,9 @@ const COMMAND_NAMES = {
   voiceTranscribe: 'voice.transcribe',
   hostStats: 'host.stats',
   hostSetSessionCap: 'host.set_session_cap',
+  sessionEnsureLive: 'session.ensure_live',
+  sessionSendKeys: 'session.send_keys',
+  sessionAttachInfo: 'session.attach_info',
 } as const;
 
 export type {
@@ -76,6 +85,10 @@ export type {
   HostStatsResult,
   MachineListResult,
   MachineSessionSummary,
+  SessionAttachInfoArgs,
+  SessionAttachInfoResult,
+  SessionEnsureLiveArgs,
+  SessionEnsureLiveResult,
   SessionForkArgs,
   SessionForkResult,
   SessionListArgs,
@@ -94,6 +107,8 @@ export type {
   SessionResumeArgs,
   SessionResumeResult,
   SessionSendArgs,
+  SessionSendKeysArgs,
+  SessionSendKeysResult,
   SessionSendResult,
   SessionStopArgs,
   SessionStopResult,
@@ -124,6 +139,9 @@ export interface VibecodiumClient {
   sendMessage(args: SessionSendArgs): Promise<SessionSendResult>;
   listSessions(args: SessionListArgs): Promise<SessionListResult>;
   forkSession(args: SessionForkArgs): Promise<SessionForkResult>;
+  sessionEnsureLive(args: SessionEnsureLiveArgs): Promise<SessionEnsureLiveResult>;
+  sessionSendKeys(args: SessionSendKeysArgs): Promise<SessionSendKeysResult>;
+  sessionAttachInfo(args: SessionAttachInfoArgs): Promise<SessionAttachInfoResult>;
   listWorkspaces(): Promise<WorkspaceListResult>;
   machineList(): Promise<MachineListResult>;
   workspaceStatus(args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult>;
@@ -190,6 +208,12 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<SessionListResult>(baseUrl, COMMAND_NAMES.sessionList, args, options.token);
   const forkSession = (args: SessionForkArgs): Promise<SessionForkResult> =>
     post<SessionForkResult>(baseUrl, COMMAND_NAMES.sessionFork, args, options.token);
+  const sessionEnsureLive = (args: SessionEnsureLiveArgs): Promise<SessionEnsureLiveResult> =>
+    post<SessionEnsureLiveResult>(baseUrl, COMMAND_NAMES.sessionEnsureLive, args, options.token);
+  const sessionSendKeys = (args: SessionSendKeysArgs): Promise<SessionSendKeysResult> =>
+    post<SessionSendKeysResult>(baseUrl, COMMAND_NAMES.sessionSendKeys, args, options.token);
+  const sessionAttachInfo = (args: SessionAttachInfoArgs): Promise<SessionAttachInfoResult> =>
+    post<SessionAttachInfoResult>(baseUrl, COMMAND_NAMES.sessionAttachInfo, args, options.token);
 
   const listWorkspaces = (): Promise<WorkspaceListResult> =>
     post<WorkspaceListResult>(baseUrl, COMMAND_NAMES.workspaceList, {}, options.token);
@@ -328,6 +352,9 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     sendMessage,
     listSessions,
     forkSession,
+    sessionEnsureLive,
+    sessionSendKeys,
+    sessionAttachInfo,
     listWorkspaces,
     machineList,
     workspaceStatus,
