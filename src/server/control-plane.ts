@@ -33,8 +33,6 @@ import {
 } from './command-dispatcher.js';
 const WEB_DIR = path.resolve(process.cwd(), 'web');
 const CLIENT_BUNDLE = path.resolve(process.cwd(), 'dist/src/client/index.js');
-const CLIENT_PTY_BUNDLE = path.resolve(process.cwd(), 'dist/src/client/pty.js');
-const CLIENT_SOCKET_BUNDLE = path.resolve(process.cwd(), 'dist/src/client/socket.js');
 
 export interface ControlPlaneOptions {
   readonly dataPath: string;
@@ -244,22 +242,6 @@ export class ControlPlane {
       if (requestUrl.pathname === '/client.js') {
         try {
           this.sendAsset(response, 200, 'text/javascript', fs.readFileSync(CLIENT_BUNDLE));
-        } catch {
-          this.sendJson(response, 404, { error: 'not_found' });
-        }
-        return;
-      }
-      if (requestUrl.pathname === '/pty.js') {
-        try {
-          this.sendAsset(response, 200, 'text/javascript', fs.readFileSync(CLIENT_PTY_BUNDLE));
-        } catch {
-          this.sendJson(response, 404, { error: 'not_found' });
-        }
-        return;
-      }
-      if (requestUrl.pathname === '/socket.js') {
-        try {
-          this.sendAsset(response, 200, 'text/javascript', fs.readFileSync(CLIENT_SOCKET_BUNDLE));
         } catch {
           this.sendJson(response, 404, { error: 'not_found' });
         }

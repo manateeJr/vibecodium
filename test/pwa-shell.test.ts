@@ -103,10 +103,14 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     const appResponse = await fetch(`${address.httpUrl}/app.js`);
     assert.equal(appResponse.status, 200);
     assert.equal(appResponse.headers.get('content-type'), 'text/javascript');
-    for (const module of ['/pty.js', '/socket.js']) {
-      const response = await fetch(`${address.httpUrl}${module}`);
-      assert.equal(response.status, 200, module);
-      assert.equal(response.headers.get('content-type'), 'text/javascript');
+    // /client.js must stay a SINGLE standalone browser module. If it ever grows a relative import,
+    // the browser's module graph 404s and the whole PWA dies, because the control plane serves the
+    // SDK from one hand-written route and nothing else from dist/.
+    const clientBundle = await (await fetch(`${address.httpUrl}/client.js`)).text();
+    assert.doesNotMatch(clientBundle, /^\s*import\s/m, 'the client bundle must have no imports');
+    for (const orphan of ['/pty.js', '/socket.js']) {
+      const response = await fetch(`${address.httpUrl}${orphan}`);
+      assert.equal(response.status, 404, orphan);
     }
 
     const pocketCssResponse = await fetch(`${address.httpUrl}/pocket.css`);

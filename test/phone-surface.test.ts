@@ -146,27 +146,166 @@ test('the vendored xterm bundle is intact and exposes Terminal on the global obj
   assert.match(provenance, /never an npm dependency/i);
 });
 
-test('the pty mirror subscribes when shown and tears down when hidden or switched', async () => {
-  const mirror = (await import(new URL('ui/pty-mirror.js', webRoot).href)) as {
-    createPtyMirror: (options: unknown) => {
-      selectSession: (id: string) => void;
-      setVisible: (visible: boolean) => void;
-    };
-  };
+type StubListener = (event: unknown) => void;
 
-  const subscriptions: Array<{ sessionId: string; disposed: boolean }> = [];
+/** Stands in for the browser WebSocket so the real pty-socket transport can be driven directly. */
+class StubSocket {
+  public static readonly instances: StubSocket[] = [];
+  public readyState = 0;
+  public readonly sent: string[] = [];
+  private readonly listeners = new Map<string, StubListener[]>();
+
+  public constructor(public readonly url: string) {
+    StubSocket.instances.push(this);
+  }
+
+  public addEventListener(type: string, listener: StubListener): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+
+  public send(data: string): void {
+    this.sent.push(data);
+  }
+
+  public open(): void {
+    this.readyState = 1;
+    this.emit('open', {});
+  }
+
+  public close(): void {
+    if (this.readyState === 3) return;
+    this.readyState = 3;
+    this.emit('close', {});
+  }
+
+  public message(value: unknown): void {
+    this.emit('message', { data: JSON.stringify(value) });
+  }
+
+  public subscribeFrames(): string[] {
+    return this.sent.filter((frame) => frame.includes('pty_subscribe'));
+  }
+
+  private emit(type: string, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
+  }
+}
+
+type PtySocketModule = {
+  readonly createPtySubscription: (options: {
+    baseUrl: string;
+    token?: string;
+    sessionId: string;
+    onData: (data: Uint8Array) => void;
+    onStatus?: (status: string, detail?: string) => void;
+    webSocket?: unknown;
+  }) => () => void;
+};
+
+test('pty subscription is token-scoped, byte-exact, idempotent, and reconnects', async () => {
+  const ptySocket = (await import(new URL('lib/pty-socket.js', webRoot).href)) as PtySocketModule;
+  StubSocket.instances.length = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  // Drive the reconnect backoff deterministically instead of sleeping through it.
+  const pending: Array<() => void> = [];
+  globalThis.setTimeout = ((callback: () => void) => {
+    pending.push(callback);
+    return 0;
+  }) as unknown as typeof globalThis.setTimeout;
+  const flush = (): void => {
+    for (const callback of pending.splice(0, pending.length)) callback();
+  };
+  try {
+    const chunks: Uint8Array[] = [];
+    const statuses: string[] = [];
+    const dispose = ptySocket.createPtySubscription({
+      baseUrl: 'https://phone.example',
+      token: 'token-1',
+      sessionId: 'session-1',
+      onData: (data) => chunks.push(data),
+      onStatus: (status) => statuses.push(status),
+      webSocket: StubSocket,
+    });
+    const first = StubSocket.instances[0]!;
+    assert.equal(first.url, 'wss://phone.example', 'https origin must upgrade to wss');
+    first.open();
+    // Reopening must not double-subscribe: the server would fan out every frame twice.
+    first.open();
+    assert.equal(first.subscribeFrames().length, 1);
+    assert.deepEqual(JSON.parse(first.sent[0]!), {
+      type: 'pty_subscribe',
+      session_id: 'session-1',
+      token: 'token-1',
+    });
+
+    // A raw PTY carries ANSI escapes, UTF-8 multibyte, NUL, and bytes that are not valid UTF-8.
+    const raw = Uint8Array.from([0x1b, 0x5b, 0x33, 0x31, 0x6d, 0x00, 0xff, 0xc3, 0xa9, 0x0d, 0x0a]);
+    first.message({
+      type: 'pty',
+      session_id: 'session-1',
+      data_b64: Buffer.from(raw).toString('base64'),
+    });
+    first.message({ type: 'pty', session_id: 'other', data_b64: 'aWdub3JlZA==' });
+    assert.equal(chunks.length, 1, 'frames for another session are ignored');
+    assert.deepEqual([...chunks[0]!], [...raw], 'bytes must survive the base64 hop exactly');
+
+    first.close();
+    flush();
+    assert.equal(StubSocket.instances.length, 2, 'a dropped socket must reconnect');
+    const second = StubSocket.instances[1]!;
+    second.open();
+    assert.equal(second.subscribeFrames().length, 1, 'the reconnect resubscribes');
+    assert.deepEqual(statuses, ['connecting', 'live', 'disconnected', 'connecting', 'live']);
+
+    dispose();
+    assert.deepEqual(JSON.parse(second.sent[1]!), {
+      type: 'pty_unsubscribe',
+      session_id: 'session-1',
+      token: 'token-1',
+    });
+    assert.equal(second.readyState, 3, 'dispose closes the socket');
+    const sentAfterDispose = second.sent.length;
+    dispose();
+    second.close();
+    flush();
+    assert.equal(second.sent.length, sentAfterDispose, 'disposing twice sends nothing more');
+    assert.equal(StubSocket.instances.length, 2, 'dispose cancels reconnection');
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test('a loopback subscription omits the token instead of sending undefined', async () => {
+  const ptySocket = (await import(new URL('lib/pty-socket.js', webRoot).href)) as PtySocketModule;
+  StubSocket.instances.length = 0;
+  const dispose = ptySocket.createPtySubscription({
+    baseUrl: 'http://127.0.0.1:4310',
+    sessionId: 'session-1',
+    onData: () => undefined,
+    webSocket: StubSocket,
+  });
+  const socket = StubSocket.instances[0]!;
+  assert.equal(socket.url, 'ws://127.0.0.1:4310', 'http origin must downgrade to ws');
+  socket.open();
+  assert.deepEqual(JSON.parse(socket.sent[0]!), {
+    type: 'pty_subscribe',
+    session_id: 'session-1',
+  });
+  dispose();
+});
+
+type MirrorModule = {
+  readonly createPtyMirror: (options: unknown) => {
+    selectSession: (id: string) => void;
+    setVisible: (visible: boolean) => void;
+  };
+};
+
+test('the pty mirror subscribes when shown and tears down when hidden or switched', async () => {
+  const mirror = (await import(new URL('ui/pty-mirror.js', webRoot).href)) as MirrorModule;
+  StubSocket.instances.length = 0;
   const writes: Uint8Array[] = [];
   let disposedTerminals = 0;
-  const client = {
-    subscribePty(sessionId: string, listeners: { onData: (data: Uint8Array) => void }) {
-      const record = { sessionId, disposed: false };
-      subscriptions.push(record);
-      listeners.onData(Uint8Array.from([0x41]));
-      return () => {
-        record.disposed = true;
-      };
-    },
-  };
   const status = { textContent: '' };
   const empty = { hidden: false, textContent: '' };
   const terminalTarget = {
@@ -174,8 +313,9 @@ test('the pty mirror subscribes when shown and tears down when hidden or switche
     setAttribute: () => undefined,
     replaceChildren: () => undefined,
   };
-  const sandbox = createBrowserSandbox();
-  sandbox.Terminal = class {
+  const previousTerminal = (globalThis as { Terminal?: unknown }).Terminal;
+  const previousComputedStyle = globalThis.getComputedStyle;
+  (globalThis as { Terminal?: unknown }).Terminal = class {
     public write(data: Uint8Array): void {
       writes.push(data);
     }
@@ -185,43 +325,56 @@ test('the pty mirror subscribes when shown and tears down when hidden or switche
       disposedTerminals += 1;
     }
   };
-
-  const previousTerminal = (globalThis as { Terminal?: unknown }).Terminal;
-  const previousComputedStyle = globalThis.getComputedStyle;
-  (globalThis as { Terminal?: unknown }).Terminal = sandbox.Terminal;
-  // The mirror reads design tokens for the theme; outside a browser there is no computed style.
+  // The mirror reads design tokens for its theme; outside a browser there is no computed style.
   (globalThis as { getComputedStyle?: unknown }).getComputedStyle = undefined;
   try {
-    const instance = mirror.createPtyMirror({ client, terminalTarget, empty, status });
+    const instance = mirror.createPtyMirror({
+      connection: () => ({
+        baseUrl: 'http://127.0.0.1:4310',
+        token: 'token-1',
+        webSocket: StubSocket,
+      }),
+      terminalTarget,
+      empty,
+      status,
+    });
 
     instance.selectSession('session-1');
-    assert.equal(subscriptions.length, 0, 'a hidden mirror must not open a socket');
+    assert.equal(StubSocket.instances.length, 0, 'a hidden mirror must not open a socket');
     assert.equal(status.textContent, 'READY');
 
     instance.setVisible(true);
-    assert.equal(subscriptions.length, 1);
-    assert.equal(subscriptions[0]!.sessionId, 'session-1');
+    assert.equal(StubSocket.instances.length, 1);
+    const first = StubSocket.instances[0]!;
+    first.open();
+    assert.equal(status.textContent, 'LIVE · READ ONLY');
+    first.message({ type: 'pty', session_id: 'session-1', data_b64: 'QQ==' });
     assert.deepEqual([...writes[0]!], [0x41], 'replayed bytes reach the terminal');
 
     // Rapid toggling must not leave a second socket or terminal behind.
     instance.setVisible(true);
-    assert.equal(subscriptions.length, 2);
-    assert.equal(subscriptions[0]!.disposed, true, 'the previous subscription is disposed');
+    assert.equal(StubSocket.instances.length, 2);
+    assert.equal(first.readyState, 3, 'the previous socket is closed');
     assert.equal(disposedTerminals, 1, 'the previous terminal is disposed');
 
     instance.selectSession('session-2');
-    assert.equal(subscriptions.length, 3);
-    assert.equal(subscriptions[1]!.disposed, true, 'switching sessions unsubscribes the old one');
-    assert.equal(subscriptions[2]!.sessionId, 'session-2');
+    assert.equal(StubSocket.instances.length, 3);
+    assert.equal(StubSocket.instances[1]!.readyState, 3, 'switching sessions unsubscribes');
+    StubSocket.instances[2]!.open();
+    assert.deepEqual(JSON.parse(StubSocket.instances[2]!.sent[0]!), {
+      type: 'pty_subscribe',
+      session_id: 'session-2',
+      token: 'token-1',
+    });
 
     instance.setVisible(false);
-    assert.equal(subscriptions[2]!.disposed, true, 'hiding unsubscribes');
+    assert.equal(StubSocket.instances[2]!.readyState, 3, 'hiding unsubscribes');
     assert.equal(disposedTerminals, 3, 'hiding disposes the terminal');
     assert.equal(status.textContent, 'PAUSED');
 
     instance.selectSession('');
     assert.equal(status.textContent, 'NO SESSION');
-    assert.equal(subscriptions.length, 3, 'no session means no socket');
+    assert.equal(StubSocket.instances.length, 3, 'no session means no socket');
   } finally {
     (globalThis as { Terminal?: unknown }).Terminal = previousTerminal;
     (globalThis as { getComputedStyle?: unknown }).getComputedStyle = previousComputedStyle;
@@ -229,23 +382,15 @@ test('the pty mirror subscribes when shown and tears down when hidden or switche
 });
 
 test('the pty mirror reports unavailable instead of throwing when xterm is missing', async () => {
-  const mirror = (await import(new URL('ui/pty-mirror.js', webRoot).href)) as {
-    createPtyMirror: (options: unknown) => {
-      selectSession: (id: string) => void;
-      setVisible: (visible: boolean) => void;
-    };
-  };
+  const mirror = (await import(new URL('ui/pty-mirror.js', webRoot).href)) as MirrorModule;
+  StubSocket.instances.length = 0;
   const status = { textContent: '' };
   const empty = { hidden: true, textContent: '' };
   const previousTerminal = (globalThis as { Terminal?: unknown }).Terminal;
   (globalThis as { Terminal?: unknown }).Terminal = undefined;
   try {
     const instance = mirror.createPtyMirror({
-      client: {
-        subscribePty: () => {
-          throw new Error('must not subscribe without a terminal');
-        },
-      },
+      connection: () => ({ baseUrl: 'http://127.0.0.1:4310', webSocket: StubSocket }),
       terminalTarget: {
         hidden: false,
         setAttribute: () => undefined,
@@ -258,6 +403,7 @@ test('the pty mirror reports unavailable instead of throwing when xterm is missi
     instance.setVisible(true);
     assert.equal(status.textContent, 'UNAVAILABLE');
     assert.equal(empty.hidden, false);
+    assert.equal(StubSocket.instances.length, 0, 'no terminal means no socket');
   } finally {
     (globalThis as { Terminal?: unknown }).Terminal = previousTerminal;
   }

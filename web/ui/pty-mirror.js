@@ -1,4 +1,5 @@
 /* global document */
+import { createPtySubscription } from '../lib/pty-socket.js';
 
 // The substrate creates its PTY through `abduco -n` with no controlling terminal, so the PC side
 // renders at abduco's default 80 columns. The mirror is read-only and never sends a resize, so it
@@ -22,7 +23,7 @@ const STATUS_LABELS = Object.freeze({
  * Deliberately one-way: no onData wiring, no key forwarding, and no resize frame ever leaves the
  * phone. Phone terminal interactivity is an explicit non-goal.
  */
-export function createPtyMirror({ client, terminalTarget, empty, status }) {
+export function createPtyMirror({ connection, terminalTarget, empty, status }) {
   let selectedSessionId = '';
   let visible = false;
   let unsubscribe = null;
@@ -89,7 +90,9 @@ export function createPtyMirror({ client, terminalTarget, empty, status }) {
     const sessionId = selectedSessionId;
     const current = () => visible && selectedSessionId === sessionId && terminal === instance;
     setStatus(STATUS_LABELS.connecting);
-    unsubscribe = client.subscribePty(sessionId, {
+    unsubscribe = createPtySubscription({
+      ...connection(),
+      sessionId,
       onData: (data) => {
         if (current()) instance.write(data);
       },
