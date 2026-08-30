@@ -44,7 +44,8 @@ const sessions = new Map();
 const transientLines = [];
 const seenEvents = new Set();
 const { transcript, sessionView } = createSessionSurface({
-  client,
+  // Read lazily so a token saved in Settings reaches the next mirror subscription.
+  connection: () => ({ baseUrl: globalThis.location.origin, token: clientToken }),
   elements,
   // Ratified: "Steer now" escalates natively with escape; the separate stop control interrupts.
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),

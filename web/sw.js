@@ -14,6 +14,7 @@ const SHELL_ASSETS = Object.freeze([
   '/lib/external-session.js',
   '/lib/markdown.js',
   '/lib/paths.js',
+  '/lib/pty-socket.js',
   '/lib/session-items.js',
   '/lib/session-state.js',
   '/lib/skills.js',

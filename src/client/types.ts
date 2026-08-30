@@ -50,19 +50,6 @@ export interface VibecodiumClient {
     onEvent: (event: EventEnvelope) => void,
     streamId?: string,
   ): () => void;
-  subscribePty(sessionId: string, listeners: PtyListeners): () => void;
-}
-
-/**
- * Lifecycle of a PTY mirror socket. `disconnected` is followed by an automatic reconnect, and the
- * server's ring-buffer replay repaints the terminal, so the UI only has to say so.
- */
-export type PtyStatus = 'connecting' | 'live' | 'disconnected' | 'unavailable' | 'error';
-
-export interface PtyListeners {
-  /** Raw PTY bytes, already base64-decoded. Never text: ANSI escapes must survive intact. */
-  readonly onData: (data: Uint8Array) => void;
-  readonly onStatus?: (status: PtyStatus, detail?: string) => void;
 }
 
 export interface SocketLike {

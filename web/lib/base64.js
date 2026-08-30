@@ -12,7 +12,8 @@ export async function blobToBase64(blob) {
   return bytesToBase64(new Uint8Array(await blob.arrayBuffer()));
 }
 
-function base64ToBytes(base64) {
+// Byte-exact: atob yields one code unit per byte, so UTF-8 sequences and ANSI escapes survive.
+export function base64ToBytes(base64) {
   const binary = globalThis.atob(String(base64 ?? ''));
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);

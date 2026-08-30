@@ -4,7 +4,10 @@ import { createTranscriptView } from './transcript.js';
 
 // One seam for the two ways to watch a session: the structured transcript and the read-only live
 // PTY mirror. Composed here so app.js only wires the surface once.
-export function createSessionSurface({ client, elements, onSteerNow }) {
+//
+// `connection` is read lazily on every subscribe, so a token saved in Settings applies to the next
+// mirror without rebuilding the surface.
+export function createSessionSurface({ connection, elements, onSteerNow }) {
   const transcript = createTranscriptView({
     streamLines: elements.streamLines,
     streamEmpty: elements.streamEmpty,
@@ -12,7 +15,7 @@ export function createSessionSurface({ client, elements, onSteerNow }) {
     onSteerNow,
   });
   const mirror = createPtyMirror({
-    client,
+    connection,
     terminalTarget: elements.ptyTerminal,
     empty: elements.ptyMirrorEmpty,
     status: elements.mirrorStatus,
