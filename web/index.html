@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="/pocket.css" />
     <link rel="stylesheet" href="/ui.css" />
     <link rel="stylesheet" href="/layout.css" />
+    <link rel="stylesheet" href="/panels.css" />
   </head>
   <body>
     <main class="app-shell">
@@ -71,6 +72,25 @@
           aria-label="New session presets"
           hidden
         ></div>
+        <section id="skill-invoke" class="skill-invoke" hidden aria-label="Skill parameters">
+          <div class="skill-invoke__heading">
+            <span id="skill-invoke-title" class="skill-invoke__title">SKILL</span>
+            <button id="skill-invoke-cancel" class="header-button" type="button">CANCEL</button>
+          </div>
+          <p id="skill-invoke-note" class="skill-invoke__note"></p>
+          <form id="skill-invoke-form" class="skill-invoke__form">
+            <div id="skill-invoke-fields" class="skill-invoke__fields"></div>
+            <span
+              id="skill-invoke-status"
+              class="project-form__status"
+              role="status"
+              aria-live="polite"
+            ></span>
+            <button id="skill-invoke-run" class="project-form__button" type="submit">
+              RUN SKILL
+            </button>
+          </form>
+        </section>
         <form id="compose-form" class="compose-bar">
           <label class="sr-only" for="compose-input">Message</label>
           <input
@@ -81,6 +101,15 @@
             placeholder="Describe a task to start a session…"
             required
           />
+          <button
+            id="attach-file"
+            class="button button--attach"
+            type="button"
+            aria-label="Attach a file"
+            title="Attach a file"
+          >
+            ATT
+          </button>
           <button
             id="voice-record"
             class="button button--mic"
@@ -93,6 +122,8 @@
           </button>
           <button id="compose-send" class="button button--open" type="submit">OPEN</button>
         </form>
+        <label class="sr-only" for="attach-input">Attach a file</label>
+        <input id="attach-input" class="sr-only" type="file" />
         <p id="compose-note" class="compose-note" role="status" aria-live="polite" hidden></p>
       </section>
 
@@ -128,6 +159,22 @@
         </div>
       </aside>
 
+      <aside id="files-drawer" class="drawer drawer--files" hidden aria-label="Files">
+        <div class="drawer-heading">
+          <h2>FILES</h2>
+          <button id="files-close" class="header-button" type="button">CLOSE</button>
+        </div>
+        <div id="file-roots" class="file-roots" role="group" aria-label="Scope roots"></div>
+        <nav id="file-breadcrumb" class="file-breadcrumb" aria-label="Folder path"></nav>
+        <div id="file-list" class="file-list"></div>
+        <span
+          id="files-status"
+          class="project-form__status"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </aside>
+
       <aside id="settings-drawer" class="drawer drawer--settings" hidden aria-label="Settings">
         <div class="drawer-heading">
           <h2>SETTINGS</h2>
@@ -154,6 +201,105 @@
           Not needed over Tailscale (loopback). Only for direct tailnet access.
         </p>
         <p class="token-note">Stored only in this browser on this device.</p>
+        <section class="drawer-section" aria-labelledby="files-title">
+          <div class="drawer-section__heading">
+            <h3 id="files-title">FILES</h3>
+            <button id="files-open" class="project-form__button" type="button">BROWSE</button>
+          </div>
+          <p class="token-note">Registered project folders plus the shared upload folder.</p>
+        </section>
+        <section class="drawer-section" aria-labelledby="skill-library-title">
+          <div class="drawer-section__heading">
+            <h3 id="skill-library-title">SKILL LIBRARY</h3>
+            <button id="skill-new" class="project-form__button" type="button">NEW SKILL</button>
+          </div>
+          <div class="skill-toolbar">
+            <button id="skill-refresh" class="project-form__button" type="button">REFRESH</button>
+            <button id="skill-propose" class="project-form__button" type="button">PROPOSE</button>
+          </div>
+          <div id="skill-list" class="skill-list"></div>
+          <span id="skill-status" class="project-form__status" role="status" aria-live="polite">
+          </span>
+          <section id="skill-builder" class="project-form-shell" hidden aria-label="Skill builder">
+            <form id="skill-builder-form" class="project-form">
+              <div class="skill-modes" role="group" aria-label="Builder mode">
+                <button
+                  id="skill-mode-form"
+                  class="project-form__button"
+                  type="button"
+                  aria-pressed="true"
+                >
+                  FORM
+                </button>
+                <button
+                  id="skill-mode-conversation"
+                  class="project-form__button"
+                  type="button"
+                  aria-pressed="false"
+                >
+                  DESCRIBE
+                </button>
+              </div>
+              <div class="project-form__field">
+                <label class="entry-label" for="skill-name">NAME</label>
+                <input id="skill-name" name="skill-name" type="text" autocomplete="off" required />
+              </div>
+              <div class="project-form__field">
+                <label class="entry-label" for="skill-description">DESCRIPTION</label>
+                <input
+                  id="skill-description"
+                  name="skill-description"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="What does this skill do?"
+                />
+              </div>
+              <div id="skill-body-field" class="project-form__field">
+                <label class="entry-label" for="skill-body">INSTRUCTIONS</label>
+                <textarea id="skill-body" name="skill-body" rows="4"></textarea>
+              </div>
+              <div id="skill-conversation-field" class="project-form__field" hidden>
+                <label class="entry-label" for="skill-conversation">DESCRIBE THE SKILL</label>
+                <textarea
+                  id="skill-conversation"
+                  name="skill-conversation"
+                  rows="4"
+                  placeholder="Talk through what the skill should do…"
+                ></textarea>
+              </div>
+              <div id="skill-params-shell" class="skill-params-shell">
+                <div class="drawer-section__heading">
+                  <span class="entry-label">PARAMETERS</span>
+                  <button id="skill-param-add" class="project-form__button" type="button">
+                    ADD PARAM
+                  </button>
+                </div>
+                <div id="skill-params-editor" class="skill-params-editor"></div>
+              </div>
+              <label class="skill-approval">
+                <input id="skill-approval" type="checkbox" />
+                ASK FOR APPROVAL
+              </label>
+              <span
+                id="skill-builder-status"
+                class="project-form__status"
+                role="status"
+                aria-live="polite"
+              ></span>
+              <div class="project-form__actions">
+                <button id="skill-draft" class="project-form__button" type="submit">
+                  COMPLETE WITH AGENT
+                </button>
+                <button id="skill-save" class="project-form__button" type="button" disabled>
+                  SAVE
+                </button>
+                <button id="skill-builder-cancel" class="project-form__button" type="button">
+                  CANCEL
+                </button>
+              </div>
+            </form>
+          </section>
+        </section>
         <section id="host-panel" class="drawer-section host-panel" aria-labelledby="host-title">
           <div class="drawer-section__heading">
             <h3 id="host-title">HOST</h3>

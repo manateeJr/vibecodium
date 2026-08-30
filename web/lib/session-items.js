@@ -1,5 +1,16 @@
-// Recent-session pills: the control plane's list for the scope, overlaid with live local state.
-export function mergeSessionItems({ remote, local, project, selectedId, limit }) {
+import { externalItem } from './external-session.js';
+
+// Recent-session pills: the control plane's list for the scope, overlaid with live local state,
+// plus the machine's own external sessions folded in by cwd so the bar shows every live session.
+export function mergeSessionItems({
+  remote,
+  local,
+  machine = [],
+  projects = [],
+  project,
+  selectedId,
+  limit,
+}) {
   const items = new Map();
   for (const summary of remote) {
     if (!inScope(summary.project, project)) continue;
@@ -14,6 +25,11 @@ export function mergeSessionItems({ remote, local, project, selectedId, limit })
       time: Date.parse(summary.updated_at ?? summary.started_at ?? '') || 0,
     });
   }
+  for (const summary of machine) {
+    const item = externalItem(summary, projects);
+    if (!inScope(item.project, project)) continue;
+    items.set(item.stream_id, item);
+  }
   for (const entry of local) {
     if (entry.kind !== 'session') continue;
     if (!inScope(entry.project, project) && entry.stream_id !== selectedId) continue;
@@ -26,6 +42,7 @@ export function mergeSessionItems({ remote, local, project, selectedId, limit })
       project: entry.project ?? '',
       shortId: shortSessionId(entry.session_id || entry.stream_id),
       time: activityTime(entry),
+      ...(entry.external ? { external: true, title: entry.title ?? '' } : {}),
     });
   }
   return [...items.values()].sort((left, right) => right.time - left.time).slice(0, limit);
@@ -52,7 +69,7 @@ function activityTime(entry) {
 }
 
 function displayStatus(status) {
-  if (status === 'running') return 'live';
+  if (status === 'running' || status === 'external') return 'live';
   if (status === 'failed' || status === 'throttled') return 'failed';
   return 'done';
 }

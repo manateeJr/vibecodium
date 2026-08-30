@@ -1,17 +1,21 @@
 import { createClient } from '/client.js';
+import { externalEntry } from '/lib/external-session.js';
 import { mergeSessionItems } from '/lib/session-items.js';
+import { loadToken, saveToken } from '/lib/storage.js';
 import { eventClock } from '/lib/time.js';
 import { createActions } from '/ui/actions.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { queryElements } from '/ui/elements.js';
+import { createFilesPanel } from '/ui/files.js';
+import { createGitStatus } from '/ui/git-status.js';
 import { createHostPanel } from '/ui/host-panel.js';
 import { createProjectManager } from '/ui/project-manager.js';
 import { createSessionBar } from '/ui/session-bar.js';
+import { createSkillsPanel } from '/ui/skills.js';
 import { createTranscriptView } from '/ui/transcript.js';
 import { createVoiceRecorder } from '/ui/voice.js';
 import { applySessionEvent } from '/ui/events.js';
 
-const TOKEN_KEY = 'vibecodium.token';
 const SESSION_LIMIT = 10;
 const SESSION_NOTE = 'recent sessions unavailable';
 
@@ -30,9 +34,10 @@ const actionState = {
 };
 let machineLoading = false;
 let sessionsLoading = false;
-let gitRequest = 0;
 let transientTimer = null;
 let remoteSessions = [];
+let machineSessions = [];
+let registeredProjects = [];
 let scopePresets = [];
 const sessions = new Map();
 const transientLines = [];
@@ -42,13 +47,18 @@ const transcript = createTranscriptView({
   streamEmpty: elements.streamEmpty,
   jumpLatest: elements.jumpLatest,
 });
+const gitStatus = createGitStatus({
+  client,
+  target: elements.gitStatus,
+  isCurrent: (entry) => entry.stream_id === selectedStreamId,
+});
 const sessionBar = createSessionBar({
   bar: elements.sessionBar,
   presetRow: elements.sessionPresets,
   onNew: () => selectNew(),
   onSelect: (item) => selectSessionItem(item),
   onStop: () => void actions.stopSession(),
-  onPreset: (preset) => void actions.openPreset(preset),
+  onPreset: (preset) => selectPreset(preset),
 });
 const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
@@ -74,7 +84,10 @@ const projectManager = createProjectManager({
   elements,
   errorMessage,
   onError: (message) => appendError(message),
-  onProjectsChange: (nextProjects) => history.setProjects(nextProjects),
+  onProjectsChange: (nextProjects) => {
+    registeredProjects = [...nextProjects];
+    history.setProjects(nextProjects);
+  },
   onProjectChange: () => updateScope(),
 });
 const hostPanel = createHostPanel({
@@ -90,15 +103,12 @@ const settings = createSettingsDrawer({
   token: elements.token,
   tokenState: elements.tokenState,
   harness: elements.harness,
-  onTokenInput: (value) => {
-    saveToken(value);
-    refreshClient(value);
+  onTokenInput: (value) => commitToken(value),
+  onTokenCommit: (value) => commitToken(value),
+  onOpen: () => {
+    void hostPanel.refresh();
+    void skills.refresh();
   },
-  onTokenCommit: (value) => {
-    saveToken(value);
-    refreshClient(value);
-  },
-  onOpen: () => void hostPanel.refresh(),
 });
 createVoiceRecorder({
   client,
@@ -127,8 +137,35 @@ const actions = createActions({
   notify: setComposeNote,
   reloadSessions: loadSessions,
 });
-elements.historyToggle.addEventListener('click', () => settings.close());
-elements.settingsToggle.addEventListener('click', () => history.close());
+const files = createFilesPanel({
+  client,
+  elements,
+  errorMessage,
+  onError: (message) => appendError(message),
+  note: setComposeNote,
+  getSessionId: () => sessions.get(selectedStreamId)?.session_id ?? '',
+  onOpen: () => {
+    history.close();
+    settings.close();
+  },
+});
+const skills = createSkillsPanel({
+  client,
+  elements,
+  errorMessage,
+  onError: (message) => appendError(message),
+  getProject: () => projectManager.selectedProject(),
+  onPresetsChange: () => refreshPresets(),
+  onPrompt: (prompt) => void actions.openPreset({ prompt }),
+});
+elements.historyToggle.addEventListener('click', () => {
+  settings.close();
+  files.close();
+});
+elements.settingsToggle.addEventListener('click', () => {
+  history.close();
+  files.close();
+});
 elements.composeForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void actions.submitCompose();
@@ -140,7 +177,7 @@ setStatus(
 refreshControls();
 renderStream();
 updateScope();
-void projectManager.load();
+void boot();
 globalThis.addEventListener('online', () => {
   setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
   if (selectedStreamId) void hydrateStream(selectedStreamId);
@@ -148,22 +185,18 @@ globalThis.addEventListener('online', () => {
 globalThis.addEventListener('offline', () => setStatus('OFFLINE', 'bad'));
 client.subscribe(0, onEvent, '*');
 
-function loadToken() {
-  try {
-    return (globalThis.localStorage.getItem(TOKEN_KEY) ?? '').trim();
-  } catch {
-    return '';
-  }
+// Projects come first: external sessions and adopted skills are both keyed off the project list.
+async function boot() {
+  await projectManager.load();
+  refreshPresets();
+  await Promise.all([skills.refresh(), loadMachineSessions()]);
 }
 
-function saveToken(value) {
-  try {
-    if (value) globalThis.localStorage.setItem(TOKEN_KEY, value);
-    else globalThis.localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    setStatus('TOKEN UNSAVED', 'wait');
-  }
+function commitToken(value) {
+  if (!saveToken(value)) setStatus('TOKEN UNSAVED', 'wait');
+  refreshClient(value);
 }
+
 function refreshClient(value = elements.token.value.trim()) {
   if (value === clientToken) return;
   clientToken = value;
@@ -171,17 +204,21 @@ function refreshClient(value = elements.token.value.trim()) {
   else delete clientOptions.token;
 }
 
+// The machine's own sessions feed both the history drawer and the per-project session bar.
 async function loadMachineSessions() {
   if (machineLoading) return;
   machineLoading = true;
   try {
     const result = await client.machineList();
-    history.renderMachine(result.sessions);
+    machineSessions = [...result.sessions];
+    history.renderMachine(machineSessions);
   } catch (error) {
+    machineSessions = [];
     history.renderMachine([]);
     appendError(`machine session list failed: ${errorMessage(error)}`);
   } finally {
     machineLoading = false;
+    renderSessions();
   }
 }
 
@@ -207,9 +244,34 @@ async function loadSessions() {
 function updateScope() {
   const project = projectManager.selectedProject();
   elements.scopePath.textContent = project?.path || '(default cwd)';
-  scopePresets = [...(project?.quickActions ?? [])];
-  renderSessions();
+  refreshPresets();
+  skills.render();
   void loadSessions();
+  void loadMachineSessions();
+}
+
+// Presets are the project's adopted skills first, then its detected quick actions.
+function refreshPresets() {
+  const project = projectManager.selectedProject();
+  scopePresets = [
+    ...skills.presets(),
+    ...(project?.quickActions ?? []).map((action) => ({
+      kind: 'action',
+      id: action.id,
+      label: action.label,
+      prompt: action.prompt,
+      title: action.prompt,
+    })),
+  ];
+  renderSessions();
+}
+
+function selectPreset(preset) {
+  if (preset.kind === 'skill') {
+    skills.invoke(preset.id);
+    return;
+  }
+  void actions.openPreset(preset);
 }
 
 function setStatus(label, tone) {
@@ -264,16 +326,24 @@ function ensureEntry(streamId, label = '') {
 function selectNew() {
   selectedStreamId = '';
   elements.streamCaption.textContent = 'New session';
-  elements.gitStatus.hidden = true;
+  gitStatus.hide();
   renderStream();
   refreshControls();
   elements.composeInput.focus();
 }
 
 function selectSessionItem(item) {
-  const entry = sessions.get(item.stream_id) ?? adoptSessionItem(item);
+  const existing = sessions.get(item.stream_id);
+  const entry = existing ?? (item.external ? adoptExternalItem(item) : adoptSessionItem(item));
   if (!entry) return;
   selectStream(entry.stream_id);
+}
+
+// External sessions are read-only here: the machine owns them, and HISTORY still forks them.
+function adoptExternalItem(item) {
+  const entry = externalEntry(item);
+  sessions.set(entry.stream_id, entry);
+  return entry;
 }
 
 function adoptSessionItem(item) {
@@ -294,7 +364,7 @@ function selectStream(streamId) {
   elements.streamCaption.textContent = entry.label || streamId;
   renderStream();
   refreshControls();
-  void updateGitStatus(entry);
+  void gitStatus.update(entry);
   if (!streamId.startsWith('machine:')) void hydrateStream(streamId);
   elements.composeInput.focus();
 }
@@ -317,6 +387,8 @@ function sessionItems() {
   return mergeSessionItems({
     remote: remoteSessions,
     local: [...sessions.values()],
+    machine: machineSessions,
+    projects: registeredProjects,
     project: projectManager.selectedProject(),
     selectedId: selectedStreamId,
     limit: SESSION_LIMIT,
@@ -326,7 +398,8 @@ function sessionItems() {
 function renderStream() {
   const entry = sessions.get(selectedStreamId);
   const canRestart =
-    entry?.kind === 'session' && (entry.status === 'done' || entry.status === 'failed');
+    entry?.kind === 'session' &&
+    (entry.status === 'done' || entry.status === 'failed' || entry.status === 'external');
   transcript.render(
     entry ? [...transientLines, ...entry.lines] : transientLines,
     Boolean(entry?.busy),
@@ -392,7 +465,7 @@ function onEvent(event) {
   entry.lastActivityAt = Number.isFinite(eventTime) ? eventTime : Date.now();
   renderStream();
   refreshControls();
-  if (entry.stream_id === selectedStreamId) void updateGitStatus(entry);
+  if (entry.stream_id === selectedStreamId) void gitStatus.update(entry);
   setStatus('LIVE', 'live');
 }
 
@@ -405,31 +478,6 @@ async function hydrateStream(streamId) {
     const entry = sessions.get(streamId);
     appendError(`event stream unavailable: ${errorMessage(error)}`, entry);
     if (selectedStreamId === streamId) setStatus('EVENT ERROR', 'bad');
-  }
-}
-
-async function updateGitStatus(entry) {
-  const request = ++gitRequest;
-  if (!entry?.cwd) {
-    elements.gitStatus.hidden = true;
-    return;
-  }
-  try {
-    const result = await client.workspaceStatus({ path: entry.cwd });
-    if (request !== gitRequest || selectedStreamId !== entry.stream_id) return;
-    if (!result.branch || /no git|not git/i.test(result.branch)) {
-      elements.gitStatus.hidden = true;
-      return;
-    }
-    const cleanName =
-      entry.cwd
-        .replace(/[\\/]+$/, '')
-        .split(/[\\/]/)
-        .pop() || entry.cwd;
-    elements.gitStatus.textContent = `${cleanName} · ${result.branch} · ● ${result.dirty ? 'dirty' : 'clean'}`;
-    elements.gitStatus.hidden = false;
-  } catch {
-    if (request === gitRequest) elements.gitStatus.hidden = true;
   }
 }
 

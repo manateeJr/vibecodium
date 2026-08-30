@@ -1,6 +1,6 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v8';
+const CACHE_NAME = 'vibecodium-shell-v9';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
@@ -8,17 +8,26 @@ const SHELL_ASSETS = Object.freeze([
   '/pocket.css',
   '/ui.css',
   '/layout.css',
+  '/panels.css',
+  '/lib/base64.js',
+  '/lib/external-session.js',
   '/lib/markdown.js',
+  '/lib/paths.js',
   '/lib/session-items.js',
+  '/lib/skills.js',
   '/lib/storage.js',
   '/lib/time.js',
   '/ui/actions.js',
+  '/ui/drawers.js',
   '/ui/elements.js',
   '/ui/events.js',
-  '/ui/drawers.js',
+  '/ui/files.js',
+  '/ui/git-status.js',
   '/ui/host-panel.js',
   '/ui/project-manager.js',
   '/ui/session-bar.js',
+  '/ui/skill-builder.js',
+  '/ui/skills.js',
   '/ui/transcript.js',
   '/ui/voice.js',
   '/tokens.css',

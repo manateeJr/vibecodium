@@ -39,14 +39,19 @@ export function createSessionBar({ bar, presetRow, onNew, onSelect, onStop, onPr
     pill.className = 'session-pill';
     pill.dataset.active = active ? 'yes' : 'no';
     pill.dataset.status = item.status;
+    pill.dataset.external = item.external ? 'yes' : 'no';
     const select = document.createElement('button');
     select.className = 'session-pill__select';
     select.type = 'button';
-    select.title = item.cwd || item.project || item.stream_id;
+    select.title = item.external
+      ? `external ${item.provider} session · ${item.title || item.cwd || item.stream_id}`
+      : item.cwd || item.project || item.stream_id;
     select.setAttribute('aria-current', String(active));
     select.setAttribute(
       'aria-label',
-      `${item.status} session · ${item.provider} · ${item.shortId}`,
+      `${item.external ? 'external ' : ''}${item.status} session · ${item.provider} · ${
+        item.shortId
+      }`,
     );
     select.addEventListener('click', () => onSelect(item));
     const dot = document.createElement('span');
@@ -57,8 +62,10 @@ export function createSessionBar({ bar, presetRow, onNew, onSelect, onStop, onPr
     text.className = 'session-pill__text';
     text.textContent = `${item.status} · ${item.provider} · ${item.shortId}`;
     select.append(dot, text);
+    // External sessions belong to the machine: mark them and never offer a stop control.
+    if (item.external) select.append(tag('ext'));
     pill.append(select);
-    if (active && item.status === 'live') pill.append(stopControl(item));
+    if (active && item.status === 'live' && !item.external) pill.append(stopControl(item));
     return pill;
   };
 
@@ -84,7 +91,8 @@ export function createSessionBar({ bar, presetRow, onNew, onSelect, onStop, onPr
       chip.className = 'preset-chip';
       chip.type = 'button';
       chip.textContent = preset.label;
-      chip.title = preset.prompt;
+      chip.title = preset.title ?? preset.prompt ?? preset.label;
+      chip.dataset.kind = preset.kind ?? 'action';
       chip.addEventListener('click', () => onPreset(preset));
       presetRow.append(chip);
     }
@@ -106,4 +114,11 @@ export function createSessionBar({ bar, presetRow, onNew, onSelect, onStop, onPr
       render();
     },
   };
+}
+
+function tag(text) {
+  const span = document.createElement('span');
+  span.className = 'session-pill__tag';
+  span.textContent = text;
+  return span;
 }
