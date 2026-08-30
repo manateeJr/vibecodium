@@ -1,3 +1,5 @@
+import type { SubstrateSessionState } from './substrate-contract.js';
+
 export type EventKind =
   | 'session_started'
   | 'session_forked'
@@ -13,7 +15,8 @@ export type EventKind =
   | 'proposal_queued'
   | 'proposal_approved'
   | 'notify_emitted'
-  | 'inbound_received';
+  | 'inbound_received'
+  | 'session_state';
 
 export interface SessionStartedPayload {
   readonly session_id: string;
@@ -39,6 +42,7 @@ export interface SessionInputPayload {
   readonly session_id: string;
   readonly turn: number;
   readonly text: string;
+  readonly steering?: boolean;
 }
 
 export interface SessionCompletePayload {
@@ -96,6 +100,14 @@ export interface InboundReceivedPayload {
   readonly capability_token_id?: string;
 }
 
+export type SessionStateReason = 'reaped' | 'reconciled' | 'shutdown' | 'resumed';
+
+export interface SessionStatePayload {
+  readonly session_id: string;
+  readonly state: SubstrateSessionState;
+  readonly reason: SessionStateReason;
+}
+
 export interface EventPayloadMap {
   readonly session_started: SessionStartedPayload;
   readonly session_output: SessionOutputPayload;
@@ -112,6 +124,7 @@ export interface EventPayloadMap {
   readonly notify_emitted: NotifyEmittedPayload;
   readonly inbound_received: InboundReceivedPayload;
   readonly session_forked: SessionForkedPayload;
+  readonly session_state: SessionStatePayload;
 }
 
 export type EventPayload<K extends EventKind = EventKind> = EventPayloadMap[K];

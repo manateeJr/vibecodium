@@ -1,4 +1,5 @@
 import type { SessionOutputPayload } from './events.js';
+import type { HarnessPlugin } from './substrate-contract.js';
 
 export interface ProviderSpawnRequest {
   readonly sessionId: string;
@@ -25,6 +26,7 @@ export interface ProviderCapabilityMatrix {
   readonly streaming: boolean;
   readonly stop: boolean;
   readonly models: readonly string[];
+  readonly persistent?: boolean;
 }
 
 export interface ProviderSessionRef {
@@ -33,6 +35,9 @@ export interface ProviderSessionRef {
   stream(session: ProviderSession): AsyncIterable<ProviderChunk>;
   stop(session: ProviderSession): Promise<void>;
   capabilityMatrix(): ProviderCapabilityMatrix;
+  /** The provider's sessions survive process exit under the PTY substrate. */
+  readonly persistent?: boolean;
+  readonly harnessPlugin?: HarnessPlugin;
 }
 
 export interface ProviderOutputEvent {
