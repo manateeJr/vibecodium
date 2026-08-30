@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import type { SessionOrigin } from '../contracts/session-commands.js';
 import type {
   SubstrateSessionRecord,
   SubstrateSessionState,
@@ -17,6 +18,8 @@ type SessionRow = {
   transcript_path: string;
   storage_dir: string;
   state: SubstrateSessionState;
+  label: string;
+  origin: SessionOrigin;
   updated_at: string;
 };
 
@@ -29,6 +32,8 @@ const sessionTableSchema = `
     transcript_path TEXT NOT NULL,
     storage_dir TEXT NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('live', 'resumable', 'closed')),
+    label TEXT NOT NULL DEFAULT '',
+    origin TEXT NOT NULL DEFAULT 'agent' CHECK (origin IN ('operator', 'agent')),
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS session_records_state ON session_records (state);
@@ -41,6 +46,7 @@ export class SessionTable {
   private readonly readRecord;
   private readonly readRecords;
   private readonly updateRecordState;
+  private readonly updateRecordLabel;
   private closed = false;
 
   public constructor(options: SessionTableOptions = {}) {
@@ -52,11 +58,12 @@ export class SessionTable {
     this.database.pragma('journal_mode = WAL');
     this.database.pragma('synchronous = FULL');
     this.database.exec(sessionTableSchema);
+    migrateSessionTable(this.database);
     this.upsertRecord = this.database.prepare(`
       INSERT INTO session_records (
         session_id, provider, harness_ref, substrate_name,
-        transcript_path, storage_dir, state, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        transcript_path, storage_dir, state, label, origin, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
         provider = excluded.provider,
         harness_ref = excluded.harness_ref,
@@ -64,22 +71,27 @@ export class SessionTable {
         transcript_path = excluded.transcript_path,
         storage_dir = excluded.storage_dir,
         state = excluded.state,
+        label = excluded.label,
+        origin = excluded.origin,
         updated_at = excluded.updated_at
     `);
     this.readRecord = this.database.prepare(`
       SELECT session_id, provider, harness_ref, substrate_name,
-             transcript_path, storage_dir, state, updated_at
+             transcript_path, storage_dir, state, label, origin, updated_at
       FROM session_records
       WHERE session_id = ?
     `);
     this.readRecords = this.database.prepare(`
       SELECT session_id, provider, harness_ref, substrate_name,
-             transcript_path, storage_dir, state, updated_at
+             transcript_path, storage_dir, state, label, origin, updated_at
       FROM session_records
       ORDER BY updated_at DESC, session_id ASC
     `);
     this.updateRecordState = this.database.prepare(
       'UPDATE session_records SET state = ?, updated_at = ? WHERE session_id = ?',
+    );
+    this.updateRecordLabel = this.database.prepare(
+      'UPDATE session_records SET label = ?, updated_at = ? WHERE session_id = ?',
     );
   }
 
@@ -93,6 +105,8 @@ export class SessionTable {
       record.transcriptPath,
       record.storageDir,
       record.state,
+      record.label ?? '',
+      record.origin ?? 'agent',
       record.updatedAt,
     );
     return record;
@@ -122,6 +136,20 @@ export class SessionTable {
     if (record === undefined) throw new Error(`session record disappeared: ${sessionId}`);
     return record;
   }
+  public rename(
+    sessionId: string,
+    label: string,
+    updatedAt = new Date().toISOString(),
+  ): SubstrateSessionRecord {
+    validateSessionId(sessionId);
+    if (!label.trim()) throw new Error('label is required');
+    if (!updatedAt.trim()) throw new Error('updatedAt is required');
+    const result = this.updateRecordLabel.run(label.trim(), updatedAt, sessionId);
+    if (result.changes === 0) throw new Error(`session record not found: ${sessionId}`);
+    const record = this.get(sessionId);
+    if (record === undefined) throw new Error(`session record disappeared: ${sessionId}`);
+    return record;
+  }
 
   public close(): void {
     if (this.closed) return;
@@ -139,8 +167,24 @@ function recordFromRow(row: SessionRow): SubstrateSessionRecord {
     transcriptPath: row.transcript_path,
     storageDir: row.storage_dir,
     state: row.state,
+    label: row.label,
+    origin: row.origin,
     updatedAt: row.updated_at,
   };
+}
+
+function migrateSessionTable(database: Database.Database): void {
+  const columns = new Set(
+    (database.pragma('table_info(session_records)') as Array<{ name: string }>).map(
+      (column) => column.name,
+    ),
+  );
+  if (!columns.has('label')) {
+    database.exec("ALTER TABLE session_records ADD COLUMN label TEXT NOT NULL DEFAULT ''");
+  }
+  if (!columns.has('origin')) {
+    database.exec("ALTER TABLE session_records ADD COLUMN origin TEXT NOT NULL DEFAULT 'agent'");
+  }
 }
 
 function validateRecord(record: SubstrateSessionRecord): void {
@@ -155,9 +199,16 @@ function validateRecord(record: SubstrateSessionRecord): void {
   ] as const) {
     if (!value.trim()) throw new Error(`${name} is required`);
   }
+  if (record.label !== undefined && typeof record.label !== 'string') {
+    throw new Error('label must be a string');
+  }
+  if (record.origin !== undefined) validateOrigin(record.origin);
   validateState(record.state);
 }
 
+function validateOrigin(origin: SessionOrigin): void {
+  if (origin !== 'operator' && origin !== 'agent') throw new Error(`invalid origin: ${origin}`);
+}
 function validateSessionId(sessionId: string): void {
   if (!sessionId.trim()) throw new Error('sessionId is required');
 }

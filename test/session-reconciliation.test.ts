@@ -129,6 +129,8 @@ function record(sessionId: string, state: 'live' | 'resumable' | 'closed' = 'liv
     storageDir: `/tmp/${sessionId}`,
     state,
     updatedAt: '2026-08-30T00:00:00.000Z',
+    label: '',
+    origin: 'agent',
   } as const;
 }
 

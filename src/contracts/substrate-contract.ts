@@ -1,3 +1,4 @@
+import type { SessionOrigin } from './session-commands.js';
 export type SubstrateSessionState = 'live' | 'resumable' | 'closed';
 
 export type SubstrateKey = 'ctrl_u' | 'enter' | 'escape' | 'interrupt';
@@ -51,6 +52,7 @@ export interface HarnessSessionContext {
   readonly prompt?: string;
   readonly resumeRef?: string;
   readonly storageDir?: string;
+  readonly model?: string;
 }
 
 export interface HarnessInjectionRecipe {
@@ -81,5 +83,7 @@ export interface SubstrateSessionRecord {
   readonly transcriptPath: string;
   readonly storageDir: string;
   readonly state: SubstrateSessionState;
+  readonly label?: string;
+  readonly origin?: SessionOrigin;
   readonly updatedAt: string;
 }

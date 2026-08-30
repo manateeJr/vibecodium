@@ -85,6 +85,7 @@ test('session.resume admits, records, and forwards the provider resume reference
     prompt: 'continue the old conversation',
     cwd: '/workspace',
     project: 'vibecodium',
+    origin: 'agent',
   });
   assert.deepEqual(worker.messages[0], {
     type: 'start',

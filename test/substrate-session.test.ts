@@ -145,6 +145,15 @@ test('OMP plugin parses fixture records and distinguishes idle stop from error',
     }),
     ['omp', '--session-dir', '/tmp/s1', '--resume', 'omp-ref'],
   );
+  assert.deepEqual(
+    plugin.launchArgv({
+      sessionId: 'session-1',
+      cwd: '/workspace',
+      storageDir: '/tmp/s1',
+      model: 'opus',
+    }),
+    ['omp', '--model=opus', '--session-dir', '/tmp/s1'],
+  );
 });
 
 test('JSONL tailer waits for complete lines and labels steering input', async () => {
@@ -238,9 +247,10 @@ test('persistent session commands use resume argv and raw key passthrough', asyn
   });
   try {
     subsystem.register(context);
-    const opened = await subsystem.open({ provider: 'omp', prompt: 'first prompt' });
+    const opened = await subsystem.open({ provider: 'omp', prompt: 'first prompt', model: 'opus' });
     assert.deepEqual(substrate.created[0]?.argv, [
       'omp',
+      '--model=opus',
       '--session-dir',
       path.join(root, 'session-1'),
       'first prompt',

@@ -6,6 +6,7 @@ import type {
   SessionEnsureLiveArgs,
   SessionForkResult,
   SessionListResult,
+  SessionRenameArgs,
   SessionOpenArgs,
   SessionResumeArgs,
   SessionSendArgs,
@@ -16,7 +17,9 @@ import type {
 import type { SubstrateKey } from '../contracts/substrate-contract.js';
 import { abducoBinaryPath } from '../substrate/paths.js';
 import type { SessionTable } from './session-table.js';
+import type { MachineSessionResolver } from '../machine-sessions/index.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
+import type { SubstrateSessionRecord } from '../contracts/substrate-contract.js';
 
 export async function copySessionStore(
   sourcePath: string,
@@ -59,12 +62,26 @@ export function sessionOpenArgs(command: unknown): SessionOpenArgs {
     throw new Error('cwd must be a non-empty string');
   if (value.project !== undefined && (typeof value.project !== 'string' || !value.project.trim()))
     throw new Error('project must be a non-empty string');
+  if (value.model !== undefined && (typeof value.model !== 'string' || !value.model.trim()))
+    throw new Error('model must be a non-empty string');
+  if (value.origin !== undefined && value.origin !== 'operator' && value.origin !== 'agent')
+    throw new Error('origin must be operator or agent');
   return {
     provider: value.provider,
     prompt: value.prompt,
+    origin: value.origin === undefined ? 'agent' : value.origin,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
     ...(value.project === undefined ? {} : { project: value.project }),
+    ...(value.model === undefined ? {} : { model: value.model }),
   };
+}
+
+export function sessionRenameArgs(command: unknown): SessionRenameArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim())
+    throw new Error('session_id is required');
+  if (typeof value.label !== 'string' || !value.label.trim()) throw new Error('label is required');
+  return { session_id: value.session_id, label: value.label.trim() };
 }
 
 export function sessionResumeArgs(command: unknown): SessionResumeArgs {
@@ -167,6 +184,9 @@ export interface ForkSessionOptions {
   readonly idFactory: () => string;
   readonly sessionStorageRoot: string;
   readonly sessionStorageDirs: Map<string, string>;
+  readonly machineSessions?: MachineSessionResolver;
+  readonly sessionTable?: SessionTable;
+  readonly now?: () => Date;
 }
 
 export function listSessions(
@@ -211,44 +231,80 @@ export async function forkSession(
     throw new Error('session_id is required');
   }
   const session_id = value.session_id;
-  const source = options.sessionRecords.get(session_id);
-  if (!source) throw new Error('session not found');
+  const local = options.sessionRecords.get(session_id);
+  const external = local ? undefined : await options.machineSessions?.resolve(session_id);
+  if (!local && !external) throw new Error('session not found');
+  if (external?.source === 'codex') throw new Error('codex fork not yet supported');
+  const provider = local?.summary.provider ?? external?.source;
+  if (!provider) throw new Error('session not found');
   const new_session_id = options.idFactory();
   if (
     !new_session_id.trim() ||
     new_session_id === session_id ||
     new_session_id.includes('/') ||
     new_session_id.includes('\\') ||
-    options.sessionRecords.has(new_session_id)
+    options.sessionRecords.has(new_session_id) ||
+    options.sessionTable?.get(new_session_id) !== undefined
   ) {
     throw new Error('forked session id is invalid or already exists');
   }
-  const sourcePath = await findSessionStorePath(
-    options.sessionStorageDirs.get(session_id),
-    options.sessionStorageRoot,
-    session_id,
-  );
+  const sourcePath = external
+    ? external.path
+    : await findSessionStorePath(
+        options.sessionStorageDirs.get(session_id),
+        options.sessionStorageRoot,
+        session_id,
+      );
   const targetStorageDir = path.join(options.sessionStorageRoot, new_session_id);
   await copySessionStore(sourcePath, targetStorageDir);
   options.sessionStorageDirs.set(new_session_id, targetStorageDir);
+  const summary = local?.summary ?? {
+    session_id,
+    stream_id: `machine:${external!.source}:${external!.ref}`,
+    provider,
+    label: '',
+    origin: 'agent' as const,
+    status: 'stopped' as const,
+    prompt: external!.title,
+    started_at: external!.updated_at,
+    updated_at: external!.updated_at,
+    cwd: external!.cwd,
+  };
+  const now = (options.now ?? (() => new Date()))().toISOString();
+  if (options.sessionTable && provider === 'omp') {
+    const sourceRecord = options.sessionTable.get(session_id);
+    const record: SubstrateSessionRecord = {
+      sessionId: new_session_id,
+      provider,
+      harnessRef: external?.ref ?? sourceRecord?.harnessRef ?? session_id,
+      substrateName: `substrate-${new_session_id}`,
+      transcriptPath: path.join(targetStorageDir, 'session.jsonl'),
+      storageDir: targetStorageDir,
+      state: 'resumable',
+      label: summary.label,
+      origin: summary.origin,
+      updatedAt: now,
+    };
+    options.sessionTable.upsert(record);
+  }
   const stream_id = `session:${new_session_id}`;
-  const prompt = source.summary.prompt ?? '';
   options.context.append(stream_id, 'session_started', {
     session_id: new_session_id,
-    provider: source.summary.provider,
-    prompt,
-    ...(source.summary.cwd === undefined ? {} : { cwd: source.summary.cwd }),
-    ...(source.summary.project === undefined ? {} : { project: source.summary.project }),
+    provider,
+    prompt: summary.prompt ?? '',
+    origin: summary.origin,
+    ...(summary.cwd === undefined ? {} : { cwd: summary.cwd }),
+    ...(summary.project === undefined ? {} : { project: summary.project }),
   });
   options.context.append(stream_id, 'session_forked', {
     session_id: new_session_id,
     source_session_id: session_id,
-    provider: source.summary.provider,
+    provider,
   });
   return {
     new_session_id,
-    provider: source.summary.provider,
-    continue_command: continueCommand(source.summary.provider, new_session_id, targetStorageDir),
+    provider,
+    continue_command: continueCommand(provider, new_session_id, targetStorageDir),
   };
 }
 

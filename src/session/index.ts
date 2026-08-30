@@ -14,6 +14,7 @@ import {
   type SessionStopResult,
   type SessionSummary,
 } from '../contracts/commands.js';
+import type { MachineSessionResolver } from '../machine-sessions/index.js';
 import type { EventEnvelope, SessionStateReason } from '../contracts/events.js';
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 import type { TurnWorkerMessage, WorkerOutputMessage } from '../server/session-worker.js';
@@ -23,15 +24,16 @@ import type {
   SubstrateSessionRecord,
   SubstrateSessionState,
 } from '../contracts/substrate-contract.js';
+import { projectSessionEvent, type SessionSummaryRecord } from './session-summary-projector.js';
 import { AdmissionBudget, admissionConfigFromEnv } from './admission.js';
 import { PersistentSessionManager } from './persistent-session-manager.js';
 import {
-  asRecord,
   errorMessage,
   forkSession,
   listSessions,
   sessionAttachInfo,
   sessionOpenArgs,
+  sessionRenameArgs,
   sessionResumeArgs,
   sessionSendArgs,
   sessionStopArgs,
@@ -56,8 +58,9 @@ export interface SessionSubsystemOptions {
   readonly idleTimeoutMs?: number;
   readonly reaperIntervalMs?: number;
   readonly now?: () => Date;
+  readonly machineSessions?: MachineSessionResolver;
 }
-type SessionRecord = { summary: SessionSummary; readonly startedSeq: number };
+type SessionRecord = SessionSummaryRecord;
 export class SessionSubsystem implements Subsystem {
   public readonly name = 'session';
   public readonly substrate: SubstrateClient | undefined;
@@ -72,6 +75,7 @@ export class SessionSubsystem implements Subsystem {
   private readonly substrateAttachments = new Map<string, SubstrateAttachment>();
   private persistentManager: PersistentSessionManager | undefined;
   private readonly reconciledSubstrateSessions = new Set<string>();
+  private readonly machineSessions: MachineSessionResolver | undefined;
   private readonly sessionStorageRoot: string;
   private readonly admission: AdmissionBudget;
   private context: SubsystemContext | undefined;
@@ -92,6 +96,7 @@ export class SessionSubsystem implements Subsystem {
     this.sessionTable = options.sessionTable;
     this.idleTimeoutMs = options.idleTimeoutMs;
     this.reaperIntervalMs = options.reaperIntervalMs;
+    this.machineSessions = options.machineSessions;
     this.now = options.now ?? (() => new Date());
   }
   public register(context: SubsystemContext): void {
@@ -119,6 +124,9 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionOpen, (command: unknown) => this.open(command));
     context.registerCommand(COMMAND_NAMES.sessionResume, (command: unknown) =>
       this.resume(command),
+    );
+    context.registerCommand(COMMAND_NAMES.sessionRename, (command: unknown) =>
+      this.rename(command),
     );
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
@@ -245,6 +253,18 @@ export class SessionSubsystem implements Subsystem {
   public list(command: unknown): SessionListResult {
     return listSessions(this.sessionRecords, command);
   }
+  public rename(command: unknown): { label: string } {
+    const args = sessionRenameArgs(command);
+    const record = this.sessionRecords.get(args.session_id);
+    if (!record) throw new Error('session not found');
+    const updatedAt = this.now().toISOString();
+    if (this.sessionTable?.get(args.session_id) !== undefined) {
+      this.sessionTable.rename(args.session_id, args.label, updatedAt);
+    }
+    record.summary = { ...record.summary, label: args.label, updated_at: updatedAt };
+    return { label: args.label };
+  }
+
   public async fork(command: unknown): Promise<SessionForkResult> {
     return forkSession(command, {
       context: requireContext(this.context),
@@ -252,6 +272,9 @@ export class SessionSubsystem implements Subsystem {
       idFactory: this.idFactory,
       sessionStorageRoot: this.sessionStorageRoot,
       sessionStorageDirs: this.sessionStorageDirs,
+      ...(this.machineSessions === undefined ? {} : { machineSessions: this.machineSessions }),
+      ...(this.sessionTable === undefined ? {} : { sessionTable: this.sessionTable }),
+      now: this.now,
     });
   }
   private startSession(args: SessionOpenArgs, resumeRef?: string): Promise<SessionOpenResult> {
@@ -290,11 +313,18 @@ export class SessionSubsystem implements Subsystem {
       onWorkerError: (state, message, terminal) => this.failSession(state, message, terminal),
     });
   }
-  public send(command: unknown): SessionSendResult {
+  public send(command: unknown): SessionSendResult | Promise<SessionSendResult> {
     const args = sessionSendArgs(command);
-    if (this.persistentManager?.has(args.session_id)) {
-      const turn = this.persistentManager.send(args.session_id, args.prompt);
-      return { stream_id: `session:${args.session_id}`, turn };
+    if (
+      this.persistentManager?.has(args.session_id) ||
+      this.sessionTable?.get(args.session_id)?.state === 'resumable'
+    ) {
+      const turn = this.persistentManager?.send(args.session_id, args.prompt);
+      if (turn === undefined) throw new Error('persistent substrate is not configured');
+      if (typeof turn === 'number') {
+        return { stream_id: `session:${args.session_id}`, turn };
+      }
+      return turn.then((value) => ({ stream_id: `session:${args.session_id}`, turn: value }));
     }
     const state = this.sessions.get(args.session_id);
     if (!state || state.terminal) throw new Error('session not found');
@@ -386,72 +416,16 @@ export class SessionSubsystem implements Subsystem {
     return this.persistentManager?.runReaper() ?? Promise.resolve([]);
   }
   private projectEvent(event: EventEnvelope): void {
-    const payload = asRecord(event.payload);
-    const eventType = event.type as string;
-    const payloadSessionId = payload?.session_id;
-    const session_id =
-      typeof payloadSessionId === 'string' && payloadSessionId.trim()
-        ? payloadSessionId
-        : event.stream_id.startsWith('session:')
-          ? event.stream_id.slice('session:'.length)
-          : undefined;
-    if (eventType === 'session_started') {
-      const provider = payload?.provider;
-      const prompt = payload?.prompt;
-      if (
-        !session_id ||
-        typeof provider !== 'string' ||
-        !provider.trim() ||
-        typeof prompt !== 'string'
-      ) {
-        return;
-      }
-      this.sessionRecords.set(session_id, {
-        startedSeq: event.seq,
-        summary: {
-          session_id,
-          stream_id: event.stream_id,
-          provider,
-          status: this.sessionStartStatus(session_id),
-          prompt,
-          started_at: event.ts,
-          updated_at: event.ts,
-          ...(typeof payload?.project === 'string' ? { project: payload.project } : {}),
-          ...(typeof payload?.cwd === 'string' ? { cwd: payload.cwd } : {}),
-        },
-      });
-      return;
-    }
-    if (!session_id) return;
-    const record = this.sessionRecords.get(session_id);
-    if (!record) return;
-    const substrateStateEvent =
-      eventType === 'session_state' &&
-      (payload?.state === 'live' || payload?.state === 'resumable' || payload?.state === 'closed');
-    const stateIsLive =
-      payload?.state === 'live' &&
-      ((this.substrate === undefined && this.sessionTable === undefined) ||
-        this.sessions.has(session_id) ||
-        this.persistentManager?.has(session_id) === true ||
-        this.reconciledSubstrateSessions.has(session_id));
-    const status = substrateStateEvent
-      ? stateIsLive
-        ? 'live'
-        : 'stopped'
-      : eventType === 'verify_failed'
-        ? 'failed'
-        : eventType === 'session_complete'
-          ? this.stoppedSessions.has(session_id)
-            ? 'stopped'
-            : 'done'
-          : eventType === 'session_stop'
-            ? 'stopped'
-            : undefined;
-    record.summary = {
-      ...record.summary,
-      updated_at: event.ts,
-      ...(status === undefined ? {} : { status }),
-    };
+    projectSessionEvent(event, {
+      records: this.sessionRecords,
+      ...(this.sessionTable === undefined ? {} : { sessionTable: this.sessionTable }),
+      sessionStartStatus: (sessionId) => this.sessionStartStatus(sessionId),
+      isLive: (sessionId) =>
+        (this.substrate === undefined && this.sessionTable === undefined) ||
+        this.sessions.has(sessionId) ||
+        this.persistentManager?.has(sessionId) === true ||
+        this.reconciledSubstrateSessions.has(sessionId),
+    });
   }
   private sessionStartStatus(session_id: string): SessionSummary['status'] {
     if (this.substrate === undefined && this.sessionTable === undefined) return 'live';

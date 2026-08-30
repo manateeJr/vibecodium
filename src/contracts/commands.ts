@@ -10,6 +10,8 @@ import type {
   SessionListResult,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionRenameArgs,
+  SessionRenameResult,
   SessionResumeArgs,
   SessionResumeResult,
   SessionSendArgs,
@@ -33,6 +35,9 @@ export type {
   SessionForkResult,
   SessionListArgs,
   SessionListResult,
+  SessionOrigin,
+  SessionRenameArgs,
+  SessionRenameResult,
   SessionOpenArgs,
   SessionOpenResult,
   SessionResumeArgs,
@@ -48,6 +53,7 @@ export type {
 
 export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
+  sessionRename: 'session.rename',
   sessionStop: 'session.stop',
   sessionSend: 'session.send',
   sessionList: 'session.list',
@@ -81,6 +87,7 @@ export const COMMAND_NAMES = {
   skillInvoke: 'skill.invoke',
 } as const;
 export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
+export const SESSION_RENAME_COMMAND = COMMAND_NAMES.sessionRename;
 export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
 export const SESSION_SEND_COMMAND = COMMAND_NAMES.sessionSend;
 export const SESSION_LIST_COMMAND = COMMAND_NAMES.sessionList;
@@ -121,6 +128,7 @@ export interface MachineSessionSummary {
   readonly ref: string;
   readonly title: string;
   readonly cwd: string;
+  readonly kind: 'main' | 'subagent';
   readonly updated_at: string;
 }
 
@@ -360,6 +368,7 @@ export interface SkillInvokeResult {
 }
 export interface CommandArgsMap {
   'session.open': SessionOpenArgs;
+  'session.rename': SessionRenameArgs;
   'session.stop': SessionStopArgs;
   'session.send': SessionSendArgs;
   'workspace.list': WorkspaceListArgs;
@@ -395,6 +404,7 @@ export interface CommandArgsMap {
 
 export interface CommandResultMap {
   'session.open': SessionOpenResult;
+  'session.rename': SessionRenameResult;
   'session.send': SessionSendResult;
   'workspace.list': WorkspaceListResult;
   'session.stop': SessionStopResult;

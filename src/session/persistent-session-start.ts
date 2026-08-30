@@ -28,6 +28,7 @@ export async function startPersistentSession(
     prompt: options.args.prompt,
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
+    origin: options.args.origin ?? 'agent',
   });
   try {
     await options.manager.start(options.args, session_id, stream_id, options.resumeRef);
