@@ -97,9 +97,12 @@ export class PersistentSessionManager {
     sessionId: string,
     streamId: string,
     resumeRef?: string,
+    storageDirOverride?: string,
+    transcriptPathOverride?: string,
   ): Promise<SubstrateSessionRecord> {
     const plugin = this.pluginFor(args.provider);
-    const storageDir = path.join(this.sessionStorageRoot, sessionId);
+    const storageDir = storageDirOverride ?? path.join(this.sessionStorageRoot, sessionId);
+    const transcriptPath = transcriptPathOverride ?? path.join(storageDir, 'session.jsonl');
     this.sessionStorageDirs.set(sessionId, storageDir);
     const worker = this.workerFor({
       sessionId,
@@ -108,7 +111,8 @@ export class PersistentSessionManager {
       plugin,
       substrateName: substrateNameFor(sessionId),
       storageDir,
-      transcriptPath: path.join(storageDir, 'session.jsonl'),
+      transcriptPath,
+      ...(resumeRef === undefined ? {} : { harnessRef: resumeRef }),
       ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
       ...(args.model === undefined ? {} : { model: args.model }),
     });

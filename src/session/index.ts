@@ -15,6 +15,11 @@ import {
   type SessionSummary,
 } from '../contracts/commands.js';
 import type { MachineSessionResolver } from '../machine-sessions/index.js';
+import {
+  hydrateExternalSession,
+  resolveExternalSession,
+  type ExternalResumeStorage,
+} from './external-session-guard.js';
 import type { EventEnvelope, SessionStateReason } from '../contracts/events.js';
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 import type { TurnWorkerMessage, WorkerOutputMessage } from '../server/session-worker.js';
@@ -240,15 +245,26 @@ export class SessionSubsystem implements Subsystem {
   }
   public async resume(command: unknown): Promise<SessionResumeResult> {
     const args = sessionResumeArgs(command);
-    return this.startSession(
+    const external = await resolveExternalSession(this.machineSessions, args.source, args.ref, () =>
+      this.now().getTime(),
+    );
+    const resumeRef = external?.ref ?? args.ref;
+    const cwd = args.cwd ?? external?.cwd;
+    const result = await this.startSession(
       {
         provider: args.source,
         prompt: args.prompt,
-        ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
+        ...(cwd === undefined ? {} : { cwd }),
         ...(args.project === undefined ? {} : { project: args.project }),
       },
-      args.ref,
+      resumeRef,
+      external === undefined
+        ? undefined
+        : { storageDir: path.dirname(external.path), transcriptPath: external.path },
     );
+    if (external)
+      hydrateExternalSession(this.sessionRecords, this.sessionTable, result.session_id, external);
+    return result;
   }
   public list(command: unknown): SessionListResult {
     return listSessions(this.sessionRecords, command);
@@ -277,7 +293,12 @@ export class SessionSubsystem implements Subsystem {
       now: this.now,
     });
   }
-  private startSession(args: SessionOpenArgs, resumeRef?: string): Promise<SessionOpenResult> {
+
+  private startSession(
+    args: SessionOpenArgs,
+    resumeRef?: string,
+    resumeStorage?: ExternalResumeStorage,
+  ): Promise<SessionOpenResult> {
     if (this.persistentManager?.supports(args.provider)) {
       const active =
         [...this.sessions.values()].filter((state) => state.terminal === false).length +
@@ -285,6 +306,12 @@ export class SessionSubsystem implements Subsystem {
       return startPersistentSession({
         args,
         ...(resumeRef === undefined ? {} : { resumeRef }),
+        ...(resumeStorage === undefined
+          ? {}
+          : {
+              storageDir: resumeStorage.storageDir,
+              transcriptPath: resumeStorage.transcriptPath,
+            }),
         active,
         admission: this.admission,
         idFactory: this.idFactory,

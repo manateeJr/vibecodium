@@ -6,6 +6,8 @@ import type { PersistentSessionManager } from './persistent-session-manager.js';
 export interface PersistentSessionStartOptions {
   readonly args: SessionOpenArgs;
   readonly resumeRef?: string;
+  readonly storageDir?: string;
+  readonly transcriptPath?: string;
   readonly active: number;
   readonly admission: AdmissionBudget;
   readonly idFactory: () => string;
@@ -31,7 +33,14 @@ export async function startPersistentSession(
     origin: options.args.origin ?? 'agent',
   });
   try {
-    await options.manager.start(options.args, session_id, stream_id, options.resumeRef);
+    await options.manager.start(
+      options.args,
+      session_id,
+      stream_id,
+      options.resumeRef,
+      options.storageDir,
+      options.transcriptPath,
+    );
     options.onStarted(session_id);
     return { session_id, stream_id };
   } catch (error) {
