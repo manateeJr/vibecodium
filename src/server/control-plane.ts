@@ -11,6 +11,7 @@ import {
   type CommandFrame,
   type CommandServerFrame,
 } from '../contracts/commands.js';
+import type { PtyClientFrame } from '../contracts/session-commands.js';
 import type { CapabilityTokenManager } from '../notify/index.js';
 import type {
   CommandHandler,
@@ -18,6 +19,7 @@ import type {
   Subsystem,
   SubsystemContext,
 } from '../contracts/subsystem.js';
+import { PtyBridge } from './pty-bridge.js';
 import { registerSubsystems } from '../subsystems/index.js';
 import { Authority } from './authority.js';
 import type { ScopedAction } from './authority.js';
@@ -28,12 +30,8 @@ import {
   capabilityVerifierFrom,
   sessionStopHandlersFrom,
 } from './command-dispatcher.js';
-
 const WEB_DIR = path.resolve(process.cwd(), 'web');
 const CLIENT_BUNDLE = path.resolve(process.cwd(), 'dist/src/client/index.js');
-interface SocketWithAddress extends WebSocket {
-  _socket?: { remoteAddress?: string };
-}
 
 export interface ControlPlaneOptions {
   readonly dataPath: string;
@@ -53,6 +51,7 @@ export interface ControlPlaneAddress {
   readonly wsUrl: string;
 }
 export type ClientMessage =
+  | PtyClientFrame
   | CommandFrame
   | {
       readonly type: 'subscribe';
@@ -74,6 +73,7 @@ export class ControlPlane {
     registerListener: (name, handler) => this.registerListener(name, handler),
     append: (stream_id, type, payload) => this.eventStore.append(stream_id, type, payload),
     subscribe: (from_seq, onEvent) => this.eventStore.subscribeAll(from_seq, onEvent),
+    registerPtySource: (subscribe) => this.ptyBridge.registerSource(subscribe),
   };
   private readonly host: string;
   private readonly port: number;
@@ -83,6 +83,7 @@ export class ControlPlane {
   private readonly listeners = new Map<string, EventHandler>();
   private readonly listenerSubscriptions = new Map<string, () => void>();
   private readonly clientSubscriptions = new Map<WebSocket, Map<string, () => void>>();
+  private readonly ptyBridge = new PtyBridge(this.clientSubscriptions, this.send.bind(this));
   private readonly tokenVerifier: CommandTokenVerifier | undefined;
   private readonly commandDispatcher: CommandDispatcher;
   private readonly sessionStopAll: readonly (() => void)[];
@@ -317,6 +318,8 @@ export class ControlPlane {
       this.send(socket, { type: 'error', code: 'unauthorized', message: 'unauthorized' });
       return;
     }
+    if (message.type === 'pty_subscribe' || message.type === 'pty_unsubscribe')
+      return this.ptyBridge.handle(socket, message);
     if (message.type === 'subscribe') {
       this.subscribe(socket, message);
       return;
@@ -452,7 +455,7 @@ function isCommandFrame(value: unknown): value is CommandFrame {
 function isClientMessage(value: unknown): value is ClientMessage {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const type = (value as Record<string, unknown>).type;
-  return type === 'subscribe' || type === 'action.request';
+  return /^(?:subscribe|action\.request|pty_(?:subscribe|unsubscribe))$/.test(String(type));
 }
 
 function bearerToken(authorization: string | undefined): string | undefined {
@@ -467,7 +470,7 @@ function isLoopbackAddress(address: string | undefined): boolean {
 }
 
 function remoteAddress(socket: WebSocket): string | undefined {
-  return (socket as SocketWithAddress)._socket?.remoteAddress;
+  return (socket as WebSocket & { _socket?: { remoteAddress?: string } })._socket?.remoteAddress;
 }
 
 function readJsonBody(request: IncomingMessage): Promise<unknown> {
@@ -491,7 +494,6 @@ function readJsonBody(request: IncomingMessage): Promise<unknown> {
     request.on('error', reject);
   });
 }
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

@@ -38,6 +38,9 @@ import {
 } from './session-helpers.js';
 import type { SessionTable } from './session-table.js';
 import { startPersistentSession } from './persistent-session-start.js';
+import { createPtySubscription, type PtySubscriptionHub } from './pty-subscriptions.js';
+import { requireContext, requireSessionTable } from './session-context.js';
+import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
@@ -72,12 +75,12 @@ export class SessionSubsystem implements Subsystem {
   private readonly sessionStorageRoot: string;
   private readonly admission: AdmissionBudget;
   private context: SubsystemContext | undefined;
+  public subscribePty!: PtySubscriptionHub['subscribe'];
   private reconciliationPromise: Promise<void> | undefined;
   private readonly idleTimeoutMs: number | undefined;
   private readonly reaperIntervalMs: number | undefined;
   private readonly now: () => Date;
   private reconciliationStarted = false;
-  private registered = false;
   public constructor(options: SessionSubsystemOptions = {}) {
     this.workerPath =
       options.workerPath ?? fileURLToPath(new URL('../server/session-worker.js', import.meta.url));
@@ -92,9 +95,10 @@ export class SessionSubsystem implements Subsystem {
     this.now = options.now ?? (() => new Date());
   }
   public register(context: SubsystemContext): void {
-    if (this.registered) throw new Error('session subsystem is already registered');
-    this.registered = true;
+    if (this.context) throw new Error('session subsystem is already registered');
     this.context = context;
+    this.subscribePty = createPtySubscription(this.substrate, this.sessionTable);
+    context.registerPtySource?.(this.subscribePty);
     if (this.substrate) {
       this.persistentManager = new PersistentSessionManager({
         substrate: this.substrate,
@@ -145,7 +149,7 @@ export class SessionSubsystem implements Subsystem {
     return this.reconciliationPromise;
   }
   public saveSessionRecord(record: SubstrateSessionRecord): SubstrateSessionRecord {
-    const table = this.requireSessionTable();
+    const table = requireSessionTable(this.sessionTable);
     const saved = table.upsert(record);
     this.applySubstrateState(record.sessionId, record.state, record.updatedAt);
     return saved;
@@ -155,7 +159,7 @@ export class SessionSubsystem implements Subsystem {
     state: SubstrateSessionState,
     updatedAt?: string,
   ): SubstrateSessionRecord {
-    const table = this.requireSessionTable();
+    const table = requireSessionTable(this.sessionTable);
     const record =
       updatedAt === undefined
         ? table.updateState(session_id, state)
@@ -170,7 +174,7 @@ export class SessionSubsystem implements Subsystem {
   ): void {
     const current = this.sessionRecords.get(session_id);
     const stream_id = current?.summary.stream_id ?? `session:${session_id}`;
-    this.requireContext().append(stream_id, 'session_state', {
+    requireContext(this.context).append(stream_id, 'session_state', {
       session_id,
       state,
       reason,
@@ -243,7 +247,7 @@ export class SessionSubsystem implements Subsystem {
   }
   public async fork(command: unknown): Promise<SessionForkResult> {
     return forkSession(command, {
-      context: this.requireContext(),
+      context: requireContext(this.context),
       sessionRecords: this.sessionRecords,
       idFactory: this.idFactory,
       sessionStorageRoot: this.sessionStorageRoot,
@@ -261,7 +265,7 @@ export class SessionSubsystem implements Subsystem {
         active,
         admission: this.admission,
         idFactory: this.idFactory,
-        context: this.requireContext(),
+        context: requireContext(this.context),
         manager: this.persistentManager,
         onStarted: (sessionId) => this.markSessionLive(sessionId),
       });
@@ -269,7 +273,7 @@ export class SessionSubsystem implements Subsystem {
     return spawnSession({
       args,
       ...(resumeRef === undefined ? {} : { resumeRef }),
-      context: this.requireContext(),
+      context: requireContext(this.context),
       active:
         [...this.sessions.values()].filter((state) => state.terminal === false).length +
         (this.persistentManager?.activeCount ?? 0),
@@ -296,7 +300,7 @@ export class SessionSubsystem implements Subsystem {
     if (!state || state.terminal) throw new Error('session not found');
     if (state.busy) throw new Error('session is busy');
     const turn = ++state.turn;
-    this.requireContext().append(state.stream_id, 'session_input', {
+    requireContext(this.context).append(state.stream_id, 'session_input', {
       session_id: state.session_id,
       turn,
       text: args.prompt,
@@ -320,7 +324,7 @@ export class SessionSubsystem implements Subsystem {
     const args = sessionStopArgs(command);
     if (this.persistentManager?.has(args.session_id)) {
       const provider = this.sessionTable?.get(args.session_id)?.provider ?? 'omp';
-      this.requireContext().append(`session:${args.session_id}`, 'session_complete', {
+      requireContext(this.context).append(`session:${args.session_id}`, 'session_complete', {
         session_id: args.session_id,
         provider,
       });
@@ -335,7 +339,7 @@ export class SessionSubsystem implements Subsystem {
     if (!state || state.terminal) return { stopped: false };
     state.terminal = true;
     this.stoppedSessions.add(args.session_id);
-    this.requireContext().append(state.stream_id, 'session_complete', {
+    requireContext(this.context).append(state.stream_id, 'session_complete', {
       session_id: state.session_id,
       provider: state.provider,
     });
@@ -349,27 +353,17 @@ export class SessionSubsystem implements Subsystem {
     return { stopped: true };
   }
   public stopAll(): void {
-    const substrateSessionIds = new Set<string>();
-    for (const record of this.sessionTable?.list() ?? []) {
-      if (record.state !== 'live') continue;
-      substrateSessionIds.add(record.sessionId);
-      this.emitSessionState(record.sessionId, 'resumable', 'shutdown');
-    }
-    for (const state of this.sessions.values()) {
-      if (substrateSessionIds.has(state.session_id)) {
-        state.terminal = true;
-        continue;
-      }
-      state.terminal = true;
-      if (state.worker.connected || !state.worker.killed) state.worker.kill();
-    }
-    this.sessions.clear();
-    void this.persistentManager?.shutdown();
+    stopAllSessions(
+      this.sessionTable,
+      this.sessions,
+      (sessionId) => this.emitSessionState(sessionId, 'resumable', 'shutdown'),
+      () => void this.persistentManager?.shutdown(),
+    );
   }
   private handleWorkerMessage(state: SessionState, message: WorkerOutputMessage): void {
     if (state.terminal || !message || message.stream_id !== state.stream_id) return;
     if (message.type === 'event') {
-      this.requireContext().append(message.stream_id, message.event_type, message.payload);
+      requireContext(this.context).append(message.stream_id, message.event_type, message.payload);
       if (message.event_type === 'turn_complete') state.busy = false;
       return;
     }
@@ -377,7 +371,7 @@ export class SessionSubsystem implements Subsystem {
   }
   private failSession(state: SessionState, message: string, terminal = false): void {
     if (state.terminal) return;
-    this.requireContext().append(state.stream_id, 'verify_failed', {
+    requireContext(this.context).append(state.stream_id, 'verify_failed', {
       session_id: state.session_id,
       stage: 'session',
       error: message,
@@ -389,8 +383,7 @@ export class SessionSubsystem implements Subsystem {
     }
   }
   public reapIdle(): Promise<readonly string[]> {
-    if (!this.persistentManager) return Promise.resolve([]);
-    return this.persistentManager.runReaper();
+    return this.persistentManager?.runReaper() ?? Promise.resolve([]);
   }
   private projectEvent(event: EventEnvelope): void {
     const payload = asRecord(event.payload);
@@ -484,14 +477,6 @@ export class SessionSubsystem implements Subsystem {
       status: state === 'live' ? 'live' : 'stopped',
       updated_at: updatedAt,
     };
-  }
-  private requireSessionTable(): SessionTable {
-    if (!this.sessionTable) throw new Error('session table is not configured');
-    return this.sessionTable;
-  }
-  private requireContext(): SubsystemContext {
-    if (!this.context) throw new Error('session subsystem is not registered');
-    return this.context;
   }
 }
 export function createSessionSubsystem(options: SessionSubsystemOptions = {}): SessionSubsystem {

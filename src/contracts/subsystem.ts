@@ -18,6 +18,10 @@ export interface SubsystemContext {
   append<K extends EventKind>(stream_id: string, type: K, payload: EventPayload<K>): number;
   /** Subscribe to the global event log after a sequence cursor. */
   subscribe(from_seq: number, onEvent: EventHandler): () => void;
+  /** Register the ephemeral PTY output source; frames are never persisted. */
+  registerPtySource?(
+    subscribe: (sessionId: string, listener: (data: Uint8Array) => void) => () => void,
+  ): void;
 }
 
 export type Subsystem = {

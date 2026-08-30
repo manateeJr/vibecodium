@@ -112,11 +112,12 @@ export interface SessionAttachInfoResult {
 export interface PtySubscribeFrame {
   readonly type: 'pty_subscribe';
   readonly session_id: string;
+  readonly token?: string;
 }
-
 export interface PtyUnsubscribeFrame {
   readonly type: 'pty_unsubscribe';
   readonly session_id: string;
+  readonly token?: string;
 }
 
 export interface PtyDataFrame {
