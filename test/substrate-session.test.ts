@@ -17,6 +17,7 @@ import { OmpHarnessPlugin } from '../src/provider/omp-harness-plugin.js';
 import { SessionSubsystem } from '../src/session/index.js';
 import { SessionTranscriptTailer } from '../src/session/transcript-tailer.js';
 import { SessionTable } from '../src/session/session-table.js';
+import { abducoBinaryPath } from '../src/substrate/paths.js';
 
 class TestContext implements SubsystemContext {
   public readonly events: EventEnvelope[] = [];
@@ -227,6 +228,17 @@ test('persistent session commands use resume argv and raw key passthrough', asyn
       substrate_name: 'substrate-session-1',
     });
     assert.equal(substrate.created.length, 1);
+    const attachInfo = context.commands.get('session.attach_info');
+    assert.ok(attachInfo);
+    assert.deepEqual(await attachInfo({ session_id: opened.session_id }), {
+      substrate_name: 'substrate-session-1',
+      abduco_bin_path: abducoBinaryPath(),
+      state: 'live',
+    });
+    await assert.rejects(
+      async () => attachInfo({ session_id: 'missing-session' }),
+      /session not found/,
+    );
 
     await subsystem.stop({ session_id: opened.session_id });
   } finally {

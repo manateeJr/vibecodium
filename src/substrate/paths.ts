@@ -1,6 +1,7 @@
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import path from 'node:path';
-
 export interface SocketPathOptions {
   readonly socketDir?: string;
   readonly environment?: Readonly<Record<string, string | undefined>>;
@@ -38,4 +39,26 @@ export function socketPathCandidates(
     path.join('/tmp', 'abduco', userName(), sessionFile),
   ];
   return [...new Set(candidates)];
+}
+
+export function abducoBinaryPath(): string {
+  return path.resolve(repositoryRoot(), '.vibecodium', 'bin', 'abduco');
+}
+
+function repositoryRoot(): string {
+  return (
+    findRepositoryRoot(process.cwd()) ??
+    findRepositoryRoot(path.dirname(fileURLToPath(import.meta.url))) ??
+    process.cwd()
+  );
+}
+
+function findRepositoryRoot(start: string): string | undefined {
+  let current = path.resolve(start);
+  while (true) {
+    if (fs.existsSync(path.join(current, 'package.json'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
 }

@@ -1,6 +1,8 @@
 import { cp, mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  SessionAttachInfoArgs,
+  SessionAttachInfoResult,
   SessionEnsureLiveArgs,
   SessionForkResult,
   SessionListResult,
@@ -12,6 +14,8 @@ import type {
   SessionSummary,
 } from '../contracts/commands.js';
 import type { SubstrateKey } from '../contracts/substrate-contract.js';
+import { abducoBinaryPath } from '../substrate/paths.js';
+import type { SessionTable } from './session-table.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
 
 export async function copySessionStore(
@@ -96,6 +100,29 @@ export function sessionEnsureLiveArgs(command: unknown): SessionEnsureLiveArgs {
     throw new Error('session_id is required');
   }
   return { session_id: value.session_id };
+}
+
+export function sessionAttachInfoArgs(command: unknown): SessionAttachInfoArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim()) {
+    throw new Error('session_id is required');
+  }
+  return { session_id: value.session_id };
+}
+
+export function sessionAttachInfo(
+  table: SessionTable | undefined,
+  command: unknown,
+): SessionAttachInfoResult {
+  const args = sessionAttachInfoArgs(command);
+  if (!table) throw new Error('session table is not configured');
+  const record = table.get(args.session_id);
+  if (!record) throw new Error('session not found');
+  return {
+    substrate_name: record.substrateName,
+    abduco_bin_path: abducoBinaryPath(),
+    state: record.state,
+  };
 }
 
 export function sessionSendKeysArgs(command: unknown): SessionSendKeysArgs {

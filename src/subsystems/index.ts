@@ -1,4 +1,7 @@
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
+import type { SubstrateClient } from '../contracts/substrate-contract.js';
+import { createSubstrateClient } from '../substrate/index.js';
+import { SessionTable } from '../session/session-table.js';
 import { createHostSubsystem } from '../host/index.js';
 import { createMachineSessionsSubsystem } from '../machine-sessions/index.js';
 import { createNotifySubsystem } from '../notify/index.js';
@@ -11,9 +14,16 @@ import { createSkillsSubsystem } from '../skills/index.js';
 
 import { createTelemetrySubsystem } from '../telemetry/index.js';
 import { createWorkflowSubsystem } from '../workflow/index.js';
+export interface SubsystemRegistrationOptions {
+  readonly substrate?: SubstrateClient;
+  readonly sessionTable?: SessionTable;
+  readonly sessionTableFilename?: string;
+}
+
 export function registerSubsystems(
   context: SubsystemContext,
   subsystems?: readonly Subsystem[],
+  options: SubsystemRegistrationOptions = {},
 ): readonly Subsystem[] {
   const selected = subsystems ?? [
     createTelemetrySubsystem(),
@@ -22,7 +32,12 @@ export function registerSubsystems(
     createHostSubsystem(),
     createVoiceSubsystem(),
     createMachineSessionsSubsystem(),
-    createSessionSubsystem(),
+    createSessionSubsystem({
+      substrate: options.substrate ?? createSubstrateClient(),
+      sessionTable:
+        options.sessionTable ??
+        new SessionTable({ filename: options.sessionTableFilename ?? ':memory:' }),
+    }),
     createWorkspaceSubsystem(),
     createProjectsSubsystem(),
     createFilesSubsystem(),

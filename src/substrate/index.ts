@@ -1,6 +1,4 @@
-import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import type {
   SubstrateAttachment,
   SubstrateClient,
@@ -11,7 +9,12 @@ import type {
 } from '../contracts/substrate-contract.js';
 import { openAttachment, type AttachmentConnection, type AttachmentEvents } from './connection.js';
 import { encodeResize, MAX_PAYLOAD_BYTES, MESSAGE_TYPES } from './protocol.js';
-import { socketPathCandidates, validateSessionName, type SocketPathOptions } from './paths.js';
+import {
+  abducoBinaryPath,
+  socketPathCandidates,
+  validateSessionName,
+  type SocketPathOptions,
+} from './paths.js';
 
 export interface AbducoSubstrateClientOptions {
   readonly binaryPath?: string;
@@ -74,11 +77,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
   private readonly listeners = new Set<SubstrateOutputListener>();
 
   public constructor(options: AbducoSubstrateClientOptions = {}) {
-    const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    this.binaryPath =
-      options.binaryPath ??
-      options.abducoPath ??
-      path.join(repositoryRoot, '.vibecodium', 'bin', 'abduco');
+    this.binaryPath = options.binaryPath ?? options.abducoPath ?? abducoBinaryPath();
     this.environment = { ...process.env };
     for (const [key, value] of Object.entries(options.env ?? {})) this.environment[key] = value;
     if (options.socketDir !== undefined) this.environment.ABDUCO_SOCKET_DIR = options.socketDir;

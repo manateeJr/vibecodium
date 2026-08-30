@@ -103,7 +103,9 @@ export class ControlPlane {
       });
     this.host = options.host ?? '127.0.0.1';
     this.port = options.port ?? 4310;
-    const registeredSubsystems = registerSubsystems(this.context, options.subsystems);
+    const registeredSubsystems = registerSubsystems(this.context, options.subsystems, {
+      sessionTableFilename: options.dataPath,
+    });
     this.tokenVerifier =
       options.tokenVerifier ??
       options.capabilityTokens ??

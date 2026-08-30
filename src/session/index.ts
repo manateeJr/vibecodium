@@ -30,6 +30,7 @@ import {
   errorMessage,
   forkSession,
   listSessions,
+  sessionAttachInfo,
   sessionOpenArgs,
   sessionResumeArgs,
   sessionSendArgs,
@@ -37,7 +38,6 @@ import {
 } from './session-helpers.js';
 import type { SessionTable } from './session-table.js';
 import { startPersistentSession } from './persistent-session-start.js';
-
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
@@ -131,6 +131,9 @@ export class SessionSubsystem implements Subsystem {
       (command: unknown) =>
         this.persistentManager?.sendKeysCommand(command) ??
         Promise.reject(new Error('persistent substrate is not configured')),
+    );
+    context.registerCommand(COMMAND_NAMES.sessionAttachInfo, (command: unknown) =>
+      sessionAttachInfo(this.sessionTable, command),
     );
     void this.reconcile().catch(() => undefined);
   }
@@ -283,7 +286,6 @@ export class SessionSubsystem implements Subsystem {
       onWorkerError: (state, message, terminal) => this.failSession(state, message, terminal),
     });
   }
-
   public send(command: unknown): SessionSendResult {
     const args = sessionSendArgs(command);
     if (this.persistentManager?.has(args.session_id)) {
@@ -390,7 +392,6 @@ export class SessionSubsystem implements Subsystem {
     if (!this.persistentManager) return Promise.resolve([]);
     return this.persistentManager.runReaper();
   }
-
   private projectEvent(event: EventEnvelope): void {
     const payload = asRecord(event.payload);
     const eventType = event.type as string;
