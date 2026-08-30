@@ -92,14 +92,16 @@ function renderContent(target, item) {
   target.append(label, body);
 }
 
-function appendRestartAction(target, onRestart) {
+// The label comes from the caller so a restart that moves the project context can say which one
+// it moves to, instead of switching the scope silently behind the owner's back.
+function appendRestartAction(target, action) {
   const item = document.createElement('li');
   item.className = 'stream-line stream-line--restart';
   const button = document.createElement('button');
   button.className = 'restart-session';
   button.type = 'button';
-  button.textContent = 'Open new session here';
-  button.addEventListener('click', onRestart);
+  button.textContent = action.label;
+  button.addEventListener('click', action.run);
   item.append(button);
   target.append(item);
 }

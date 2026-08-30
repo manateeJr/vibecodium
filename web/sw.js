@@ -1,16 +1,18 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v10';
+const CACHE_NAME = 'vibecodium-shell-v11';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
   '/app.js',
   '/pocket.css',
+  '/compose.css',
   '/ui.css',
   '/layout.css',
   '/panels.css',
   '/surface.css',
   '/lib/base64.js',
+  '/lib/command.js',
   '/lib/external-session.js',
   '/lib/markdown.js',
   '/lib/paths.js',
@@ -21,14 +23,18 @@ const SHELL_ASSETS = Object.freeze([
   '/lib/storage.js',
   '/lib/time.js',
   '/ui/actions.js',
+  '/ui/composer.js',
   '/ui/drawers.js',
   '/ui/elements.js',
+  '/ui/event-feed.js',
   '/ui/events.js',
   '/ui/files.js',
   '/ui/git-status.js',
   '/ui/host-panel.js',
+  '/ui/model-picker.js',
   '/ui/project-manager.js',
   '/ui/session-bar.js',
+  '/ui/stream-log.js',
   '/ui/skill-builder.js',
   '/ui/skills.js',
   '/ui/transcript.js',

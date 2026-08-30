@@ -253,6 +253,8 @@ function appendAttachment(input, path) {
   const line = `Attached file: ${path}`;
   const current = input.value.trim();
   input.value = current ? `${current}\n${line}` : line;
+  // The composer sizes itself from input events; a programmatic write has to announce itself.
+  input.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
 }
 
 function saveBlob(blob, name) {

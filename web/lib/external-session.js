@@ -3,6 +3,9 @@ import { relativeTime } from './time.js';
 
 // External harness sessions live on the machine. Vibecodium shows them, it never drives them:
 // selecting one opens a read-only view, and resuming still goes through the fork flow.
+//
+// `kind` separates a machine's own top-level sessions from the subagent transcripts they spawn.
+// The history drawer still lists every one of them; only the session bar drops the subagents.
 export function externalItem(summary, projects) {
   return {
     stream_id: `machine:${summary.source}:${summary.ref}`,
@@ -12,6 +15,7 @@ export function externalItem(summary, projects) {
     cwd: summary.cwd ?? '',
     project: projectForPath(summary.cwd, projects),
     shortId: shortRef(summary.ref),
+    kind: summary.kind === 'subagent' ? 'subagent' : 'main',
     title: summary.title ?? '',
     updated_at: summary.updated_at ?? '',
     external: true,

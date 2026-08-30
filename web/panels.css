@@ -1,15 +1,4 @@
 /* Files browser, skill library, and skill parameter panels on the phosphor shell. */
-.compose-bar {
-  grid-template-columns: minmax(0, 1fr) 44px 44px 62px;
-}
-
-.button--attach {
-  letter-spacing: var(--track-small);
-}
-
-.button--attach:disabled {
-  opacity: 0.45;
-}
 
 .session-pill__tag {
   flex: 0 0 auto;
@@ -23,6 +12,39 @@
 
 .session-pill[data-external='yes'] {
   border-style: dashed;
+}
+
+.session-pill__rename {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  font: inherit;
+}
+
+.session-pill__rename:hover {
+  color: var(--ink-hi);
+}
+
+.session-pill__rename-field {
+  width: 150px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-hi);
+  font: inherit;
+  font-size: var(--fs-small);
+}
+
+.session-pill--agents[data-active='yes'] {
+  color: var(--replay);
 }
 
 .drawer--files {
@@ -381,10 +403,4 @@
 .skill-param select:focus {
   border-color: var(--focus);
   outline: none;
-}
-
-@media (max-width: 350px) {
-  .compose-bar {
-    grid-template-columns: minmax(0, 1fr) 38px 38px 54px;
-  }
 }

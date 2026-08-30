@@ -1,28 +1,50 @@
 import { blobToBase64 } from '../lib/base64.js';
+import { isAbortError, postCommand } from '../lib/command.js';
 
 const IDLE_LABEL = 'MIC';
 const RECORDING_LABEL = 'REC';
 
-export function createVoiceRecorder({ client, button, input, note, onError, errorMessage }) {
+// Two verbs, never one: MIC/REC stops and transcribes, and the cancel control beside it throws
+// the recording away. Cancel is armed from the moment recording starts until the transcript is
+// inserted, and it aborts the upload for real — a discarded voice note must never reach the
+// transcription backend, whether the owner changes their mind before or during the request.
+export function createVoiceRecorder({
+  connection,
+  button,
+  cancelButton,
+  input,
+  note,
+  onError,
+  errorMessage,
+}) {
   const supported =
     typeof globalThis.MediaRecorder === 'function' &&
     Boolean(globalThis.navigator?.mediaDevices?.getUserMedia);
   if (!supported) {
     // getUserMedia needs a secure context (HTTPS or localhost); hide rather than fail on tap.
     button.hidden = true;
+    cancelButton.hidden = true;
     return { supported: false };
   }
 
   let recorder;
   let stream;
   let chunks = [];
-  let busy = false;
+  let inFlight;
+  let discarding = false;
 
   const setIdle = () => {
     button.textContent = IDLE_LABEL;
     button.dataset.recording = 'no';
     button.setAttribute('aria-pressed', 'false');
     button.disabled = false;
+    cancelButton.hidden = true;
+    cancelButton.disabled = false;
+  };
+
+  const armCancel = () => {
+    cancelButton.hidden = false;
+    cancelButton.disabled = false;
   };
 
   const releaseStream = () => {
@@ -43,23 +65,33 @@ export function createVoiceRecorder({ client, button, input, note, onError, erro
     }
     const current = input.value.trim();
     input.value = current ? `${current} ${value}` : value;
+    // The composer sizes itself from input events; a programmatic write has to announce itself.
+    input.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
     note('');
     input.focus();
   };
 
   const transcribe = async (blob, mime) => {
-    busy = true;
     button.disabled = true;
-    note('transcribing…');
+    note('transcribing… tap CANCEL to discard');
+    const controller = new globalThis.AbortController();
+    inFlight = controller;
     try {
       const audioBase64 = await blobToBase64(blob);
+      if (controller.signal.aborted) return;
       const args = mime ? { audio_base64: audioBase64, mime } : { audio_base64: audioBase64 };
-      const result = await client.transcribe(args);
+      const { baseUrl, token } = connection();
+      const result = await postCommand('voice.transcribe', args, {
+        baseUrl,
+        token,
+        signal: controller.signal,
+      });
       insert(result.text);
     } catch (error) {
+      if (isAbortError(error)) return;
       fail(`voice transcribe failed: ${errorMessage(error)}`);
     } finally {
-      busy = false;
+      inFlight = undefined;
       setIdle();
     }
   };
@@ -72,6 +104,7 @@ export function createVoiceRecorder({ client, button, input, note, onError, erro
       return;
     }
     chunks = [];
+    discarding = false;
     try {
       recorder = new globalThis.MediaRecorder(stream);
     } catch (error) {
@@ -88,6 +121,13 @@ export function createVoiceRecorder({ client, button, input, note, onError, erro
       releaseStream();
       const blob = new globalThis.Blob(chunks, mime ? { type: mime } : undefined);
       chunks = [];
+      // The discarded capture dies here: no blob is read, no request is ever made.
+      if (discarding) {
+        discarding = false;
+        note('recording discarded');
+        setIdle();
+        return;
+      }
       if (blob.size === 0) {
         note('no audio was captured');
         setIdle();
@@ -99,11 +139,30 @@ export function createVoiceRecorder({ client, button, input, note, onError, erro
     button.textContent = RECORDING_LABEL;
     button.dataset.recording = 'yes';
     button.setAttribute('aria-pressed', 'true');
-    note('recording… tap to transcribe');
+    armCancel();
+    note('recording… tap REC to transcribe, CANCEL to discard');
+  };
+
+  const discard = () => {
+    cancelButton.disabled = true;
+    if (inFlight) {
+      inFlight.abort();
+      inFlight = undefined;
+      note('recording discarded');
+      setIdle();
+      return;
+    }
+    if (recorder) {
+      discarding = true;
+      button.disabled = true;
+      recorder.stop();
+      return;
+    }
+    setIdle();
   };
 
   button.addEventListener('click', () => {
-    if (busy) return;
+    if (inFlight) return;
     if (recorder) {
       button.disabled = true;
       recorder.stop();
@@ -111,6 +170,7 @@ export function createVoiceRecorder({ client, button, input, note, onError, erro
     }
     void start();
   });
+  cancelButton.addEventListener('click', discard);
 
   setIdle();
   return { supported: true };
