@@ -262,10 +262,14 @@ export class SessionSubsystem implements Subsystem {
     return { stopped: true };
   }
   public stopAll(): void {
+    const substrateSessionIds = new Set<string>();
+    for (const record of this.sessionTable?.list() ?? []) {
+      if (record.state !== 'live') continue;
+      substrateSessionIds.add(record.sessionId);
+      this.emitSessionState(record.sessionId, 'resumable', 'shutdown');
+    }
     for (const state of this.sessions.values()) {
-      const substrateRecord = this.sessionTable?.get(state.session_id);
-      if (substrateRecord && substrateRecord.state !== 'closed') {
-        this.emitSessionState(state.session_id, 'resumable', 'shutdown');
+      if (substrateSessionIds.has(state.session_id)) {
         state.terminal = true;
         continue;
       }

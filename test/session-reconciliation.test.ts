@@ -168,6 +168,14 @@ test('startup reconciliation keeps a live substrate session live and re-attaches
     state: 'live',
     reason: 'reconciled',
   });
+  subsystem.stopAll();
+  assert.equal(table.get('live-session')?.state, 'resumable');
+  assert.deepEqual(substrate.killedNames, []);
+  assert.deepEqual(context.events.at(-1)?.payload, {
+    session_id: 'live-session',
+    state: 'resumable',
+    reason: 'shutdown',
+  });
   table.close();
 });
 
