@@ -23,6 +23,17 @@ export const COMMAND_NAMES = {
   sessionEnsureLive: 'session.ensure_live',
   sessionSendKeys: 'session.send_keys',
   sessionAttachInfo: 'session.attach_info',
+  filesList: 'files.list',
+  filesDownload: 'files.download',
+  filesUpload: 'files.upload',
+  filesSharedDir: 'files.shared_dir',
+  skillList: 'skill.list',
+  skillDraft: 'skill.draft',
+  skillSave: 'skill.save',
+  skillRemove: 'skill.remove',
+  skillAdopt: 'skill.adopt',
+  skillPropose: 'skill.propose',
+  skillInvoke: 'skill.invoke',
 } as const;
 export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
 export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
@@ -46,6 +57,17 @@ export const HOST_SET_SESSION_CAP_COMMAND = COMMAND_NAMES.hostSetSessionCap;
 export const SESSION_ENSURE_LIVE_COMMAND = COMMAND_NAMES.sessionEnsureLive;
 export const SESSION_SEND_KEYS_COMMAND = COMMAND_NAMES.sessionSendKeys;
 export const SESSION_ATTACH_INFO_COMMAND = COMMAND_NAMES.sessionAttachInfo;
+export const FILES_LIST_COMMAND = COMMAND_NAMES.filesList;
+export const FILES_DOWNLOAD_COMMAND = COMMAND_NAMES.filesDownload;
+export const FILES_UPLOAD_COMMAND = COMMAND_NAMES.filesUpload;
+export const FILES_SHARED_DIR_COMMAND = COMMAND_NAMES.filesSharedDir;
+export const SKILL_LIST_COMMAND = COMMAND_NAMES.skillList;
+export const SKILL_DRAFT_COMMAND = COMMAND_NAMES.skillDraft;
+export const SKILL_SAVE_COMMAND = COMMAND_NAMES.skillSave;
+export const SKILL_REMOVE_COMMAND = COMMAND_NAMES.skillRemove;
+export const SKILL_ADOPT_COMMAND = COMMAND_NAMES.skillAdopt;
+export const SKILL_PROPOSE_COMMAND = COMMAND_NAMES.skillPropose;
+export const SKILL_INVOKE_COMMAND = COMMAND_NAMES.skillInvoke;
 
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
 
@@ -256,6 +278,40 @@ export interface HostSetSessionCapArgs {
 export interface HostSetSessionCapResult {
   readonly max_concurrent: number;
 }
+export interface FileEntry {
+  readonly name: string;
+  readonly path: string;
+  readonly is_dir: boolean;
+  readonly size?: number;
+  readonly mtime?: string;
+}
+export interface FilesListArgs {
+  readonly dir?: string;
+}
+export interface FilesListResult {
+  readonly entries: readonly FileEntry[];
+  readonly scope_roots: readonly string[];
+}
+export interface FilesDownloadArgs {
+  readonly path: string;
+}
+export interface FilesDownloadResult {
+  readonly name: string;
+  readonly mime: string;
+  readonly content_base64: string;
+  readonly size: number;
+}
+export interface FilesUploadArgs {
+  readonly session_id: string;
+  readonly name: string;
+  readonly content_base64: string;
+  readonly mime?: string;
+}
+export interface FilesUploadResult {
+  readonly path: string;
+  readonly size: number;
+}
+export type FilesSharedDirArgs = Record<string, never>;
 
 /**
  * Relaunches a resumable session under the substrate via the harness resume
@@ -291,6 +347,76 @@ export interface SessionAttachInfoResult {
   readonly state: SubstrateSessionState;
 }
 
+export interface FilesSharedDirResult {
+  readonly path: string;
+}
+export interface SkillParam {
+  readonly name: string;
+  readonly type: 'text' | 'enum' | 'bool';
+  readonly required: boolean;
+  readonly default?: string;
+  readonly options?: readonly string[];
+  readonly source: 'prompt' | 'agent';
+}
+export interface SkillDef {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string;
+  readonly body: string;
+  readonly params: readonly SkillParam[];
+  readonly approval?: boolean;
+  readonly builtin: boolean;
+}
+export type SkillListArgs = Record<string, never>;
+export interface SkillListResult {
+  readonly skills: readonly SkillDef[];
+  readonly adoptions: Readonly<Record<string, readonly string[]>>;
+}
+export interface SkillDraftArgs {
+  readonly seed: {
+    readonly name: string;
+    readonly body?: string;
+    readonly params?: readonly SkillParam[];
+    readonly mode: 'form' | 'conversation';
+    readonly conversation?: string;
+  };
+}
+export interface SkillDraftResult {
+  readonly def: SkillDef;
+}
+export interface SkillSaveArgs {
+  readonly def: SkillDef;
+}
+export interface SkillSaveResult {
+  readonly def: SkillDef;
+}
+export interface SkillRemoveArgs {
+  readonly id: string;
+}
+export interface SkillRemoveResult {
+  readonly removed: boolean;
+}
+export interface SkillAdoptArgs {
+  readonly project: string;
+  readonly skill_id: string;
+  readonly adopt: boolean;
+}
+export interface SkillAdoptResult {
+  readonly adopted: readonly string[];
+}
+export interface SkillProposeArgs {
+  readonly project: string;
+}
+export interface SkillProposeResult {
+  readonly proposed: readonly string[];
+}
+export interface SkillInvokeArgs {
+  readonly id: string;
+  readonly params: Readonly<Record<string, string>>;
+}
+export interface SkillInvokeResult {
+  readonly prompt: string;
+}
 export interface CommandArgsMap {
   'session.open': SessionOpenArgs;
   'session.stop': SessionStopArgs;
@@ -313,6 +439,17 @@ export interface CommandArgsMap {
   'session.ensure_live': SessionEnsureLiveArgs;
   'session.send_keys': SessionSendKeysArgs;
   'session.attach_info': SessionAttachInfoArgs;
+  'files.list': FilesListArgs;
+  'files.download': FilesDownloadArgs;
+  'files.upload': FilesUploadArgs;
+  'files.shared_dir': FilesSharedDirArgs;
+  'skill.list': SkillListArgs;
+  'skill.draft': SkillDraftArgs;
+  'skill.save': SkillSaveArgs;
+  'skill.remove': SkillRemoveArgs;
+  'skill.adopt': SkillAdoptArgs;
+  'skill.propose': SkillProposeArgs;
+  'skill.invoke': SkillInvokeArgs;
 }
 
 export interface CommandResultMap {
@@ -337,6 +474,17 @@ export interface CommandResultMap {
   'session.ensure_live': SessionEnsureLiveResult;
   'session.send_keys': SessionSendKeysResult;
   'session.attach_info': SessionAttachInfoResult;
+  'files.list': FilesListResult;
+  'files.download': FilesDownloadResult;
+  'files.upload': FilesUploadResult;
+  'files.shared_dir': FilesSharedDirResult;
+  'skill.list': SkillListResult;
+  'skill.draft': SkillDraftResult;
+  'skill.save': SkillSaveResult;
+  'skill.remove': SkillRemoveResult;
+  'skill.adopt': SkillAdoptResult;
+  'skill.propose': SkillProposeResult;
+  'skill.invoke': SkillInvokeResult;
 }
 
 export type CommandArgs<Name extends CommandName = CommandName> = CommandArgsMap[Name];

@@ -1,4 +1,5 @@
 /* global document */
+import { basename } from '../lib/paths.js';
 
 export function createProjectManager({
   client,
@@ -281,9 +282,4 @@ export function createProjectManager({
     selectedProject: activeProject,
     selectProject,
   };
-}
-
-function basename(value) {
-  const normalized = value.replace(/[\\/]+$/, '');
-  return normalized.split(/[\\/]/).pop() || normalized;
 }

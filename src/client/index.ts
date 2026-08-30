@@ -40,6 +40,7 @@ import type {
   WorkspaceStatusArgs,
   WorkspaceStatusResult,
 } from '../contracts/commands.js';
+import type * as Commands from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
 
 // Keep command names local so /client.js remains a standalone browser module.
@@ -65,6 +66,17 @@ const COMMAND_NAMES = {
   sessionEnsureLive: 'session.ensure_live',
   sessionSendKeys: 'session.send_keys',
   sessionAttachInfo: 'session.attach_info',
+  filesList: 'files.list',
+  filesDownload: 'files.download',
+  filesUpload: 'files.upload',
+  filesSharedDir: 'files.shared_dir',
+  skillList: 'skill.list',
+  skillDraft: 'skill.draft',
+  skillSave: 'skill.save',
+  skillRemove: 'skill.remove',
+  skillAdopt: 'skill.adopt',
+  skillPropose: 'skill.propose',
+  skillInvoke: 'skill.invoke',
 } as const;
 
 export type {
@@ -125,6 +137,7 @@ export type {
   WorkspaceStatusArgs,
   WorkspaceStatusResult,
 } from '../contracts/commands.js';
+export type * from '../contracts/commands.js';
 
 export interface ClientOptions {
   readonly baseUrl: string;
@@ -152,6 +165,17 @@ export interface VibecodiumClient {
   transcribe(args: VoiceTranscribeArgs): Promise<VoiceTranscribeResult>;
   hostStats(): Promise<HostStatsResult>;
   setSessionCap(args: HostSetSessionCapArgs): Promise<HostSetSessionCapResult>;
+  filesList(args: Commands.FilesListArgs): Promise<Commands.FilesListResult>;
+  filesDownload(args: Commands.FilesDownloadArgs): Promise<Commands.FilesDownloadResult>;
+  filesUpload(args: Commands.FilesUploadArgs): Promise<Commands.FilesUploadResult>;
+  filesSharedDir(): Promise<Commands.FilesSharedDirResult>;
+  skillList(): Promise<Commands.SkillListResult>;
+  skillDraft(args: Commands.SkillDraftArgs): Promise<Commands.SkillDraftResult>;
+  skillSave(args: Commands.SkillSaveArgs): Promise<Commands.SkillSaveResult>;
+  skillRemove(args: Commands.SkillRemoveArgs): Promise<Commands.SkillRemoveResult>;
+  skillAdopt(args: Commands.SkillAdoptArgs): Promise<Commands.SkillAdoptResult>;
+  skillPropose(args: Commands.SkillProposeArgs): Promise<Commands.SkillProposeResult>;
+  skillInvoke(args: Commands.SkillInvokeArgs): Promise<Commands.SkillInvokeResult>;
   runWorkflow(args: WorkflowRunArgs): Promise<WorkflowRunResult>;
   approve(args: WorkflowApproveArgs): Promise<WorkflowApproveResult>;
   getEvents(stream_id: string, from_seq: number): Promise<readonly EventEnvelope[]>;
@@ -345,6 +369,11 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     };
   };
 
+  const postCommand = <Name extends Commands.CommandName>(
+    name: Name,
+    args: Commands.CommandArgs<Name>,
+  ): Promise<Commands.CommandResult<Name>> =>
+    post<Commands.CommandResult<Name>>(baseUrl, name, args, options.token);
   return {
     openSession,
     resumeSession,
@@ -367,6 +396,19 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     setSessionCap,
     runWorkflow,
     approve,
+    filesList: (args: Commands.FilesListArgs) => postCommand(COMMAND_NAMES.filesList, args),
+    filesDownload: (args: Commands.FilesDownloadArgs) =>
+      postCommand(COMMAND_NAMES.filesDownload, args),
+    filesUpload: (args: Commands.FilesUploadArgs) => postCommand(COMMAND_NAMES.filesUpload, args),
+    filesSharedDir: () => postCommand(COMMAND_NAMES.filesSharedDir, {}),
+    skillList: () => postCommand(COMMAND_NAMES.skillList, {}),
+    skillDraft: (args: Commands.SkillDraftArgs) => postCommand(COMMAND_NAMES.skillDraft, args),
+    skillSave: (args: Commands.SkillSaveArgs) => postCommand(COMMAND_NAMES.skillSave, args),
+    skillRemove: (args: Commands.SkillRemoveArgs) => postCommand(COMMAND_NAMES.skillRemove, args),
+    skillAdopt: (args: Commands.SkillAdoptArgs) => postCommand(COMMAND_NAMES.skillAdopt, args),
+    skillPropose: (args: Commands.SkillProposeArgs) =>
+      postCommand(COMMAND_NAMES.skillPropose, args),
+    skillInvoke: (args: Commands.SkillInvokeArgs) => postCommand(COMMAND_NAMES.skillInvoke, args),
     getEvents,
     subscribe,
   };
