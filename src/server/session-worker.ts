@@ -170,8 +170,8 @@ export class PersistentSessionWorker {
       this.cwd === undefined ? undefined : { cwd: this.cwd },
     );
     if (!created.live) throw new Error(`substrate session did not start: ${this.substrateName}`);
-    await this.attachAndTail(false);
     this.busy = prompt !== undefined;
+    await this.attachAndTail(false);
     return { transcriptPath: this.transcriptPath, harnessRef: this.harnessRef };
   }
 
@@ -237,6 +237,9 @@ export class PersistentSessionWorker {
       startAtEnd: startAtEnd || this.startAtEnd,
       initialTurn: this.initialTurn,
       initialOutputIndex: this.initialOutputIndex,
+      onTranscriptPath: (transcriptPath) => {
+        this.transcriptPath = transcriptPath;
+      },
       onActivity: (activity) => {
         this.busy = !activity.idle;
         this.onActivity?.(activity);

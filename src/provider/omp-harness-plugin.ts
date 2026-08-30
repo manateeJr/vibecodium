@@ -24,10 +24,11 @@ export class OmpHarnessPlugin implements HarnessPlugin {
     const value = parseObject(record.raw);
     if (!value) return false;
     const message = objectField(value, 'message') ?? value;
+    const stopReason = stringField(message, 'stopReason') ?? stringField(value, 'stopReason');
     return (
       (value.type === undefined || value.type === 'message') &&
       message.role === 'assistant' &&
-      message.stopReason === 'stop'
+      stopReason === 'stop'
     );
   }
 

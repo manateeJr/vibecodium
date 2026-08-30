@@ -1,5 +1,5 @@
 import { watch, type FSWatcher } from 'node:fs';
-import { mkdir, open } from 'node:fs/promises';
+import { mkdir, open, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { EventKind } from '../contracts/events.js';
@@ -24,10 +24,11 @@ export interface SessionTranscriptTailerOptions {
   readonly initialTurn?: number;
   readonly initialOutputIndex?: number;
   readonly onActivity?: (activity: SessionTranscriptActivity) => void;
+  readonly onTranscriptPath?: (transcriptPath: string) => void;
 }
 
 export class SessionTranscriptTailer {
-  public readonly transcriptPath: string;
+  private activeTranscriptPath: string;
   private readonly sessionId: string;
   private readonly streamId: string;
   private readonly plugin: HarnessPlugin;
@@ -35,7 +36,8 @@ export class SessionTranscriptTailer {
   private readonly now: () => number;
   private readonly startAtEnd: boolean;
   private readonly onActivity: ((activity: SessionTranscriptActivity) => void) | undefined;
-  private readonly decoder = new StringDecoder('utf8');
+  private readonly onTranscriptPath: ((transcriptPath: string) => void) | undefined;
+  private decoder = new StringDecoder('utf8');
   private watcher: FSWatcher | undefined;
   private readChain: Promise<void> = Promise.resolve();
   private started = false;
@@ -47,7 +49,7 @@ export class SessionTranscriptTailer {
   private lastActivity = 0;
 
   public constructor(options: SessionTranscriptTailerOptions) {
-    this.transcriptPath = options.transcriptPath;
+    this.activeTranscriptPath = options.transcriptPath;
     this.sessionId = options.sessionId;
     this.streamId = options.streamId;
     this.plugin = options.plugin;
@@ -57,6 +59,11 @@ export class SessionTranscriptTailer {
     this.turn = options.initialTurn ?? 0;
     this.outputIndex = options.initialOutputIndex ?? 0;
     this.onActivity = options.onActivity;
+    this.onTranscriptPath = options.onTranscriptPath;
+  }
+
+  public get transcriptPath(): string {
+    return this.activeTranscriptPath;
   }
 
   public get isIdle(): boolean {
@@ -71,20 +78,17 @@ export class SessionTranscriptTailer {
   }
   public async start(): Promise<void> {
     if (this.started) return;
-    await mkdir(path.dirname(this.transcriptPath), { recursive: true });
+    await mkdir(path.dirname(this.activeTranscriptPath), { recursive: true });
+    await this.refreshTranscriptPath();
     if (this.startAtEnd) await this.seekToEnd();
     this.started = true;
-    await this.readAvailable();
-    this.watcher = watch(path.dirname(this.transcriptPath), (eventType, filename) => {
+    this.watcher = watch(path.dirname(this.activeTranscriptPath), (eventType, filename) => {
       const changedName = filename?.toString();
-      if (
-        changedName === undefined ||
-        changedName === path.basename(this.transcriptPath) ||
-        eventType === 'rename'
-      ) {
+      if (changedName === undefined || eventType === 'rename' || changedName.endsWith('.jsonl')) {
         void this.readAvailable();
       }
     });
+    await this.readAvailable();
   }
 
   public readAvailable(): Promise<void> {
@@ -99,9 +103,33 @@ export class SessionTranscriptTailer {
     this.started = false;
   }
 
+  private async refreshTranscriptPath(): Promise<void> {
+    let entries;
+    try {
+      entries = await readdir(path.dirname(this.activeTranscriptPath), {
+        withFileTypes: true,
+      });
+    } catch {
+      return;
+    }
+    const files = entries
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
+      .map((entry) => path.join(path.dirname(this.activeTranscriptPath), entry.name))
+      .sort();
+    const nextPath = files.includes(this.activeTranscriptPath)
+      ? this.activeTranscriptPath
+      : files.at(-1);
+    if (nextPath === undefined || nextPath === this.activeTranscriptPath) return;
+    this.activeTranscriptPath = nextPath;
+    this.position = 0;
+    this.remainder = '';
+    this.decoder = new StringDecoder('utf8');
+    this.onTranscriptPath?.(nextPath);
+  }
+
   private async seekToEnd(): Promise<void> {
     try {
-      const handle = await open(this.transcriptPath, 'r');
+      const handle = await open(this.activeTranscriptPath, 'r');
       try {
         this.position = (await handle.stat()).size;
       } finally {
@@ -114,9 +142,10 @@ export class SessionTranscriptTailer {
 
   private async readAvailableNow(): Promise<void> {
     if (!this.started && this.position !== 0 && !this.startAtEnd) return;
+    await this.refreshTranscriptPath();
     let handle;
     try {
-      handle = await open(this.transcriptPath, 'r');
+      handle = await open(this.activeTranscriptPath, 'r');
     } catch {
       return;
     }
@@ -125,6 +154,7 @@ export class SessionTranscriptTailer {
       if (size < this.position) {
         this.position = 0;
         this.remainder = '';
+        this.decoder = new StringDecoder('utf8');
       }
       const amount = size - this.position;
       if (amount <= 0) return;

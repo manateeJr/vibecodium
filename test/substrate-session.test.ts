@@ -126,6 +126,11 @@ test('OMP plugin parses fixture records and distinguishes idle stop from error',
   );
   assert.equal(plugin.idleDetector(records[1]!), true);
   assert.equal(plugin.idleDetector(records[3]!), false);
+  const nestedStop = plugin.parseTranscriptLine(
+    '{"type":"message","message":{"role":"assistant","stopReason":"stop"}}',
+  );
+  assert.ok(nestedStop);
+  assert.equal(plugin.idleDetector(nestedStop), true);
   assert.equal(plugin.parseTranscriptLine('{broken'), null);
   assert.deepEqual(
     plugin.launchArgv({ sessionId: 'session-1', cwd: '/workspace', storageDir: '/tmp/s1' }),
@@ -179,6 +184,39 @@ test('JSONL tailer waits for complete lines and labels steering input', async ()
       text: 'steer',
       steering: true,
     });
+  } finally {
+    await tailer.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+test('JSONL tailer discovers a transcript created after watching starts', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-tailer-new-'));
+  const transcriptPath = path.join(root, 'session.jsonl');
+  const context = new TestContext();
+  const tailer = new SessionTranscriptTailer({
+    transcriptPath,
+    sessionId: 'tail-session-new',
+    streamId: 'session:tail-session-new',
+    plugin,
+    append: context.append.bind(context),
+  });
+  try {
+    await tailer.start();
+    const fixture = readFileSync(
+      path.resolve(import.meta.dirname, '..', '..', 'test/fixtures/omp-transcript.jsonl'),
+      'utf8',
+    )
+      .trim()
+      .split('\n')
+      .slice(0, 2)
+      .join('\n');
+    writeFileSync(path.join(root, '2026-08-30T00-00-00-000Z_session.jsonl'), `${fixture}\n`);
+    await tailer.readAvailable();
+    assert.deepEqual(
+      context.events.map((event) => event.type),
+      ['session_input', 'session_output', 'turn_complete'],
+    );
+    assert.equal(tailer.isIdle, true);
   } finally {
     await tailer.stop();
     rmSync(root, { recursive: true, force: true });

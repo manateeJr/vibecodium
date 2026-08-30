@@ -1,4 +1,4 @@
 {"type":"message","message":{"role":"user","content":[{"type":"text","text":"inspect the project"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I will inspect it."}],"stopReason":"stop"}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I will inspect it."}]},"stopReason":"stop","timestamp":"2026-08-30T00:00:02.000Z"}
 {"type":"message","message":{"role":"user","steering":true,"content":[{"type":"text","text":"also check tests"}]}}
 {"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"retrying"}],"stopReason":"error"}}
