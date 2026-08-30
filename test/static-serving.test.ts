@@ -30,6 +30,27 @@ test('control plane serves the pocket foundation assets without changing API rou
     assert.equal(clientResponse.headers.get('content-type'), 'text/javascript');
     assert.match(await clientResponse.text(), /createClient/);
 
+    // The vendored xterm.js bundle must be served whole and executable: a truncated bundle would
+    // leave the phone's live mirror permanently blank.
+    const bundlePath = new URL('../../web/vendor/xterm/xterm.js', import.meta.url);
+    const bundleOnDisk = fs.readFileSync(bundlePath, 'utf8');
+    const bundleResponse = await fetch(`${address.httpUrl}/vendor/xterm/xterm.js`);
+    assert.equal(bundleResponse.status, 200);
+    assert.equal(bundleResponse.headers.get('content-type'), 'text/javascript');
+    const bundle = await bundleResponse.text();
+    assert.equal(bundle.length, bundleOnDisk.length);
+    assert.match(bundle, /e\.Terminal=/, 'the UMD bundle must still export Terminal');
+
+    const xtermCssResponse = await fetch(`${address.httpUrl}/vendor/xterm/xterm.css`);
+    assert.equal(xtermCssResponse.status, 200);
+    assert.equal(xtermCssResponse.headers.get('content-type'), 'text/css');
+    assert.match(await xtermCssResponse.text(), /\.xterm-viewport/);
+
+    const surfaceResponse = await fetch(`${address.httpUrl}/surface.css`);
+    assert.equal(surfaceResponse.status, 200);
+    assert.equal(surfaceResponse.headers.get('content-type'), 'text/css');
+    assert.match(await surfaceResponse.text(), /\.pty-mirror__viewport/);
+
     const traversalResponse = await fetch(`${address.httpUrl}/..%2fpackage.json`);
     assert.notEqual(traversalResponse.status, 200);
     assert.doesNotMatch(await traversalResponse.text(), /"name"\s*:\s*"vibecodium"/);

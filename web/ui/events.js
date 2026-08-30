@@ -1,3 +1,4 @@
+import { IDLE_WORK_STATE, applyWorkEvent } from '../lib/session-state.js';
 import { eventClock } from '../lib/time.js';
 
 const EVENT_TONES = Object.freeze({
@@ -20,12 +21,14 @@ export function applySessionEvent(entry, event, pushLine) {
   if (typeof payload.session_id === 'string') entry.session_id = payload.session_id;
   if (typeof payload.cwd === 'string') entry.cwd = payload.cwd;
   if (typeof payload.project === 'string') entry.project = payload.project;
+  // Every event folds into the work state, so "working" never depends on which branch runs below.
+  entry.work = applyWorkEvent(entry.work ?? IDLE_WORK_STATE, event);
+  entry.busy = entry.work.working;
   const clock = eventClock(event.ts);
   if (event.type === 'session_started') {
     if (typeof payload.provider === 'string' && payload.provider.trim())
       entry.label = payload.provider;
     entry.status = 'running';
-    entry.busy = true;
     pushLine(entry, 'you', `${clock} you · ${payload.prompt ?? ''}`);
     pushLine(
       entry,
@@ -35,7 +38,16 @@ export function applySessionEvent(entry, event, pushLine) {
     return;
   }
   if (event.type === 'session_input') {
-    pushLine(entry, 'you', `${clock} you · ${payload.text ?? ''}`);
+    // Steering messages are marked on the wire; the transcript renders them distinctly and offers
+    // "Steer now" while they are still queued behind the turn in flight.
+    const steering = payload.steering === true;
+    pushLine(
+      entry,
+      steering ? 'steering' : 'you',
+      `${clock} ${steering ? 'queued' : 'you'} · ${payload.text ?? ''}`,
+      false,
+      steering ? { steering: true } : undefined,
+    );
     return;
   }
   if (event.type === 'session_output') {
@@ -43,7 +55,6 @@ export function applySessionEvent(entry, event, pushLine) {
     return;
   }
   if (event.type === 'turn_complete') {
-    entry.busy = false;
     pushLine(entry, 'divider', `— turn ${payload.turn ?? '?'} —`);
     return;
   }
@@ -53,7 +64,6 @@ export function applySessionEvent(entry, event, pushLine) {
       ? `${payload.stage ?? 'verify'}: ${payload.error ?? 'failed'}`
       : 'session ended';
     entry.status = failed ? 'failed' : 'done';
-    entry.busy = false;
     pushLine(entry, failed ? 'bad' : 'meta', `${clock} ${text}`);
     return;
   }

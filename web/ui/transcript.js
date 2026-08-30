@@ -1,7 +1,7 @@
 /* global document */
 import { renderMarkdown } from '../lib/markdown.js';
 
-export function createTranscriptView({ streamLines, streamEmpty, jumpLatest }) {
+export function createTranscriptView({ streamLines, streamEmpty, jumpLatest, onSteerNow }) {
   let followLatest = true;
   streamLines.addEventListener('scroll', () => {
     followLatest = isNearBottom(streamLines);
@@ -13,11 +13,13 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest }) {
     updateJump(jumpLatest, true, streamLines.childElementCount > 0);
   });
 
-  const render = (items, thinking = false, restartAction) => {
+  // `working` is the ratified mid-turn state, so a steering line after the last agent reply is
+  // still queued behind the turn in flight — the only case where "Steer now" makes sense.
+  const render = (items, working = false, restartAction) => {
     const shouldFollow = followLatest || isNearBottom(streamLines);
     const previousScrollTop = streamLines.scrollTop;
     streamLines.replaceChildren();
-    if (!items.length && !thinking) {
+    if (!items.length && !working) {
       streamEmpty.hidden = false;
       streamLines.append(streamEmpty);
       if (restartAction) appendRestartAction(streamLines, restartAction);
@@ -25,8 +27,11 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest }) {
       return;
     }
     streamEmpty.hidden = true;
+    const lastReplyIndex = items.findLastIndex(
+      (item) => item.cls === 'agent' || item.cls === 'divider',
+    );
     let sequence = 0;
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
       const line = document.createElement('li');
       line.className = `stream-line stream-line--${item.cls}`;
       if (item.cls === 'divider') line.classList.add('stream-line--divider');
@@ -36,10 +41,13 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest }) {
       const text = document.createElement('div');
       text.className = 'stream-line__text';
       renderContent(text, item);
+      if (item.steering === true && onSteerNow && working && index > lastReplyIndex) {
+        appendSteeringAction(text, onSteerNow);
+      }
       line.append(number, text);
       streamLines.append(line);
     }
-    if (thinking) {
+    if (working) {
       const line = document.createElement('li');
       line.className = 'stream-line stream-line--thinking';
       line.setAttribute('aria-label', 'Agent working');
@@ -94,6 +102,25 @@ function appendRestartAction(target, onRestart) {
   button.addEventListener('click', onRestart);
   item.append(button);
   target.append(item);
+}
+
+// Escalating a queued steering message natively: the harness owns the queue, so the phone just
+// presses escape for it rather than keeping a queue of its own.
+function appendSteeringAction(target, onSteerNow) {
+  const button = document.createElement('button');
+  button.className = 'steering-send';
+  button.type = 'button';
+  button.textContent = 'Steer now';
+  button.setAttribute('aria-label', 'Steer now: interrupt the current turn so this message lands');
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    Promise.resolve()
+      .then(() => onSteerNow())
+      .finally(() => {
+        button.disabled = false;
+      });
+  });
+  target.append(button);
 }
 
 function isNearBottom(element) {

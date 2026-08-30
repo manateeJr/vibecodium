@@ -1,6 +1,6 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v9';
+const CACHE_NAME = 'vibecodium-shell-v10';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
@@ -9,11 +9,13 @@ const SHELL_ASSETS = Object.freeze([
   '/ui.css',
   '/layout.css',
   '/panels.css',
+  '/surface.css',
   '/lib/base64.js',
   '/lib/external-session.js',
   '/lib/markdown.js',
   '/lib/paths.js',
   '/lib/session-items.js',
+  '/lib/session-state.js',
   '/lib/skills.js',
   '/lib/storage.js',
   '/lib/time.js',
@@ -29,9 +31,17 @@ const SHELL_ASSETS = Object.freeze([
   '/ui/skill-builder.js',
   '/ui/skills.js',
   '/ui/transcript.js',
+  '/ui/pty-mirror.js',
+  '/ui/session-surface.js',
+  '/ui/session-view.js',
   '/ui/voice.js',
+  // xterm.js is a vendored static asset, never an npm dependency. See web/vendor/xterm/README.md.
+  '/vendor/xterm/xterm.js',
+  '/vendor/xterm/xterm.css',
   '/tokens.css',
   '/client.js',
+  '/pty.js',
+  '/socket.js',
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

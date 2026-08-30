@@ -17,6 +17,9 @@
     <link rel="stylesheet" href="/ui.css" />
     <link rel="stylesheet" href="/layout.css" />
     <link rel="stylesheet" href="/panels.css" />
+    <link rel="stylesheet" href="/surface.css" />
+    <!-- xterm.js 5.3.0 is vendored under /vendor/xterm; the mirror is read-only. -->
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
   </head>
   <body>
     <main class="app-shell">
@@ -43,16 +46,61 @@
         <div class="section-heading">
           <div class="section-heading__title">
             <div class="chat-heading">
-              <h1 id="stream-title">CHAT</h1>
+              <h1 id="stream-title">SESSION</h1>
               <span id="git-status" class="git-status" hidden></span>
             </div>
             <span id="stream-caption">No active stream</span>
           </div>
+          <div class="view-tabs" role="tablist" aria-label="Session view">
+            <button
+              id="structured-view-tab"
+              class="view-tab"
+              type="button"
+              role="tab"
+              aria-selected="true"
+              aria-controls="structured-view"
+            >
+              TRANSCRIPT
+            </button>
+            <button
+              id="mirror-view-tab"
+              class="view-tab"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="mirror-view"
+            >
+              LIVE MIRROR
+            </button>
+          </div>
         </div>
-        <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
-          <li id="stream-empty" class="stream-empty">Open a session to begin.</li>
-        </ol>
-        <button id="jump-latest" class="jump-latest" type="button" hidden>JUMP TO LATEST</button>
+        <section id="structured-view" class="session-view session-view--structured" role="tabpanel">
+          <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
+            <li id="stream-empty" class="stream-empty">Open a session to begin.</li>
+          </ol>
+          <button id="jump-latest" class="jump-latest" type="button" hidden>JUMP TO LATEST</button>
+        </section>
+        <section
+          id="mirror-view"
+          class="session-view session-view--mirror"
+          role="tabpanel"
+          aria-label="Read-only live terminal mirror"
+          hidden
+        >
+          <div class="mirror-toolbar">
+            <span>LIVE PTY</span>
+            <span id="mirror-status" class="mirror-toolbar__status">READ ONLY</span>
+          </div>
+          <div
+            id="pty-mirror-viewport"
+            class="pty-mirror__viewport"
+            tabindex="0"
+            aria-label="Read-only terminal output; scroll horizontally and vertically"
+          >
+            <div id="pty-terminal" class="pty-terminal"></div>
+            <p id="pty-mirror-empty" class="pty-mirror__empty">Select a live session to mirror.</p>
+          </div>
+        </section>
       </section>
 
       <section class="compose-panel" aria-label="Compose">
@@ -122,6 +170,19 @@
           </button>
           <button id="compose-send" class="button button--open" type="submit">OPEN</button>
         </form>
+        <div class="control-strip" role="group" aria-label="Session controls">
+          <span class="control-strip__label">CONTROL</span>
+          <button
+            id="interrupt-key"
+            class="control-key"
+            type="button"
+            aria-label="Interrupt running session (Ctrl-C)"
+            title="Interrupt running session (Ctrl-C)"
+            disabled
+          >
+            CTRL-C
+          </button>
+        </div>
         <label class="sr-only" for="attach-input">Attach a file</label>
         <input id="attach-input" class="sr-only" type="file" />
         <p id="compose-note" class="compose-note" role="status" aria-live="polite" hidden></p>
@@ -381,6 +442,7 @@
         navigator.serviceWorker.register('/sw.js', { scope: '/' });
       }
     </script>
+    <script src="/vendor/xterm/xterm.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

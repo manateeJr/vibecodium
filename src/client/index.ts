@@ -43,7 +43,17 @@ import type {
 import type * as Commands from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
 
-import type { ClientOptions, SocketConstructor, SocketLike, VibecodiumClient } from './types.js';
+import type { ClientOptions, PtyListeners, SocketLike, VibecodiumClient } from './types.js';
+import { createPtySubscription } from './pty.js';
+import {
+  OPEN_STATE,
+  addSocketListener,
+  isRecord,
+  parseSocketMessage,
+  reconnectDelay,
+  socketConstructor,
+  websocketUrl,
+} from './socket.js';
 // Keep command names local so /client.js remains a standalone browser module.
 const COMMAND_NAMES = {
   sessionOpen: 'session.open',
@@ -140,8 +150,6 @@ export type {
   WorkspaceStatusResult,
 } from '../contracts/commands.js';
 export type * from '../contracts/commands.js';
-
-const OPEN_STATE = 1;
 
 export function createClient(options: ClientOptions): VibecodiumClient {
   const baseUrl = normalizeBaseUrl(options.baseUrl);
@@ -248,16 +256,11 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     let reconnectAttempt = 0;
     let lastSeq = from_seq;
     let firstConnection = true;
-    const browserWebSocket: unknown = globalThis.WebSocket;
-    const Socket =
-      options.webSocket ??
-      (typeof browserWebSocket === 'function'
-        ? (browserWebSocket as SocketConstructor)
-        : undefined);
+    const Socket = socketConstructor(options);
     const subscribedStreamId = streamId ?? activeStreamId ?? '*';
     const scheduleReconnect = (): void => {
       if (cancelled || reconnectTimer !== undefined || !Socket) return;
-      const delay = Math.min(5_000, 50 * 2 ** Math.min(reconnectAttempt, 7));
+      const delay = reconnectDelay(reconnectAttempt);
       reconnectAttempt += 1;
       reconnectTimer = globalThis.setTimeout(() => {
         reconnectTimer = undefined;
@@ -356,6 +359,8 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     skillInvoke: (args: Commands.SkillInvokeArgs) => postCommand(COMMAND_NAMES.skillInvoke, args),
     getEvents,
     subscribe,
+    subscribePty: (sessionId: string, listeners: PtyListeners) =>
+      createPtySubscription(options, sessionId, listeners),
   };
 }
 
@@ -401,46 +406,8 @@ function normalizeBaseUrl(baseUrl: string): string {
   return normalized;
 }
 
-function websocketUrl(baseUrl: string): string {
-  if (baseUrl.startsWith('https://')) return `wss://${baseUrl.slice('https://'.length)}`;
-  if (baseUrl.startsWith('http://')) return `ws://${baseUrl.slice('http://'.length)}`;
-  return baseUrl;
-}
-
-function addSocketListener(
-  socket: SocketLike,
-  type: string,
-  listener: (event: unknown) => void,
-): void {
-  if (socket.addEventListener) {
-    socket.addEventListener(type, listener);
-    return;
-  }
-  socket.on?.(type, (...args: unknown[]) => listener(args[0]));
-}
-
-function parseSocketMessage(event: unknown): Record<string, unknown> | undefined {
-  const candidate = isRecord(event) && 'data' in event ? event.data : event;
-  let serialized: string;
-  if (typeof candidate === 'string') serialized = candidate;
-  else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(candidate))
-    serialized = candidate.toString();
-  else if (candidate instanceof ArrayBuffer) serialized = new TextDecoder().decode(candidate);
-  else return undefined;
-  try {
-    const value: unknown = JSON.parse(serialized);
-    return isRecord(value) ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function isEventEnvelope(value: unknown): value is EventEnvelope {
   return isRecord(value) && typeof value.stream_id === 'string' && typeof value.seq === 'number';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 function errorFromBody(body: unknown, status: number): string {

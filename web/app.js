@@ -1,6 +1,6 @@
 import { createClient } from '/client.js';
 import { externalEntry } from '/lib/external-session.js';
-import { mergeSessionItems } from '/lib/session-items.js';
+import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
 import { loadToken, saveToken } from '/lib/storage.js';
 import { eventClock } from '/lib/time.js';
 import { createActions } from '/ui/actions.js';
@@ -12,7 +12,7 @@ import { createHostPanel } from '/ui/host-panel.js';
 import { createProjectManager } from '/ui/project-manager.js';
 import { createSessionBar } from '/ui/session-bar.js';
 import { createSkillsPanel } from '/ui/skills.js';
-import { createTranscriptView } from '/ui/transcript.js';
+import { createSessionSurface } from '/ui/session-surface.js';
 import { createVoiceRecorder } from '/ui/voice.js';
 import { applySessionEvent } from '/ui/events.js';
 
@@ -31,6 +31,7 @@ const actionState = {
   opening: false,
   stopping: false,
   forking: false,
+  interrupting: false,
 };
 let machineLoading = false;
 let sessionsLoading = false;
@@ -42,10 +43,11 @@ let scopePresets = [];
 const sessions = new Map();
 const transientLines = [];
 const seenEvents = new Set();
-const transcript = createTranscriptView({
-  streamLines: elements.streamLines,
-  streamEmpty: elements.streamEmpty,
-  jumpLatest: elements.jumpLatest,
+const { transcript, sessionView } = createSessionSurface({
+  client,
+  elements,
+  // Ratified: "Steer now" escalates natively with escape; the separate stop control interrupts.
+  onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
 });
 const gitStatus = createGitStatus({
   client,
@@ -170,6 +172,9 @@ elements.composeForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void actions.submitCompose();
 });
+elements.interruptKey.addEventListener('click', () => {
+  void actions.sendKeys(sessions.get(selectedStreamId), ['interrupt'], 'interrupting');
+});
 setStatus(
   globalThis.navigator.onLine ? 'READY' : 'OFFLINE',
   globalThis.navigator.onLine ? 'idle' : 'bad',
@@ -293,6 +298,8 @@ function refreshControls() {
   elements.composeSend.classList.toggle('button--open', !sendable);
   elements.composeSend.disabled = actionState.opening || Boolean(sendable && entry?.busy);
   elements.composeInput.placeholder = composePlaceholder(entry, sendable);
+  elements.interruptKey.disabled =
+    actionState.opening || actionState.interrupting || !sendable || !sessionIdOf(entry);
   renderSessions();
 }
 
@@ -330,6 +337,7 @@ function selectNew() {
   renderStream();
   refreshControls();
   elements.composeInput.focus();
+  sessionView.selectSession('');
 }
 
 function selectSessionItem(item) {
@@ -367,6 +375,7 @@ function selectStream(streamId) {
   void gitStatus.update(entry);
   if (!streamId.startsWith('machine:')) void hydrateStream(streamId);
   elements.composeInput.focus();
+  sessionView.selectSession(sessionIdOf(entry));
 }
 
 function renderSessions() {
@@ -416,9 +425,9 @@ function prepareRestart(entry) {
   );
 }
 
-function pushLine(entry, cls, text, markdown = false) {
+function pushLine(entry, cls, text, markdown = false, metadata) {
   entry.lastActivityAt = Date.now();
-  entry.lines.push({ cls, text, markdown });
+  entry.lines.push({ cls, text, markdown, ...(metadata ?? {}) });
   if (entry.stream_id === selectedStreamId) renderStream();
 }
 

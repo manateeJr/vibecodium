@@ -48,6 +48,13 @@ export function mergeSessionItems({
   return [...items.values()].sort((left, right) => right.time - left.time).slice(0, limit);
 }
 
+// The id a live session is addressed by. Machine-owned streams are read-only here and have no
+// addressable session, so they resolve to '' and every caller degrades the same way.
+export function sessionIdOf(entry) {
+  if (!entry || entry.kind !== 'session' || entry.stream_id.startsWith('machine:')) return '';
+  return entry.session_id || entry.stream_id.slice('session:'.length);
+}
+
 function inScope(name, project) {
   const value = String(name ?? '').trim();
   return project ? value === project.name : !value || value === 'Scratch';

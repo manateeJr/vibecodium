@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', '.vibecodium/**'],
+    ignores: ['dist/**', 'node_modules/**', '.vibecodium/**', 'web/vendor/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

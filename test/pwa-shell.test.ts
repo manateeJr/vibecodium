@@ -77,6 +77,17 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="settings-drawer"/);
     assert.match(index, /id="history-scroll"/);
     assert.match(index, /JUMP TO LATEST/);
+    // The read-only live mirror and its steering/interrupt controls.
+    assert.match(index, /id="structured-view-tab"/);
+    assert.match(index, /id="mirror-view-tab"/);
+    assert.match(index, /id="mirror-status"/);
+    assert.match(index, /id="pty-terminal"/);
+    assert.match(index, /id="pty-mirror-empty"/);
+    assert.match(index, /id="interrupt-key"/);
+    assert.match(index, /href="\/surface\.css"/);
+    // xterm.js is a vendored static asset loaded as a classic script, never an npm dependency.
+    assert.match(index, /script src="\/vendor\/xterm\/xterm\.js"/);
+    assert.match(index, /href="\/vendor\/xterm\/xterm\.css"/);
     const manifestResponse = await fetch(`${address.httpUrl}/manifest.webmanifest`);
     assert.equal(manifestResponse.status, 200);
     assert.equal(manifestResponse.headers.get('content-type'), 'application/manifest+json');
@@ -92,6 +103,11 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     const appResponse = await fetch(`${address.httpUrl}/app.js`);
     assert.equal(appResponse.status, 200);
     assert.equal(appResponse.headers.get('content-type'), 'text/javascript');
+    for (const module of ['/pty.js', '/socket.js']) {
+      const response = await fetch(`${address.httpUrl}${module}`);
+      assert.equal(response.status, 200, module);
+      assert.equal(response.headers.get('content-type'), 'text/javascript');
+    }
 
     const pocketCssResponse = await fetch(`${address.httpUrl}/pocket.css`);
     assert.equal(pocketCssResponse.status, 200);
@@ -118,6 +134,10 @@ test('serves the installable pocket PWA shell and static assets', async () => {
       '/ui/host-panel.js',
       '/ui/elements.js',
       '/lib/session-items.js',
+      '/lib/session-state.js',
+      '/ui/pty-mirror.js',
+      '/ui/session-surface.js',
+      '/ui/session-view.js',
     ]) {
       const moduleResponse = await fetch(`${address.httpUrl}${module}`);
       assert.equal(moduleResponse.status, 200, module);

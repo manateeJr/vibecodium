@@ -3,3 +3,4 @@ node_modules
 .vibecodium/evidence
 package-lock.json
 third_party
+web/vendor

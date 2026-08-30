@@ -1,0 +1,163 @@
+.view-tabs {
+  display: flex;
+  gap: 6px;
+  padding-top: 9px;
+}
+
+.view-tab {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.view-tab[aria-selected='true'] {
+  border-color: var(--focus);
+  color: var(--ink-hi);
+}
+
+.session-view {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.session-view--structured {
+  display: flex;
+  flex-direction: column;
+}
+
+.session-view--mirror {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mirror-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.mirror-toolbar__status {
+  color: var(--ok);
+}
+
+/* The mirror renders at the PC's terminal width; a narrow phone scrolls and pinches instead of
+   reflowing, because a resize frame must never leave the phone. */
+.pty-mirror__viewport {
+  min-height: 150px;
+  flex: 1 1 auto;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y pinch-zoom;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pty-terminal {
+  width: max-content;
+  min-width: 100%;
+  padding: 8px;
+}
+
+.pty-terminal[hidden] {
+  display: none;
+}
+
+.pty-mirror__empty {
+  margin: 0;
+  padding: 34px 12px;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+.steering-send {
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 0 8px;
+  border: 1px solid var(--amber);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--amber);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.steering-send:hover:not(:disabled) {
+  border-color: var(--ink-hi);
+  color: var(--ink-hi);
+}
+
+.steering-send:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+/* Steering lines are queued behind the turn in flight, so they read as pending, not as sent. */
+.stream-line--steering .stream-line__text {
+  color: var(--amber);
+}
+
+.stream-line--steering .stream-line__text::before {
+  content: 'STEERING';
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--amber);
+  border-radius: 999px;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.control-strip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 7px;
+}
+
+.control-strip__label {
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.control-key {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--bad);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--bad);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.control-key:hover:not(:disabled) {
+  border-color: var(--ink-hi);
+  color: var(--ink-hi);
+}
+
+.control-key:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+@media (max-width: 350px) {
+  .view-tab {
+    padding-right: 7px;
+    padding-left: 7px;
+  }
+}
