@@ -11,3 +11,4 @@ dist/
 .vibecodium/*.db-wal
 .vibecodium/voice-venv/
 .vibecodium/voice-models/
+.vibecodium/bin/

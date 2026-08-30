@@ -13,7 +13,7 @@ Vibecodium is a self-hosted, always-on control plane for AI coding sessions (Typ
 ## Dependencies
 
 - Runtime npm deps are limited to `better-sqlite3` + `ws`. Adding any new npm dependency requires explicit maintainer approval.
-- Non-npm needs (a Python venv, model files, system binaries such as `ffmpeg`) MUST be self-provisioned by a setup step and documented — not assumed present on the host.
+- Non-npm needs (a Python venv, model files, system binaries such as `ffmpeg`, and a C compiler such as `cc`) MUST be self-provisioned by a setup step and documented — not assumed present on the host.
 
 ## Repo conventions
 
