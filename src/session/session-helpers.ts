@@ -94,10 +94,13 @@ export function sessionResumeArgs(command: unknown): SessionResumeArgs {
     throw new Error('cwd must be a non-empty string');
   if (value.project !== undefined && (typeof value.project !== 'string' || !value.project.trim()))
     throw new Error('project must be a non-empty string');
+  if (value.origin !== undefined && value.origin !== 'operator' && value.origin !== 'agent')
+    throw new Error('origin must be operator or agent');
   return {
     source: value.source,
     ref: value.ref,
     prompt: value.prompt,
+    origin: value.origin === undefined ? 'agent' : value.origin,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
     ...(value.project === undefined ? {} : { project: value.project }),
   };

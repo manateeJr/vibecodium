@@ -1,3 +1,4 @@
+import type { SessionOrigin } from '../contracts/commands.js';
 import { stat } from 'node:fs/promises';
 import type { MachineSessionResolver, ResolvedMachineSession } from '../machine-sessions/index.js';
 import type { SessionSummaryRecord } from './session-summary-projector.js';
@@ -51,9 +52,10 @@ export function hydrateExternalSession(
   table: SessionTable | undefined,
   sessionId: string,
   external: ResolvedMachineSession,
+  origin: SessionOrigin = 'agent',
 ): void {
   const record = records.get(sessionId);
-  if (record) record.summary = { ...record.summary, label: external.title };
+  if (record) record.summary = { ...record.summary, label: external.title, origin };
   const persisted = table?.get(sessionId);
-  if (table && persisted) table.upsert({ ...persisted, label: external.title, origin: 'agent' });
+  if (table && persisted) table.upsert({ ...persisted, label: external.title, origin });
 }

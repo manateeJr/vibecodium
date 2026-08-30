@@ -4,7 +4,7 @@ import type { ChildProcess } from 'node:child_process';
 import test from 'node:test';
 import { COMMAND_NAMES } from '../src/contracts/commands.js';
 import type { EventEnvelope, EventKind, EventPayload } from '../src/contracts/events.js';
-import type { CommandHandler, SubsystemContext } from '../src/contracts/subsystem.js';
+import type { CommandHandler, EventHandler, SubsystemContext } from '../src/contracts/subsystem.js';
 import { AdmissionBudget } from '../src/session/admission.js';
 import { SessionSubsystem } from '../src/session/index.js';
 
@@ -29,9 +29,13 @@ class FakeWorker extends EventEmitter {
 class FakeContext implements SubsystemContext {
   public readonly events: EventEnvelope[] = [];
   public readonly commands = new Map<string, CommandHandler>();
+  private readonly projectors = new Map<string, EventHandler>();
   private nextSequence = 1;
 
-  public registerProjector(): void {}
+  public registerProjector(name: string, onEvent: EventHandler, from_seq = 0): void {
+    this.projectors.set(name, onEvent);
+    for (const event of this.events) if (event.seq > from_seq) onEvent(event);
+  }
 
   public registerCommand(name: string, handler: CommandHandler): void {
     this.commands.set(name, handler);
@@ -53,6 +57,7 @@ class FakeContext implements SubsystemContext {
     };
     this.nextSequence += 1;
     this.events.push(event);
+    for (const projector of this.projectors.values()) projector(event);
     return event.seq;
   }
 }
@@ -73,6 +78,7 @@ test('session.resume admits, records, and forwards the provider resume reference
     prompt: 'continue the old conversation',
     cwd: '/workspace',
     project: 'vibecodium',
+    origin: 'operator',
   });
 
   assert.deepEqual(result, {
@@ -85,8 +91,9 @@ test('session.resume admits, records, and forwards the provider resume reference
     prompt: 'continue the old conversation',
     cwd: '/workspace',
     project: 'vibecodium',
-    origin: 'agent',
+    origin: 'operator',
   });
+  assert.equal(subsystem.list({}).sessions[0]?.origin, 'operator');
   assert.deepEqual(worker.messages[0], {
     type: 'start',
     session_id: 'resumed-session',
@@ -98,4 +105,32 @@ test('session.resume admits, records, and forwards the provider resume reference
   });
 
   assert.deepEqual(await subsystem.stop({ session_id: 'resumed-session' }), { stopped: true });
+});
+
+test('session.resume defaults origin to agent when omitted', async () => {
+  const context = new FakeContext();
+  const worker = new FakeWorker();
+  const subsystem = new SessionSubsystem({
+    admission: new AdmissionBudget({ maxConcurrent: 1, rateMax: 10, rateWindowMs: 1000 }),
+    idFactory: () => 'agent-resumed-session',
+    fork: () => worker as unknown as ChildProcess,
+  });
+  subsystem.register(context);
+
+  await context.commands.get(COMMAND_NAMES.sessionResume)?.({
+    source: 'omp',
+    ref: 'omp-session-ref',
+    prompt: 'continue as agent',
+  });
+
+  assert.equal(subsystem.list({}).sessions[0]?.origin, 'agent');
+  assert.deepEqual(context.events[0]?.payload, {
+    session_id: 'agent-resumed-session',
+    provider: 'omp',
+    prompt: 'continue as agent',
+    origin: 'agent',
+  });
+  assert.deepEqual(await subsystem.stop({ session_id: 'agent-resumed-session' }), {
+    stopped: true,
+  });
 });

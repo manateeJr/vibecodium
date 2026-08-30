@@ -256,6 +256,7 @@ export class SessionSubsystem implements Subsystem {
         prompt: args.prompt,
         ...(cwd === undefined ? {} : { cwd }),
         ...(args.project === undefined ? {} : { project: args.project }),
+        origin: args.origin ?? 'agent',
       },
       resumeRef,
       external === undefined
@@ -263,7 +264,13 @@ export class SessionSubsystem implements Subsystem {
         : { storageDir: path.dirname(external.path), transcriptPath: external.path },
     );
     if (external)
-      hydrateExternalSession(this.sessionRecords, this.sessionTable, result.session_id, external);
+      hydrateExternalSession(
+        this.sessionRecords,
+        this.sessionTable,
+        result.session_id,
+        external,
+        args.origin,
+      );
     return result;
   }
   public list(command: unknown): SessionListResult {

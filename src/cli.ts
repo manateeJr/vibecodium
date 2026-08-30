@@ -178,7 +178,7 @@ async function runSessionCommand(client: VibecodiumClient, args: string[]): Prom
       usage();
       return;
     }
-    printJson(await client.resumeSession({ source, ref, prompt }));
+    printJson(await client.resumeSession({ source, ref, prompt, origin: 'operator' }));
     return;
   }
   if (subcommand === 'send' && args.length >= 3) {

@@ -29,6 +29,7 @@ export interface SessionResumeArgs {
   readonly prompt: string;
   readonly cwd?: string;
   readonly project?: string;
+  readonly origin?: SessionOrigin;
 }
 
 export type SessionResumeResult = SessionOpenResult;
