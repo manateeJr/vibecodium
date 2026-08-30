@@ -1,4 +1,5 @@
 export const FILES_SHARED_STAGED_COMMAND = 'files.shared_staged' as const;
+export const SHARED_STAGE_METADATA_FILENAME = '.vibecodium-share.json';
 
 export interface FileEntry {
   readonly name: string;

@@ -9,9 +9,12 @@ import {
   type FilesListArgs,
   type FilesListResult,
   type FilesSharedDirResult,
+  type FilesSharedStagedArgs,
+  type FilesSharedStagedResult,
   type FilesUploadArgs,
   type FilesUploadResult,
 } from '../contracts/commands.js';
+import { SHARED_STAGE_METADATA_FILENAME } from '../contracts/files-commands.js';
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 
 const MAX_UPLOAD_BYTES = 200 * 1024 * 1024;
@@ -88,12 +91,52 @@ export class FilesSubsystem implements Subsystem {
       this.upload(filesUploadArgs(command)),
     );
     context.registerCommand(COMMAND_NAMES.filesSharedDir, () => this.sharedDirectory());
+    context.registerCommand(COMMAND_NAMES.filesSharedStaged, (command: unknown) =>
+      this.sharedStaged(filesSharedStagedArgs(command)),
+    );
   }
 
   public async sharedDirectory(): Promise<FilesSharedDirResult> {
     await mkdir(this.sharedDir, { recursive: true });
     const shared = await realpath(this.sharedDir);
     return { path: shared };
+  }
+  public async sharedStaged(args: FilesSharedStagedArgs): Promise<FilesSharedStagedResult> {
+    const token = safeSegment(args.token, 'token');
+    const roots = await this.scopeRoots();
+    const sharedRoot = roots.find(
+      (root) => path.resolve(root.path) === path.resolve(this.sharedDir),
+    );
+    if (!sharedRoot) throw new Error('shared directory is not in filesystem scope');
+    let directory: string;
+    try {
+      directory = await resolveInScope(path.join(sharedRoot.path, token), roots);
+    } catch {
+      throw new Error(`unknown share token: ${token}`);
+    }
+    let metadata: unknown;
+    try {
+      metadata = JSON.parse(
+        await readFile(path.join(directory, SHARED_STAGE_METADATA_FILENAME), 'utf8'),
+      ) as unknown;
+    } catch {
+      throw new Error(`unknown share token: ${token}`);
+    }
+    const metadataRecord = asRecord(metadata);
+    if (!metadataRecord) throw new Error(`invalid share metadata: ${token}`);
+    const files = [];
+    const entries = await readdir(directory, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      if (!entry.isFile() || entry.name === SHARED_STAGE_METADATA_FILENAME) continue;
+      const filePath = await resolveInScope(path.join(directory, entry.name), roots);
+      const fileStats = await stat(filePath);
+      files.push({ name: entry.name, path: filePath, size: fileStats.size });
+    }
+    return {
+      files,
+      ...(typeof metadataRecord.note === 'string' ? { note: metadataRecord.note } : {}),
+      ...(typeof metadataRecord.project === 'string' ? { project: metadataRecord.project } : {}),
+    };
   }
 
   public async list(args: FilesListArgs): Promise<FilesListResult> {
@@ -289,6 +332,13 @@ function safeSegment(value: string, field: string): string {
     throw new Error(`${field} must be a single path segment`);
   }
   return value;
+}
+function filesSharedStagedArgs(command: unknown): FilesSharedStagedArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.token !== 'string' || !value.token) {
+    throw new Error('token is required');
+  }
+  return { token: value.token };
 }
 
 function filesListArgs(command: unknown): FilesListArgs {
