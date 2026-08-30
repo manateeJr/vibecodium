@@ -257,11 +257,14 @@
 }
 
 .history-item__title {
+  display: -webkit-box;
   overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   color: var(--ink-hi);
   font-size: var(--fs-small);
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .history-item__meta,

@@ -15,6 +15,7 @@ export function createHistoryDrawer({
   onLiveSelect,
   onMachineSelect,
   onOpen,
+  getShowAgents = () => false,
 }) {
   let liveEntries = [];
   let machineEntries = [];
@@ -48,11 +49,20 @@ export function createHistoryDrawer({
   const render = () => {
     liveList.replaceChildren();
     machineList.replaceChildren();
+    const showAgents = getShowAgents();
     const live = liveEntries
-      .filter((entry) => matchesEntry(entry, query, selectedProject, registeredProjects))
+      .filter(
+        (entry) =>
+          (showAgents || entry.origin !== 'agent') &&
+          matchesEntry(entry, query, selectedProject, registeredProjects),
+      )
       .sort(compareActivity);
     const machine = machineEntries
-      .filter((entry) => matchesEntry(entry, query, selectedProject, registeredProjects))
+      .filter(
+        (entry) =>
+          (showAgents || entry.kind !== 'subagent') &&
+          matchesEntry(entry, query, selectedProject, registeredProjects),
+      )
       .sort(compareActivity);
     if (live.length === 0)
       liveList.append(
@@ -167,6 +177,7 @@ function matchesEntry(entry, query, selectedProject, projects) {
       query,
       entry.title,
       entry.label,
+      entry.sessionLabel,
       entry.cwd,
       entry.source,
       entry.ref,

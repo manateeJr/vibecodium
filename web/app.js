@@ -88,6 +88,7 @@ const history = createHistoryDrawer({
   projectFilter: elements.historyProjectFilter,
   liveList: elements.liveHistory,
   machineList: elements.machineHistory,
+  getShowAgents: () => showAgents,
   onLiveSelect: (streamId) => {
     selectStream(streamId);
     history.close();

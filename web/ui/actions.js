@@ -241,6 +241,7 @@ export function createActions({
         source: entry.label,
         ref: entry.ref,
         prompt,
+        origin: 'operator',
       });
       const live = ensureEntry(result.stream_id, entry.label);
       if (!live) throw new Error('session.resume returned an invalid stream');

@@ -3,7 +3,7 @@
 // Bumped by hand with every shell change: the assets are served straight off disk with no build
 // step, so there is no content hash or build stamp to derive a cache name from. Changing this is
 // what makes install/activate replace the old shell — see web/ui/updates.js for the page's half.
-const CACHE_NAME = 'vibecodium-shell-v12';
+const CACHE_NAME = 'vibecodium-shell-v13';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
