@@ -187,9 +187,10 @@ export class PersistentSessionWorker {
 
   public async sendPrompt(prompt: string): Promise<number> {
     if (!this.started || this.stopping) throw new Error('persistent session is not live');
-    if (this.busy) throw new Error('session is busy');
-    const turn = Math.max(this.nextTurn, this.tailer?.currentTurn ?? 0) + 1;
-    this.nextTurn = turn;
+    const turn = this.busy
+      ? Math.max(this.nextTurn, this.tailer?.currentTurn ?? 0)
+      : Math.max(this.nextTurn, this.tailer?.currentTurn ?? 0) + 1;
+    if (!this.busy) this.nextTurn = turn;
     this.busy = true;
     try {
       await this.inject(prompt);
