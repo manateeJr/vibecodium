@@ -50,12 +50,15 @@ export function isExternalEntry(entry) {
   return Boolean(entry?.external) && entry.status === 'external';
 }
 
+// The header, and then a placeholder that /ui/machine-history.js replaces with the session's real
+// turns. The title moves up into the header line because the transcript supplies it properly: as
+// the first turn, rendered like every other turn, instead of a lone unattributed `you` line.
 function externalTranscript(item) {
   return [
-    metaLine(`external ${item.provider} session · read-only`),
-    { cls: 'you', text: item.title || item.shortId, markdown: false },
+    metaLine(`external ${item.provider} session · read-only · ${item.title || item.shortId}`),
     metaLine(`cwd ${item.cwd || '(unknown)'} · ${relativeTime(item.updated_at)}`),
     metaLine('this machine owns the session · your next message continues it here, in place'),
+    { ...metaLine('reading the machine transcript…'), placeholder: true },
   ];
 }
 

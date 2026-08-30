@@ -149,38 +149,68 @@ export function createFilesPanel({
     }
   };
 
-  // Attach copies the pick into the shared session folder, then names it in the next turn.
-  const upload = async (file) => {
-    if (uploading) return;
-    if (file.size > MAX_UPLOAD_BYTES) {
-      note(`${file.name} is ${formatFileSize(file.size)} · attachments cap at 200 MB`);
-      return;
-    }
+  // Attach copies every pick into the shared session folder, then names them in the next turn.
+  // One pick is a list, not a file: the input is `multiple`, so the loop is the contract. A single
+  // refusal — an oversized pick, one failed upload — must not cost the operator the other files,
+  // hence the per-file try and the count of what was actually staged at the end.
+  const stageFiles = async (files) => {
+    if (uploading || files.length === 0) return [];
     uploading = true;
     elements.attachButton.disabled = true;
-    note(`reading ${file.name} · ${formatFileSize(file.size)}…`);
+    const staged = [];
     try {
-      const content_base64 = await blobToBase64(file);
-      note(`uploading ${file.name} · ${formatFileSize(file.size)}…`);
-      const args = {
-        session_id: sessionIdForUpload(),
-        name: file.name,
-        content_base64,
-        ...(file.type ? { mime: file.type } : {}),
-      };
-      const result = await client.filesUpload(args);
-      appendAttachment(elements.composeInput, result.path);
-      note(`attached ${file.name} · ${formatFileSize(result.size)}`);
-      elements.composeInput.focus();
-    } catch (error) {
-      const message = `attach failed: ${errorMessage(error)}`;
-      note(message);
-      onError(message);
+      for (const [index, file] of files.entries()) {
+        const progress = files.length > 1 ? ` · ${index + 1}/${files.length}` : '';
+        const path = await stageOne(file, progress);
+        if (path) staged.push(path);
+      }
+      if (staged.length > 0) {
+        attachPaths(staged);
+        const skipped = files.length - staged.length;
+        note(
+          `attached ${staged.length} file${staged.length === 1 ? '' : 's'}${
+            skipped > 0 ? ` · ${skipped} skipped` : ''
+          }`,
+        );
+        elements.composeInput.focus();
+      }
     } finally {
       uploading = false;
       elements.attachButton.disabled = false;
       elements.attachInput.value = '';
     }
+    return staged;
+  };
+
+  const stageOne = async (file, progress) => {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      note(`${file.name} is ${formatFileSize(file.size)} · attachments cap at 200 MB`);
+      return '';
+    }
+    note(`reading ${file.name} · ${formatFileSize(file.size)}${progress}…`);
+    try {
+      const content_base64 = await blobToBase64(file);
+      note(`uploading ${file.name} · ${formatFileSize(file.size)}${progress}…`);
+      const result = await client.filesUpload({
+        session_id: sessionIdForUpload(),
+        name: file.name,
+        content_base64,
+        ...(file.type ? { mime: file.type } : {}),
+      });
+      return result.path;
+    } catch (error) {
+      const message = `attach failed for ${file.name}: ${errorMessage(error)}`;
+      note(message);
+      onError(message);
+      return '';
+    }
+  };
+
+  // The one staging mechanism there is. A file the control plane already holds — everything a
+  // share landing arrives with — only has to be named in the composer, because naming it is how
+  // an attachment reaches the next turn in the first place.
+  const attachPaths = (paths) => {
+    appendAttachments(elements.composeInput, paths);
   };
 
   const sessionIdForUpload = () => {
@@ -204,11 +234,11 @@ export function createFilesPanel({
   elements.filesClose.addEventListener('click', close);
   elements.attachButton.addEventListener('click', () => elements.attachInput.click());
   elements.attachInput.addEventListener('change', () => {
-    const file = elements.attachInput.files?.[0];
-    if (file) void upload(file);
+    const files = [...(elements.attachInput.files ?? [])];
+    if (files.length > 0) void stageFiles(files);
   });
 
-  return { open, close };
+  return { open, close, attachPaths };
 }
 
 function crumbButton(crumb, current, load) {
@@ -249,10 +279,12 @@ function compareEntries(left, right) {
   return String(left.name).localeCompare(String(right.name));
 }
 
-function appendAttachment(input, path) {
-  const line = `Attached file: ${path}`;
+// One line per attachment, appended to whatever is already in the composer — so every file staged
+// this turn is visible and named, and deleting a line is still how one of them is dropped.
+function appendAttachments(input, paths) {
   const current = input.value.trim();
-  input.value = current ? `${current}\n${line}` : line;
+  const lines = paths.map((path) => `Attached file: ${path}`);
+  input.value = [...(current ? [current] : []), ...lines].join('\n');
   // The composer sizes itself from input events; a programmatic write has to announce itself.
   input.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
 }

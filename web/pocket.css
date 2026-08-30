@@ -164,9 +164,14 @@ summary:focus-visible {
   letter-spacing: var(--track-small);
   text-transform: uppercase;
 }
+/* Pills whose whole content is a bare label, with no inner button to carry the padding. Without
+ * these two lines the label inherits the shell's `align-items: stretch` and zero padding, so it
+ * sits against the top-left of its own pill — which is what AGENTS ON/OFF was doing. */
 .session-pill--new,
-.session-pill--presets {
+.session-pill--presets,
+.session-pill--agents {
   align-items: center;
+  justify-content: center;
   padding: 0 11px;
 }
 .session-pill--new[data-active='yes'],

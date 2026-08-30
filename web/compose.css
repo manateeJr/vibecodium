@@ -15,17 +15,46 @@
   gap: 8px;
 }
 
-/* One text cell, the attach button, the voice cell, and send. The voice cell is content-sized
- * because it holds a second button while a recording is in flight. */
+/* A share arrives with a project guess. The picker that guess landed in is marked, because the
+ * operator has to be able to see at a glance which scope OPEN is about to use. */
+.project-selector[data-share='yes'] {
+  border-color: var(--replay);
+  color: var(--ink-hi);
+}
+
+/* Two cells, phone-first: the text the owner is writing, and one narrow column of actions beside
+ * it. A 390px screen has no room for four side-by-side cells — the textarea ended up about half
+ * the bar — so ATT, MIC and SEND stack vertically on the right and the text takes every pixel to
+ * their left. The three widths and the gap are stated once here because the textarea's floor is
+ * derived from them: the box is exactly as tall as the column of buttons it sits next to. */
 .compose-bar {
+  --action-column: 62px;
+  --action-row: 34px;
+  --action-gap: 5px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px auto 62px;
+  grid-template-columns: minmax(0, 1fr) var(--action-column);
   gap: 7px;
   /* The composer grows upward; the controls stay pinned to its last line. */
   align-items: end;
   flex: 0 0 auto;
   padding: 9px 0 0;
   border-top: 1px solid var(--line);
+}
+
+/* CXL joins the column only while a recording is in flight, so the column is a grid rather than a
+ * fixed three-row track: it grows a row and the composer grows with it. */
+.compose-actions,
+.compose-voice {
+  display: grid;
+  gap: var(--action-gap);
+}
+
+/* Narrow enough to be a column, tall enough to stay a tap target. The 44px floor pocket.css puts
+ * on every button is what made three of them unstackable here. */
+.compose-actions .button {
+  width: 100%;
+  min-height: var(--action-row);
+  padding: 0 3px;
 }
 
 .compose-bar input,
@@ -41,9 +70,12 @@
   font-size: var(--fs-input);
 }
 
-/* Height is set in JS from the content; these are the floor and ceiling the script never fights. */
+/* Height is set in JS from the content; these are the floor and ceiling the script never fights.
+ * The floor is the height of the action column beside it — a 44px box next to three stacked
+ * buttons would leave a band of dead space above the text, and a phone composer that already
+ * costs that much vertical room may as well show four lines of what is being written. */
 .compose-bar textarea {
-  min-height: 44px;
+  min-height: calc(var(--action-row) * 3 + var(--action-gap) * 2);
   max-height: 40vh;
   padding: 11px 10px;
   line-height: var(--lh);
@@ -64,14 +96,20 @@
   outline: none;
 }
 
-.compose-voice {
-  display: flex;
-  gap: 6px;
+/* The share landing arrives with someone else's files already staged, so it says which ones, and
+ * a token the control plane no longer knows keeps saying so — a silent failure here would leave
+ * the operator pressing OPEN on a prompt with no attachments behind it. */
+.share-status {
+  flex: 0 0 auto;
+  padding: 0 0 7px;
+  overflow-wrap: anywhere;
+  color: var(--replay);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
 }
 
-.compose-voice .button {
-  width: 44px;
-  padding: 0;
+.share-status[data-tone='bad'] {
+  color: var(--bad);
 }
 
 /* Sending into a machine-owned session continues it in place. That reads as the same tap that used
@@ -158,8 +196,9 @@
 }
 
 @media (max-width: 350px) {
+  /* Only the column narrows: the stack itself is what makes the layout survive this width. */
   .compose-bar {
-    grid-template-columns: minmax(0, 1fr) 38px auto 54px;
+    --action-column: 54px;
   }
 
   .compose-bar input,
@@ -167,9 +206,5 @@
   .button {
     padding-right: 6px;
     padding-left: 6px;
-  }
-
-  .compose-voice .button {
-    width: 38px;
   }
 }
