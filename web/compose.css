@@ -1,0 +1,158 @@
+/* The compose surface: the scope selectors above the bar, the input that grows with what the
+ * owner writes, and the control buttons beside it. These rules were spread across pocket.css,
+ * ui.css and panels.css — with panels.css re-declaring the grid pocket.css had just set — so the
+ * composer now owns one sheet and states its final layout once. Loaded last in index.html. */
+.project-scope {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 9px;
+}
+
+/* Scope is two decisions the owner makes together before opening a session: where, and with what. */
+.project-scope__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+/* One text cell, the attach button, the voice cell, and send. The voice cell is content-sized
+ * because it holds a second button while a recording is in flight. */
+.compose-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px auto 62px;
+  gap: 7px;
+  /* The composer grows upward; the controls stay pinned to its last line. */
+  align-items: end;
+  flex: 0 0 auto;
+  padding: 9px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.compose-bar input,
+.compose-bar textarea,
+.token-panel input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: var(--fs-input);
+}
+
+/* Height is set in JS from the content; these are the floor and ceiling the script never fights. */
+.compose-bar textarea {
+  min-height: 44px;
+  max-height: 40vh;
+  padding: 11px 10px;
+  line-height: var(--lh);
+  resize: none;
+  overflow-y: hidden;
+}
+
+.compose-bar input::placeholder,
+.compose-bar textarea::placeholder,
+.token-panel input::placeholder {
+  color: var(--ink-dim);
+}
+
+.compose-bar input:focus,
+.compose-bar textarea:focus,
+.token-panel input:focus {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.compose-voice {
+  display: flex;
+  gap: 6px;
+}
+
+.compose-voice .button {
+  width: 44px;
+  padding: 0;
+}
+
+.compose-note {
+  flex: 0 0 auto;
+  padding: 6px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--amber);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.button {
+  min-width: 0;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg-2);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+  text-transform: uppercase;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink-hi);
+}
+
+.button:active:not(:disabled) {
+  background: var(--line);
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.button--open {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.button--send {
+  border-color: var(--focus);
+  color: var(--ink-hi);
+}
+
+.button--attach,
+.button--mic {
+  letter-spacing: var(--track-small);
+}
+
+.button--attach:disabled {
+  opacity: 0.45;
+}
+
+.button--mic[data-recording='yes'] {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+/* Discard, never send: the cancel control reads as destructive so it is never mistaken for stop. */
+.button--cancel {
+  border-color: var(--bad);
+  border-style: dashed;
+  color: var(--bad);
+  letter-spacing: var(--track-small);
+}
+
+@media (max-width: 350px) {
+  .compose-bar {
+    grid-template-columns: minmax(0, 1fr) 38px auto 54px;
+  }
+
+  .compose-bar input,
+  .compose-bar textarea,
+  .button {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+
+  .compose-voice .button {
+    width: 38px;
+  }
+}

@@ -1,5 +1,6 @@
 /* global document */
 import { basename } from '../lib/paths.js';
+import { loadSelectedProject, saveSelectedProject } from '../lib/storage.js';
 
 export function createProjectManager({
   client,
@@ -10,7 +11,9 @@ export function createProjectManager({
   onProjectChange,
 }) {
   let projects = [];
-  let selectedName = '';
+  // The owner's own last choice, restored across reloads. Only the explicit selection paths below
+  // write it back, so nothing a session drags in can quietly become the new default.
+  let selectedName = loadSelectedProject();
   let proposed = [];
   let detecting = false;
   let saving = false;
@@ -20,7 +23,6 @@ export function createProjectManager({
 
   const render = () => {
     const selected = activeProject();
-    if (!selected) selectedName = '';
     elements.projectSelector.replaceChildren(new globalThis.Option('Scratch', ''));
     for (const project of projects) {
       const option = new globalThis.Option(project.name, project.name);
@@ -208,6 +210,7 @@ export function createProjectManager({
         result.project,
       ];
       selectedName = result.project.name;
+      saveSelectedProject(selectedName);
       render();
       hideForm();
       onProjectChange(activeProject());
@@ -232,6 +235,7 @@ export function createProjectManager({
       }
       if (selectedName === project.name) {
         selectedName = '';
+        saveSelectedProject('');
         onProjectChange(undefined);
       }
       projects = projects.filter((item) => item.name !== project.name);
@@ -249,8 +253,12 @@ export function createProjectManager({
     try {
       const result = await client.listProjects();
       projects = [...result.projects];
-      if (!activeProject()) selectedName = '';
+      // A stored choice that is not registered right now simply resolves to Scratch; the choice
+      // itself is left alone so re-registering the project brings it back selected.
       render();
+      // The restored project only becomes real once the caller re-scopes to it: without this the
+      // dropdown would say vibecodium while the path, presets and session list still said Scratch.
+      onProjectChange(activeProject());
       return projects;
     } catch (error) {
       reportError('project list failed', error);
@@ -260,6 +268,7 @@ export function createProjectManager({
 
   const selectProject = (name) => {
     selectedName = projects.some((project) => project.name === name) ? name : '';
+    saveSelectedProject(selectedName);
     render();
     onProjectChange(activeProject());
   };

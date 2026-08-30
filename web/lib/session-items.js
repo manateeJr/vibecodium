@@ -2,6 +2,9 @@ import { externalItem } from './external-session.js';
 
 // Recent-session pills: the control plane's list for the scope, overlaid with live local state,
 // plus the machine's own external sessions folded in by cwd so the bar shows every live session.
+//
+// Two things never earn a pill: a machine session the scanner marked as a subagent transcript,
+// and — unless the owner asks for them — sessions an agent opened rather than the operator.
 export function mergeSessionItems({
   remote,
   local,
@@ -10,6 +13,7 @@ export function mergeSessionItems({
   project,
   selectedId,
   limit,
+  showAgents = false,
 }) {
   const items = new Map();
   for (const summary of remote) {
@@ -21,12 +25,15 @@ export function mergeSessionItems({
       status: summary.status || 'done',
       cwd: summary.cwd ?? '',
       project: summary.project ?? '',
+      label: summary.label ?? '',
+      origin: summary.origin ?? '',
       shortId: shortSessionId(summary.session_id || summary.stream_id),
       time: Date.parse(summary.updated_at ?? summary.started_at ?? '') || 0,
     });
   }
   for (const summary of machine) {
     const item = externalItem(summary, projects);
+    if (item.kind === 'subagent') continue;
     if (!inScope(item.project, project)) continue;
     items.set(item.stream_id, item);
   }
@@ -40,12 +47,25 @@ export function mergeSessionItems({
       status: displayStatus(entry.status),
       cwd: entry.cwd ?? '',
       project: entry.project ?? '',
+      label: entry.sessionLabel ?? '',
+      origin: entry.origin ?? '',
       shortId: shortSessionId(entry.session_id || entry.stream_id),
       time: activityTime(entry),
       ...(entry.external ? { external: true, title: entry.title ?? '' } : {}),
     });
   }
-  return [...items.values()].sort((left, right) => right.time - left.time).slice(0, limit);
+  return [...items.values()]
+    .filter((item) => showAgents || item.stream_id === selectedId || !isAgentSession(item))
+    .sort((left, right) => right.time - left.time)
+    .slice(0, limit);
+}
+
+// Fallback that keeps the bar usable while a control plane that predates `origin` is running:
+// only an explicit 'agent' hides a session. Unknown origins read as the operator's own, because
+// an empty session bar is a far worse failure than one extra pill. External machine sessions are
+// the operator's machine by definition and are never filtered here.
+function isAgentSession(item) {
+  return !item.external && item.origin === 'agent';
 }
 
 // The id a live session is addressed by. Machine-owned streams are read-only here and have no

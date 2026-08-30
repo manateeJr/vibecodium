@@ -1,3 +1,4 @@
+import { postCommand } from '../lib/command.js';
 import { sessionIdOf } from '../lib/session-items.js';
 import { eventClock } from '../lib/time.js';
 
@@ -8,6 +9,9 @@ export function createActions({
   state,
   getSelectedStreamId,
   getActiveProject,
+  getModel,
+  connection,
+  resetInput,
   setStatus,
   refreshControls,
   renderSessions,
@@ -30,17 +34,23 @@ export function createActions({
     setStatus('OPENING', 'wait');
     refreshControls();
     try {
-      const openArgs = { provider, prompt };
+      // `origin` is what separates the operator's own sessions from the ones agents open; the
+      // composer is the operator by definition. `model` only rides along when a preset is chosen,
+      // so the harness keeps its own default otherwise.
+      const openArgs = { provider, prompt, origin: 'operator' };
       if (cwd) openArgs.cwd = cwd;
       if (projectName) openArgs.project = projectName;
+      const model = getModel();
+      if (model) openArgs.model = model;
       const result = await client.openSession(openArgs);
       const entry = ensureEntry(result.stream_id, provider);
       if (!entry) throw new Error('session.open returned an invalid stream');
       entry.session_id = result.session_id;
       entry.cwd = cwd || '';
       entry.project = projectName || '';
+      entry.origin = 'operator';
       entry.busy = true;
-      elements.composeInput.value = '';
+      resetInput();
       selectStream(result.stream_id);
       setStatus('LIVE', 'live');
       void reloadSessions();
@@ -53,6 +63,8 @@ export function createActions({
     }
   };
 
+  // Resolves to true only when the turn actually reached the harness, so the caller knows whether
+  // it may clear what the owner typed.
   const sendTurn = async (entry, prompt) => {
     entry.lastActivityAt = Date.now();
     entry.busy = true;
@@ -62,12 +74,13 @@ export function createActions({
       const sessionId = sessionIdOf(entry);
       if (!sessionId) throw new Error('session id unavailable');
       await client.sendMessage({ session_id: sessionId, prompt });
-      elements.composeInput.value = '';
       if (getSelectedStreamId() === entry.stream_id) setStatus('LIVE', 'live');
+      return true;
     } catch (error) {
       entry.busy = false;
       appendError(`session send failed: ${errorMessage(error)}`, entry);
       if (getSelectedStreamId() === entry.stream_id) setStatus('ERROR', 'bad');
+      return false;
     } finally {
       refreshControls();
       renderStream();
@@ -113,7 +126,7 @@ export function createActions({
     const entry = sessions.get(getSelectedStreamId());
     if (entry && isSendable(entry)) {
       if (entry.busy) return;
-      await sendTurn(entry, prompt);
+      if (await sendTurn(entry, prompt)) resetInput();
       return;
     }
     const project = getActiveProject();
@@ -127,6 +140,48 @@ export function createActions({
   const openPreset = async (preset) => {
     const project = getActiveProject();
     await openSessionWith(preset.prompt.trim(), project?.path, project?.name);
+  };
+
+  // A mid-session model change is the harness's own slash command, not a control-plane verb: it
+  // rides the ordinary send path so the session records it exactly like a typed message would.
+  const switchModel = async (model) => {
+    const entry = sessions.get(getSelectedStreamId());
+    if (!model) {
+      notify('model preset cleared · applies to the next session');
+      return;
+    }
+    if (!entry || !isSendable(entry) || !sessionIdOf(entry) || entry.busy) {
+      notify(`model ${model} · applies to the next session`);
+      return;
+    }
+    if (await sendTurn(entry, `/model ${model}`)) notify(`model switch sent · /model ${model}`);
+  };
+
+  // session.rename is newer than the bundled SDK, so it goes over the raw command wire. An older
+  // control plane answers with an error the owner can read instead of a pill stuck mid-edit.
+  const renameSession = async (item, label) => {
+    const sessionId = item.session_id || sessionIdOf(sessions.get(item.stream_id));
+    if (!sessionId) {
+      appendError('this session cannot be renamed');
+      renderSessions();
+      return;
+    }
+    try {
+      const { baseUrl, token } = connection();
+      const result = await postCommand(
+        'session.rename',
+        { session_id: sessionId, label },
+        { baseUrl, token },
+      );
+      const entry = sessions.get(item.stream_id);
+      if (entry) entry.sessionLabel = result?.label ?? label;
+      notify(label ? `renamed · ${result?.label ?? label}` : 'session label cleared');
+      void reloadSessions();
+    } catch (error) {
+      appendError(`session rename failed: ${errorMessage(error)}`);
+    } finally {
+      renderSessions();
+    }
   };
 
   const stopSession = async () => {
@@ -197,7 +252,15 @@ export function createActions({
     }
   };
 
-  return { submitCompose, openPreset, stopSession, forkMachineSession, sendKeys };
+  return {
+    submitCompose,
+    openPreset,
+    stopSession,
+    forkMachineSession,
+    sendKeys,
+    switchModel,
+    renameSession,
+  };
 }
 
 function isSendable(entry) {

@@ -21,7 +21,8 @@ body {
 }
 button,
 input,
-select {
+select,
+textarea {
   color: inherit;
   font: inherit;
 }
@@ -33,6 +34,7 @@ input {
 button,
 select,
 input,
+textarea,
 summary {
   -webkit-tap-highlight-color: transparent;
 }
@@ -43,6 +45,7 @@ summary {
 button:focus-visible,
 select:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -312,95 +315,10 @@ summary:focus-visible {
   color: var(--ink-dim);
 }
 
-.compose-bar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px 66px;
-  gap: 7px;
-  flex: 0 0 auto;
-  padding: 9px 0 0;
-  border-top: 1px solid var(--line);
-}
-
 .entry-label {
   color: var(--ink-dim);
   font-size: var(--fs-small);
   letter-spacing: var(--track-small);
-}
-
-.compose-bar input,
-.token-panel input {
-  width: 100%;
-  min-width: 0;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg-2);
-  color: var(--ink);
-  font-size: var(--fs-input);
-}
-
-.compose-bar input::placeholder,
-.token-panel input::placeholder {
-  color: var(--ink-dim);
-}
-
-.compose-bar input:focus,
-.token-panel input:focus {
-  border-color: var(--focus);
-  outline: none;
-}
-
-.compose-note {
-  flex: 0 0 auto;
-  padding: 6px 0 0;
-  overflow-wrap: anywhere;
-  color: var(--amber);
-  font-size: var(--fs-small);
-  letter-spacing: var(--track-small);
-}
-
-.button {
-  min-width: 0;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--bg-2);
-  font-size: var(--fs-small);
-  letter-spacing: var(--track-small);
-  text-transform: uppercase;
-}
-
-.button:hover:not(:disabled) {
-  border-color: var(--ink);
-  color: var(--ink-hi);
-}
-
-.button:active:not(:disabled) {
-  background: var(--line);
-}
-
-.button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.button--open {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-
-.button--send {
-  border-color: var(--focus);
-  color: var(--ink-hi);
-}
-
-.button--mic {
-  letter-spacing: var(--track-small);
-}
-
-.button--mic[data-recording='yes'] {
-  border-color: var(--bad);
-  color: var(--bad);
 }
 
 .token-panel {
@@ -473,16 +391,4 @@ summary:focus-visible {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
-}
-
-@media (max-width: 350px) {
-  .compose-bar {
-    grid-template-columns: minmax(0, 1fr) 42px 56px;
-  }
-
-  .compose-bar input,
-  .button {
-    padding-right: 6px;
-    padding-left: 6px;
-  }
 }

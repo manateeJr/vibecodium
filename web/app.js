@@ -1,21 +1,28 @@
 import { createClient } from '/client.js';
 import { externalEntry } from '/lib/external-session.js';
 import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
-import { loadToken, saveToken } from '/lib/storage.js';
-import { eventClock } from '/lib/time.js';
+import {
+  loadShowAgentSessions,
+  loadToken,
+  saveShowAgentSessions,
+  saveToken,
+} from '/lib/storage.js';
 import { createActions } from '/ui/actions.js';
+import { createComposer } from '/ui/composer.js';
 import { wireConnectivity } from '/ui/connectivity.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { queryElements } from '/ui/elements.js';
+import { createEventFeed } from '/ui/event-feed.js';
 import { createFilesPanel } from '/ui/files.js';
 import { createGitStatus } from '/ui/git-status.js';
 import { createHostPanel } from '/ui/host-panel.js';
+import { createModelPicker } from '/ui/model-picker.js';
 import { createProjectManager } from '/ui/project-manager.js';
 import { createSessionBar } from '/ui/session-bar.js';
 import { createSkillsPanel } from '/ui/skills.js';
 import { createSessionSurface } from '/ui/session-surface.js';
+import { createStreamLog } from '/ui/stream-log.js';
 import { createVoiceRecorder } from '/ui/voice.js';
-import { applySessionEvent } from '/ui/events.js';
 
 const SESSION_LIMIT = 10;
 const SESSION_NOTE = 'recent sessions unavailable';
@@ -27,6 +34,8 @@ const clientOptions = {
   ...(clientToken ? { token: clientToken } : {}),
 };
 const client = createClient(clientOptions);
+// Read lazily everywhere it is used, so a token saved in Settings reaches the next request.
+const connection = () => ({ baseUrl: globalThis.location.origin, token: clientToken });
 let selectedStreamId = '';
 const actionState = {
   opening: false,
@@ -36,20 +45,22 @@ const actionState = {
 };
 let machineLoading = false;
 let sessionsLoading = false;
-let transientTimer = null;
 let remoteSessions = [];
 let machineSessions = [];
 let registeredProjects = [];
 let scopePresets = [];
+let showAgents = loadShowAgentSessions();
 const sessions = new Map();
-const transientLines = [];
-const seenEvents = new Set();
 const { transcript, sessionView } = createSessionSurface({
-  // Read lazily so a token saved in Settings reaches the next mirror subscription.
-  connection: () => ({ baseUrl: globalThis.location.origin, token: clientToken }),
+  connection,
   elements,
   // Ratified: "Steer now" escalates natively with escape; the separate stop control interrupts.
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
+});
+const streamLog = createStreamLog({
+  transcript,
+  selectedEntry: () => sessions.get(selectedStreamId),
+  restartAction,
 });
 const gitStatus = createGitStatus({
   client,
@@ -63,6 +74,8 @@ const sessionBar = createSessionBar({
   onSelect: (item) => selectSessionItem(item),
   onStop: () => void actions.stopSession(),
   onPreset: (preset) => selectPreset(preset),
+  onRename: (item, label) => void actions.renameSession(item, label),
+  onToggleAgents: (next) => setShowAgents(next),
 });
 const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
@@ -87,7 +100,7 @@ const projectManager = createProjectManager({
   client,
   elements,
   errorMessage,
-  onError: (message) => appendError(message),
+  onError: (message) => streamLog.error(message),
   onProjectsChange: (nextProjects) => {
     registeredProjects = [...nextProjects];
     history.setProjects(nextProjects);
@@ -98,7 +111,7 @@ const hostPanel = createHostPanel({
   client,
   elements,
   errorMessage,
-  onError: (message) => appendError(message),
+  onError: (message) => streamLog.error(message),
 });
 const settings = createSettingsDrawer({
   drawer: elements.settingsDrawer,
@@ -114,12 +127,18 @@ const settings = createSettingsDrawer({
     void skills.refresh();
   },
 });
+const composer = createComposer({ input: elements.composeInput, form: elements.composeForm });
+const modelPicker = createModelPicker({
+  select: elements.modelSelector,
+  onChange: (model) => void actions.switchModel(model),
+});
 createVoiceRecorder({
-  client,
+  connection,
   button: elements.voiceRecord,
+  cancelButton: elements.voiceCancel,
   input: elements.composeInput,
   note: setComposeNote,
-  onError: (message) => appendError(message),
+  onError: (message) => streamLog.error(message),
   errorMessage,
 });
 const actions = createActions({
@@ -129,23 +148,40 @@ const actions = createActions({
   state: actionState,
   getSelectedStreamId: () => selectedStreamId,
   getActiveProject: () => projectManager.selectedProject(),
+  getModel: () => modelPicker.selected(),
+  connection,
+  resetInput: () => composer.reset(),
   setStatus,
   refreshControls,
   renderSessions,
-  renderStream,
+  renderStream: () => streamLog.render(),
   selectStream,
   ensureEntry,
-  pushLine,
-  appendError,
+  pushLine: streamLog.push,
+  appendError: streamLog.error,
   errorMessage,
   notify: setComposeNote,
   reloadSessions: loadSessions,
+});
+const feed = createEventFeed({
+  client,
+  sessions,
+  ensureEntry,
+  streamLog,
+  setStatus,
+  onSessionEvent: (entry) => {
+    streamLog.render();
+    refreshControls();
+    if (entry.stream_id === selectedStreamId) void gitStatus.update(entry);
+  },
+  isSelected: (streamId) => selectedStreamId === streamId,
+  errorMessage,
 });
 const files = createFilesPanel({
   client,
   elements,
   errorMessage,
-  onError: (message) => appendError(message),
+  onError: (message) => streamLog.error(message),
   note: setComposeNote,
   getSessionId: () => sessions.get(selectedStreamId)?.session_id ?? '',
   onOpen: () => {
@@ -157,7 +193,7 @@ const skills = createSkillsPanel({
   client,
   elements,
   errorMessage,
-  onError: (message) => appendError(message),
+  onError: (message) => streamLog.error(message),
   getProject: () => projectManager.selectedProject(),
   onPresetsChange: () => refreshPresets(),
   onPrompt: (prompt) => void actions.openPreset({ prompt }),
@@ -182,16 +218,16 @@ setStatus(
   globalThis.navigator.onLine ? 'idle' : 'bad',
 );
 refreshControls();
-renderStream();
+streamLog.render();
 updateScope();
 void boot();
 wireConnectivity({
   setStatus,
   getSelected: () => selectedStreamId,
-  hydrate: hydrateStream,
+  hydrate: feed.hydrate,
   reconnect: () => client.reconnect(),
 });
-client.subscribe(0, onEvent, '*');
+client.subscribe(0, feed.ingest, '*');
 
 // Projects come first: external sessions and adopted skills are both keyed off the project list.
 async function boot() {
@@ -223,7 +259,7 @@ async function loadMachineSessions() {
   } catch (error) {
     machineSessions = [];
     history.renderMachine([]);
-    appendError(`machine session list failed: ${errorMessage(error)}`);
+    streamLog.error(`machine session list failed: ${errorMessage(error)}`);
   } finally {
     machineLoading = false;
     renderSessions();
@@ -282,6 +318,13 @@ function selectPreset(preset) {
   void actions.openPreset(preset);
 }
 
+function setShowAgents(next) {
+  showAgents = next;
+  saveShowAgentSessions(next);
+  setComposeNote(next ? 'showing agent-opened sessions' : 'showing your own sessions');
+  renderSessions();
+}
+
 function setStatus(label, tone) {
   elements.status.textContent = label;
   elements.connection.dataset.tone = tone;
@@ -337,7 +380,7 @@ function selectNew() {
   selectedStreamId = '';
   elements.streamCaption.textContent = 'New session';
   gitStatus.hide();
-  renderStream();
+  streamLog.render();
   refreshControls();
   elements.composeInput.focus();
   sessionView.selectSession('');
@@ -364,19 +407,23 @@ function adoptSessionItem(item) {
   entry.status = item.status === 'live' ? 'running' : item.status === 'failed' ? 'failed' : 'done';
   entry.cwd = item.cwd || '';
   entry.project = item.project || '';
+  entry.sessionLabel = item.label || '';
+  entry.origin = item.origin || '';
   entry.lastActivityAt = item.time || Date.now();
   return entry;
 }
 
+// Selecting a session never changes the project: the scope belongs to the owner, not to whatever
+// they last tapped. Restarting is the one place the context moves, and the button says so first.
 function selectStream(streamId) {
   const entry = sessions.get(streamId);
   if (!entry) return;
   selectedStreamId = streamId;
-  elements.streamCaption.textContent = entry.label || streamId;
-  renderStream();
+  elements.streamCaption.textContent = entry.sessionLabel || entry.label || streamId;
+  streamLog.render();
   refreshControls();
   void gitStatus.update(entry);
-  if (!streamId.startsWith('machine:')) void hydrateStream(streamId);
+  if (!streamId.startsWith('machine:')) void feed.hydrate(streamId);
   elements.composeInput.focus();
   sessionView.selectSession(sessionIdOf(entry));
 }
@@ -387,6 +434,7 @@ function renderSessions() {
     selectedId: selectedStreamId,
     presets: scopePresets,
     stopping: actionState.stopping,
+    showAgents,
   });
   history.renderLive(
     [...sessions.values()].filter(
@@ -404,93 +452,36 @@ function sessionItems() {
     project: projectManager.selectedProject(),
     selectedId: selectedStreamId,
     limit: SESSION_LIMIT,
+    showAgents,
   });
 }
 
-function renderStream() {
-  const entry = sessions.get(selectedStreamId);
-  const canRestart =
-    entry?.kind === 'session' &&
+function restartAction(entry) {
+  const restartable =
+    entry.kind === 'session' &&
     (entry.status === 'done' || entry.status === 'failed' || entry.status === 'external');
-  transcript.render(
-    entry ? [...transientLines, ...entry.lines] : transientLines,
-    Boolean(entry?.busy),
-    canRestart ? () => prepareRestart(entry) : undefined,
-  );
+  if (!restartable) return undefined;
+  const target = entry.project || '';
+  const current = projectManager.selectedProject()?.name ?? '';
+  return {
+    label: target && target !== current ? `Open new session in ${target}` : 'Open new session here',
+    run: () => prepareRestart(entry),
+  };
 }
+
 function prepareRestart(entry) {
-  if (entry.project) projectManager.selectProject(entry.project);
+  const target = entry.project || '';
+  const current = projectManager.selectedProject()?.name ?? '';
+  if (target && target !== current) {
+    projectManager.selectProject(target);
+    streamLog.showTransient('meta', `project switched to ${target} · you asked for this session`);
+  }
   elements.composeInput.focus();
   elements.composeInput.scrollIntoView?.({ block: 'nearest' });
-  showTransientLine(
+  streamLog.showTransient(
     'meta',
     `new session ready · ${entry.cwd || '(default cwd)'} · harness ${elements.harness.value}`,
   );
-}
-
-function pushLine(entry, cls, text, markdown = false, metadata) {
-  entry.lastActivityAt = Date.now();
-  entry.lines.push({ cls, text, markdown, ...(metadata ?? {}) });
-  if (entry.stream_id === selectedStreamId) renderStream();
-}
-
-function showTransientLine(cls, text) {
-  transientLines.push({ cls, text, markdown: false });
-  if (transientTimer !== null) globalThis.clearTimeout(transientTimer);
-  transientTimer = globalThis.setTimeout(() => {
-    transientLines.length = 0;
-    transientTimer = null;
-    renderStream();
-  }, 6_000);
-  renderStream();
-}
-
-function appendError(message, entry = sessions.get(selectedStreamId)) {
-  const text = `${eventClock(new Date().toISOString())} error · ${message}`;
-  if (entry) pushLine(entry, 'bad', text);
-  else showTransientLine('bad', text);
-}
-
-function onEvent(event) {
-  const key = `${event.stream_id}:${event.seq}`;
-  if (seenEvents.has(key)) return;
-  seenEvents.add(key);
-  if (event.stream_id === 'admission') {
-    if (event.type === 'session_throttled') {
-      const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
-      const retry =
-        typeof payload.retry_after_ms === 'number' ? ` · retry ${payload.retry_after_ms}ms` : '';
-      showTransientLine(
-        'bad',
-        `${eventClock(event.ts)} session throttled · ${payload.provider ?? 'session'} · ${
-          payload.reason ?? 'admission limit'
-        }${retry}`,
-      );
-    }
-    setStatus('LIVE', 'live');
-    return;
-  }
-  const entry = ensureEntry(event.stream_id);
-  if (!entry) return;
-  applySessionEvent(entry, event, pushLine);
-  const eventTime = Date.parse(event.ts);
-  entry.lastActivityAt = Number.isFinite(eventTime) ? eventTime : Date.now();
-  renderStream();
-  refreshControls();
-  if (entry.stream_id === selectedStreamId) void gitStatus.update(entry);
-  setStatus('LIVE', 'live');
-}
-
-async function hydrateStream(streamId) {
-  try {
-    const events = await client.getEvents(streamId, 0);
-    for (const event of events) onEvent(event);
-    if (selectedStreamId === streamId) setStatus('LIVE', 'live');
-  } catch (error) {
-    const entry = sessions.get(streamId);
-    appendError(`event stream unavailable: ${errorMessage(error)}`, entry);
-    if (selectedStreamId === streamId) setStatus('EVENT ERROR', 'bad');
-  }
 }
 
 function errorMessage(error) {
