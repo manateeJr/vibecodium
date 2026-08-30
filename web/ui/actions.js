@@ -1,4 +1,5 @@
 import { postCommand } from '../lib/command.js';
+import { isExternalEntry } from '../lib/external-session.js';
 import { sessionIdOf } from '../lib/session-items.js';
 import { eventClock } from '../lib/time.js';
 
@@ -116,7 +117,8 @@ export function createActions({
     }
   };
 
-  // One input, two verbs: send into the selected live session, otherwise open a new one.
+  // One input, three verbs: send into the selected live session, continue the selected machine
+  // session in place, or open a new one.
   const submitCompose = async () => {
     const prompt = elements.composeInput.value.trim();
     if (!prompt) {
@@ -127,6 +129,11 @@ export function createActions({
     if (entry && isSendable(entry)) {
       if (entry.busy) return;
       if (await sendTurn(entry, prompt)) resetInput();
+      return;
+    }
+    if (entry && isExternalEntry(entry)) {
+      if (state.resuming) return;
+      await continueExternalSession(entry, prompt);
       return;
     }
     const project = getActiveProject();
@@ -213,40 +220,54 @@ export function createActions({
     }
   };
 
-  // External harness sessions are forked, never appended to: the laptop still owns the original.
-  const forkMachineSession = async (session) => {
-    const streamId = `machine:${session.source}:${session.ref}`;
-    if (sessions.has(streamId)) {
-      selectStream(streamId);
+  // The machine owns an external session, so the phone holds it read-only until the operator
+  // actually writes something. That first message continues the very same session — session.resume
+  // reopens the machine's own transcript and appends to it — and the read-only view goes live.
+  //
+  // Nothing is written on failure, not even the typed text: the composer keeps it, so a control
+  // plane that refuses because the laptop is still working in that session costs one more tap.
+  const continueExternalSession = async (entry, prompt) => {
+    if ((entry.label !== 'omp' && entry.label !== 'codex') || !entry.ref) {
+      appendError('this external session cannot be continued', entry);
       return;
     }
-    state.forking = true;
-    setStatus('FORKING', 'wait');
+    state.resuming = true;
+    setStatus('CONTINUING', 'wait');
     refreshControls();
     try {
-      const result = await client.forkSession({ session_id: session.ref });
-      const entry = machineEntry(session, streamId);
-      sessions.set(streamId, entry);
-      const clock = eventClock(new Date().toISOString());
+      // cwd and project are left to the control plane: it resolves the machine session's own
+      // directory, which is the only place this transcript may legally be continued.
+      const result = await client.resumeSession({
+        source: entry.label,
+        ref: entry.ref,
+        prompt,
+      });
+      const live = ensureEntry(result.stream_id, entry.label);
+      if (!live) throw new Error('session.resume returned an invalid stream');
+      live.session_id = result.session_id;
+      live.cwd = entry.cwd || '';
+      live.project = entry.project || '';
+      live.origin = 'operator';
+      live.busy = true;
+      // The read-only lines lead, so the operator keeps the context they were just reading. Lines
+      // the event feed already delivered for the live stream stay after them, in order.
+      live.lines = [...entry.lines, ...live.lines];
+      sessions.delete(entry.stream_id);
       pushLine(
-        entry,
+        live,
         'ok',
-        `${clock} resumed as a fork · ${result.new_session_id} · ${result.provider}`,
+        `${eventClock(new Date().toISOString())} continued ${entry.label} ${entry.ref} in place`,
       );
-      pushLine(
-        entry,
-        'meta',
-        `continue this fork on the laptop:\n\n\`\`\`\n${result.continue_command}\n\`\`\``,
-        true,
-      );
-      selectStream(streamId);
-      notify(`resumed as a fork · ${result.new_session_id}`);
-      setStatus('READY', 'idle');
+      resetInput();
+      selectStream(result.stream_id);
+      setStatus('LIVE', 'live');
+      notify('continuing the machine session · same session, same transcript');
+      void reloadSessions();
     } catch (error) {
-      appendError(`session fork failed: ${errorMessage(error)}`);
+      appendError(`session continue failed: ${errorMessage(error)}`, entry);
       setStatus('ERROR', 'bad');
     } finally {
-      state.forking = false;
+      state.resuming = false;
       renderSessions();
       refreshControls();
     }
@@ -256,7 +277,6 @@ export function createActions({
     submitCompose,
     openPreset,
     stopSession,
-    forkMachineSession,
     sendKeys,
     switchModel,
     renameSession,
@@ -265,20 +285,4 @@ export function createActions({
 
 function isSendable(entry) {
   return entry.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
-}
-
-function machineEntry(session, streamId) {
-  const updatedAt = Date.parse(session.updated_at ?? '');
-  return {
-    stream_id: streamId,
-    kind: 'session',
-    label: session.source,
-    status: 'done',
-    busy: false,
-    lines: [],
-    cwd: session.cwd || '',
-    project: '',
-    updated_at: session.updated_at,
-    lastActivityAt: Number.isFinite(updatedAt) ? updatedAt : Date.now(),
-  };
 }

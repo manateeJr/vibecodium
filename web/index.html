@@ -148,6 +148,7 @@
             </button>
           </form>
         </section>
+        <p id="compose-hint" class="compose-hint" role="status" aria-live="polite" hidden></p>
         <form id="compose-form" class="compose-bar">
           <label class="sr-only" for="compose-input">Message</label>
           <textarea
@@ -458,15 +459,15 @@
       </aside>
     </main>
 
+    <button id="update-reload" class="update-toast" type="button" hidden>
+      UPDATED · TAP TO RELOAD
+    </button>
+
     <script>
+      // Registered here, ahead of the module graph, so the shell is cached on the very first load.
+      // What to do about a NEW worker lives in /ui/updates.js: it activates immediately and the
+      // operator taps to reload, because reloading under them would eat what they were typing.
       if ('serviceWorker' in navigator) {
-        const controlledAtLoad = Boolean(navigator.serviceWorker.controller);
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-          if (!controlledAtLoad || refreshing) return;
-          refreshing = true;
-          globalThis.location.reload();
-        });
         void navigator.serviceWorker.register('/sw.js', { scope: '/' });
       }
     </script>

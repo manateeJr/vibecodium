@@ -1,6 +1,9 @@
 /* global self */
 
-const CACHE_NAME = 'vibecodium-shell-v11';
+// Bumped by hand with every shell change: the assets are served straight off disk with no build
+// step, so there is no content hash or build stamp to derive a cache name from. Changing this is
+// what makes install/activate replace the old shell — see web/ui/updates.js for the page's half.
+const CACHE_NAME = 'vibecodium-shell-v12';
 const SHELL_ASSETS = Object.freeze([
   '/',
   '/index.html',
@@ -23,6 +26,7 @@ const SHELL_ASSETS = Object.freeze([
   '/lib/storage.js',
   '/lib/time.js',
   '/ui/actions.js',
+  '/ui/compose-controls.js',
   '/ui/composer.js',
   '/ui/drawers.js',
   '/ui/elements.js',
@@ -42,6 +46,7 @@ const SHELL_ASSETS = Object.freeze([
   '/ui/pty-mirror.js',
   '/ui/session-surface.js',
   '/ui/session-view.js',
+  '/ui/updates.js',
   '/ui/voice.js',
   // xterm.js is a vendored static asset, never an npm dependency. See web/vendor/xterm/README.md.
   '/vendor/xterm/xterm.js',

@@ -26,6 +26,8 @@ export function queryElements() {
     composeInput: document.querySelector('#compose-input'),
     composeSend: document.querySelector('#compose-send'),
     composeNote: document.querySelector('#compose-note'),
+    composeHint: document.querySelector('#compose-hint'),
+    updateReload: document.querySelector('#update-reload'),
     voiceRecord: document.querySelector('#voice-record'),
     voiceCancel: document.querySelector('#voice-cancel'),
     attachButton: document.querySelector('#attach-file'),

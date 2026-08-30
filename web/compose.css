@@ -74,6 +74,17 @@
   padding: 0;
 }
 
+/* Sending into a machine-owned session continues it in place. That reads as the same tap that used
+ * to open a brand new session, so the bar says which one it is before the operator commits. */
+.compose-hint {
+  flex: 0 0 auto;
+  padding: 0 0 7px;
+  overflow-wrap: anywhere;
+  color: var(--amber);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
 .compose-note {
   flex: 0 0 auto;
   padding: 6px 0 0;
@@ -116,6 +127,12 @@
 .button--send {
   border-color: var(--focus);
   color: var(--ink-hi);
+}
+
+/* Amber, the same warning the hint above the bar is written in: this send lands on the machine. */
+.button--continue {
+  border-color: var(--amber);
+  color: var(--amber);
 }
 
 .button--attach,

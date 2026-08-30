@@ -294,3 +294,28 @@ body {
   border-color: var(--focus);
   color: var(--ink-hi);
 }
+
+/* A new build is already serving every request the page makes, but the page itself is still the
+ * old one. The banner sits above the shell, out of the composer's way, until it is tapped. */
+.update-toast {
+  position: fixed;
+  z-index: 6;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 36px;
+  max-width: calc(100% - 24px);
+  padding: 0 14px;
+  border: 1px solid var(--replay);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--replay);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+  text-transform: uppercase;
+}
+
+.update-toast:hover:not(:disabled) {
+  border-color: var(--ink);
+  color: var(--ink-hi);
+}

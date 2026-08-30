@@ -1,5 +1,5 @@
 import { createClient } from '/client.js';
-import { externalEntry } from '/lib/external-session.js';
+import { externalEntry, externalItem } from '/lib/external-session.js';
 import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
 import {
   loadShowAgentSessions,
@@ -8,6 +8,7 @@ import {
   saveToken,
 } from '/lib/storage.js';
 import { createActions } from '/ui/actions.js';
+import { renderComposeControls } from '/ui/compose-controls.js';
 import { createComposer } from '/ui/composer.js';
 import { wireConnectivity } from '/ui/connectivity.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
@@ -22,6 +23,7 @@ import { createSessionBar } from '/ui/session-bar.js';
 import { createSkillsPanel } from '/ui/skills.js';
 import { createSessionSurface } from '/ui/session-surface.js';
 import { createStreamLog } from '/ui/stream-log.js';
+import { wireServiceWorkerUpdates } from '/ui/updates.js';
 import { createVoiceRecorder } from '/ui/voice.js';
 
 const SESSION_LIMIT = 10;
@@ -40,7 +42,7 @@ let selectedStreamId = '';
 const actionState = {
   opening: false,
   stopping: false,
-  forking: false,
+  resuming: false,
   interrupting: false,
 };
 let machineLoading = false;
@@ -90,8 +92,10 @@ const history = createHistoryDrawer({
     selectStream(streamId);
     history.close();
   },
-  onMachineSelect: (session) => {
-    void actions.forkMachineSession(session);
+  // Tapping a machine session only reads it: the same read-only adopt the session bar uses, so
+  // HISTORY cannot mutate anything the machine owns. Continuing it is the operator's first send.
+  onMachineSelect: (summary) => {
+    selectSessionItem(externalItem(summary, registeredProjects));
     history.close();
   },
   onOpen: loadMachineSessions,
@@ -227,6 +231,7 @@ wireConnectivity({
   hydrate: feed.hydrate,
   reconnect: () => client.reconnect(),
 });
+wireServiceWorkerUpdates({ button: elements.updateReload });
 client.subscribe(0, feed.ingest, '*');
 
 // Projects come first: external sessions and adopted skills are both keyed off the project list.
@@ -344,23 +349,12 @@ function setComposeNote(text) {
 }
 
 function refreshControls() {
-  const entry = sessions.get(selectedStreamId);
-  const sendable =
-    entry?.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
-  elements.composeSend.textContent = sendable ? 'SEND' : 'OPEN';
-  elements.composeSend.classList.toggle('button--send', sendable);
-  elements.composeSend.classList.toggle('button--open', !sendable);
-  elements.composeSend.disabled = actionState.opening || Boolean(sendable && entry?.busy);
-  elements.composeInput.placeholder = composePlaceholder(entry, sendable);
-  elements.interruptKey.disabled =
-    actionState.opening || actionState.interrupting || !sendable || !sessionIdOf(entry);
+  renderComposeControls({
+    elements,
+    entry: sessions.get(selectedStreamId),
+    state: actionState,
+  });
   renderSessions();
-}
-
-function composePlaceholder(entry, sendable) {
-  if (sendable) return 'Write something…';
-  if (entry) return 'Continue in a new session…';
-  return 'Describe a task to start a session…';
 }
 
 function ensureEntry(streamId, label = '') {
@@ -401,7 +395,7 @@ function selectSessionItem(item) {
   selectStream(entry.stream_id);
 }
 
-// External sessions are read-only here: the machine owns them, and HISTORY still forks them.
+// External sessions are read-only here: the machine owns them until the operator writes into them.
 function adoptExternalItem(item) {
   const entry = externalEntry(item);
   sessions.set(entry.stream_id, entry);
