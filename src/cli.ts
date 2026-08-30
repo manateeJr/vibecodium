@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient, type ProjectSaveArgs, type VibecodiumClient } from './client/index.js';
 import { ControlPlane } from './server/control-plane.js';
+import { runListCommand } from './cli-list.js';
 
 export type AttachSpawner = (
   command: string,
@@ -28,6 +29,10 @@ export async function main(
   const client = dependencies.client ?? createClientFromEnv();
   const spawnProcess = dependencies.spawn ?? spawnSync;
 
+  if (command === 'list') {
+    await runListCommand(client, args.slice(1));
+    return;
+  }
   if (command === 'attach') {
     await runAttachCommand(client, args.slice(1), spawnProcess);
     return;
@@ -301,7 +306,7 @@ function printJson(value: unknown): void {
 }
 function usage(): void {
   process.stderr.write(
-    'usage: vibecodium start|dev | machine list | session open --provider <p> --prompt <text> [--cwd <dir>] | session resume <omp|codex> <ref> <prompt...> | session send <id> <prompt...> | session stop <id> | workspace list | workspace status <path> | workflow run <template> | approve <token|stream_id>\n',
+    'usage: vibecodium start|dev | list [--project <p>] [--query <q>] [--all] [--json] | machine list | session open --provider <p> --prompt <text> [--cwd <dir>] | session resume <omp|codex> <ref> <prompt...> | session send <id> <prompt...> | session stop <id> | workspace list | workspace status <path> | workflow run <template> | approve <token|stream_id>\n',
   );
   process.exitCode = 2;
 }

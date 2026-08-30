@@ -166,6 +166,87 @@ test('open creates an omp session for the requested path and attaches it', async
     globalThis.fetch = originalFetch;
   }
 });
+test('list defaults to operator sessions and emits JSON shape', async () => {
+  const sessions = listFixtures();
+  const result = await runListForTest(['--json'], sessions);
+  assert.deepEqual((JSON.parse(result.output) as { sessions: unknown[] }).sessions, [sessions[0]]);
+  assert.deepEqual(result.requestArgs, { limit: 1_000 });
+});
+
+test('list --all includes agent sessions', async () => {
+  const sessions = listFixtures();
+  const result = await runListForTest(['--all', '--json'], sessions);
+  assert.deepEqual((JSON.parse(result.output) as { sessions: unknown[] }).sessions, sessions);
+});
+
+test('list --project passes and applies the project filter', async () => {
+  const sessions = listFixtures();
+  const result = await runListForTest(['--project', 'beta', '--all', '--json'], sessions);
+  assert.deepEqual((JSON.parse(result.output) as { sessions: unknown[] }).sessions, [sessions[1]]);
+  assert.deepEqual(result.requestArgs, { limit: 1_000, project: 'beta' });
+});
+
+test('list --query matches session metadata and renders attach hints', async () => {
+  const sessions = listFixtures();
+  const result = await runListForTest(['--query', 'needle'], sessions);
+  assert.match(result.output, /Operator label/);
+  assert.match(result.output, /vibecodium attach operator-1/);
+  assert.doesNotMatch(result.output, /Agent label/);
+});
+
+function listFixtures() {
+  return [
+    {
+      session_id: 'operator-1',
+      stream_id: 'session:operator-1',
+      provider: 'omp',
+      label: 'Operator label',
+      origin: 'operator',
+      project: 'alpha',
+      status: 'live',
+      prompt: 'needle prompt',
+      updated_at: '2026-08-30T12:00:00.000Z',
+    },
+    {
+      session_id: 'agent-1',
+      stream_id: 'session:agent-1',
+      provider: 'omp',
+      label: 'Agent label',
+      origin: 'agent',
+      project: 'beta',
+      status: 'done',
+      updated_at: '2026-08-30T11:00:00.000Z',
+    },
+  ] as const;
+}
+
+async function runListForTest(
+  args: string[],
+  sessions: readonly unknown[],
+): Promise<{ readonly output: string; readonly requestArgs: unknown }> {
+  const originalFetch = globalThis.fetch;
+  const originalWrite = process.stdout.write;
+  const originalExitCode = process.exitCode;
+  let output = '';
+  let requestArgs: unknown;
+  globalThis.fetch = async (input, init) => {
+    assert.equal(commandName(String(input)), 'session.list');
+    requestArgs = JSON.parse(String(init?.body ?? '{}')) as unknown;
+    return response({ sessions });
+  };
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    await main(['list', ...args], { client: client(), spawn: neverSpawn });
+    return { output, requestArgs };
+  } finally {
+    process.stdout.write = originalWrite;
+    process.exitCode = originalExitCode;
+    globalThis.fetch = originalFetch;
+  }
+}
 
 function client(): VibecodiumClient {
   return createClient({ baseUrl: 'http://127.0.0.1:4310' });
