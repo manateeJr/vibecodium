@@ -6,6 +6,8 @@ import { createVoiceSubsystem } from '../voice/index.js';
 import { createSessionSubsystem } from '../session/index.js';
 import { createWorkspaceSubsystem } from '../workspace/index.js';
 import { createProjectsSubsystem } from '../projects/index.js';
+import { createFilesSubsystem } from '../files/index.js';
+import { createSkillsSubsystem } from '../skills/index.js';
 
 import { createTelemetrySubsystem } from '../telemetry/index.js';
 import { createWorkflowSubsystem } from '../workflow/index.js';
@@ -23,6 +25,8 @@ export function registerSubsystems(
     createSessionSubsystem(),
     createWorkspaceSubsystem(),
     createProjectsSubsystem(),
+    createFilesSubsystem(),
+    createSkillsSubsystem(),
   ];
   for (const subsystem of selected) subsystem.register(context);
   return selected;
