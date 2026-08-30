@@ -312,6 +312,41 @@ test('SDK reconnects after a socket close and backfills from the next sequence',
   }
 });
 
+test('SDK reconnects on demand and keeps the last-seen cursor', () => {
+  const originalWebSocket = (globalThis as unknown as { WebSocket?: unknown }).WebSocket;
+  StubSocket.instances.length = 0;
+  (globalThis as unknown as { WebSocket: typeof StubSocket }).WebSocket = StubSocket;
+  try {
+    const client = createClient({ baseUrl: 'http://127.0.0.1:4310/' });
+    const received: EventEnvelope[] = [];
+    const unsubscribe = client.subscribe(0, (event) => received.push(event), 'session:x');
+    const firstSocket = StubSocket.instances[0]!;
+    firstSocket.open();
+    const event: EventEnvelope = {
+      seq: 11,
+      stream_id: 'session:x',
+      type: 'session_output',
+      payload: { session_id: 'x', index: 0, text: 'reply' },
+      ts: '2026-01-01T00:00:00.000Z',
+    };
+    firstSocket.message({ type: 'event', event });
+
+    client.reconnect();
+
+    const secondSocket = StubSocket.instances[1]!;
+    secondSocket.open();
+    assert.deepEqual(JSON.parse(secondSocket.sent[0]!), {
+      type: 'subscribe',
+      streamId: 'session:x',
+      fromSeq: 12,
+    });
+    assert.deepEqual(received, [event]);
+    unsubscribe();
+  } finally {
+    (globalThis as unknown as { WebSocket?: unknown }).WebSocket = originalWebSocket;
+  }
+});
+
 test('SDK subscribes to read-only PTY frames and unsubscribes cleanly', () => {
   const originalWebSocket = (globalThis as unknown as { WebSocket?: unknown }).WebSocket;
   StubSocket.instances.length = 0;

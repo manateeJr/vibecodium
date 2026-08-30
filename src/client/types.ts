@@ -51,6 +51,8 @@ export interface VibecodiumClient {
     streamId?: string,
   ): () => void;
   subscribePty(sessionId: string, listeners: PtyListeners): () => void;
+  /** Force-close and reopen every live subscription socket, retaining each last-seen cursor. */
+  reconnect(): void;
 }
 
 /**

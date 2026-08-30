@@ -439,7 +439,14 @@
 
     <script>
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        const controlledAtLoad = Boolean(navigator.serviceWorker.controller);
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!controlledAtLoad || refreshing) return;
+          refreshing = true;
+          globalThis.location.reload();
+        });
+        void navigator.serviceWorker.register('/sw.js', { scope: '/' });
       }
     </script>
     <script src="/vendor/xterm/xterm.js"></script>

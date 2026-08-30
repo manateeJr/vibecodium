@@ -4,6 +4,7 @@ import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
 import { loadToken, saveToken } from '/lib/storage.js';
 import { eventClock } from '/lib/time.js';
 import { createActions } from '/ui/actions.js';
+import { wireConnectivity } from '/ui/connectivity.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { queryElements } from '/ui/elements.js';
 import { createFilesPanel } from '/ui/files.js';
@@ -183,11 +184,12 @@ refreshControls();
 renderStream();
 updateScope();
 void boot();
-globalThis.addEventListener('online', () => {
-  setStatus(selectedStreamId ? 'LIVE' : 'READY', selectedStreamId ? 'live' : 'idle');
-  if (selectedStreamId) void hydrateStream(selectedStreamId);
+wireConnectivity({
+  setStatus,
+  getSelected: () => selectedStreamId,
+  hydrate: hydrateStream,
+  reconnect: () => client.reconnect(),
 });
-globalThis.addEventListener('offline', () => setStatus('OFFLINE', 'bad'));
 client.subscribe(0, onEvent, '*');
 
 // Projects come first: external sessions and adopted skills are both keyed off the project list.

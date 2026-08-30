@@ -31,6 +31,7 @@ const SHELL_ASSETS = Object.freeze([
   '/ui/skill-builder.js',
   '/ui/skills.js',
   '/ui/transcript.js',
+  '/ui/connectivity.js',
   '/ui/pty-mirror.js',
   '/ui/session-surface.js',
   '/ui/session-view.js',

@@ -152,6 +152,7 @@ export type {
 export type * from '../contracts/commands.js';
 
 export function createClient(options: ClientOptions): VibecodiumClient {
+  const reconnectors = new Set<() => void>();
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   let activeStreamId: string | undefined;
 
@@ -306,15 +307,30 @@ export function createClient(options: ClientOptions): VibecodiumClient {
         scheduleReconnect();
       });
     };
+    const forceReconnect = (): void => {
+      if (cancelled || !Socket) return;
+      if (reconnectTimer !== undefined) globalThis.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+      reconnectAttempt = 0;
+      const currentSocket = socket;
+      socket = undefined;
+      currentSocket?.close();
+      connect();
+    };
+    reconnectors.add(forceReconnect);
     if (Socket) connect();
     return () => {
       cancelled = true;
+      reconnectors.delete(forceReconnect);
       if (reconnectTimer !== undefined) globalThis.clearTimeout(reconnectTimer);
       reconnectTimer = undefined;
       const currentSocket = socket;
       socket = undefined;
       currentSocket?.close();
     };
+  };
+  const reconnect = (): void => {
+    for (const forceReconnect of reconnectors) forceReconnect();
   };
 
   const postCommand = <Name extends Commands.CommandName>(
@@ -361,6 +377,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     subscribe,
     subscribePty: (sessionId: string, listeners: PtyListeners) =>
       createPtySubscription(options, sessionId, listeners),
+    reconnect,
   };
 }
 
