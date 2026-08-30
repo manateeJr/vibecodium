@@ -8,6 +8,7 @@ export {
   providerByName,
 } from './provider.js';
 export { ProviderProcessError } from './cli-provider.js';
+export { OmpHarnessPlugin, ompHarnessPlugin } from './omp-harness-plugin.js';
 export type { ChildProcessSpawner, CliProviderOptions } from './cli-provider.js';
 export type {
   ProviderCapabilityMatrix,
