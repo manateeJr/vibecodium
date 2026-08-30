@@ -25,8 +25,10 @@ export class OmpHarnessPlugin implements HarnessPlugin {
     if (!value) return false;
     const message = objectField(value, 'message') ?? value;
     return (
-      value.type === undefined || value.type === 'message'
-    ) && message.role === 'assistant' && message.stopReason === 'stop';
+      (value.type === undefined || value.type === 'message') &&
+      message.role === 'assistant' &&
+      message.stopReason === 'stop'
+    );
   }
 
   public parseTranscriptLine(line: string): HarnessTranscriptRecord | null {
@@ -66,7 +68,10 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+function objectField(
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
   const candidate = value[key];
   return isObject(candidate) ? candidate : undefined;
 }

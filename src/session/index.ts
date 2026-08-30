@@ -24,6 +24,7 @@ import type {
   SubstrateSessionState,
 } from '../contracts/substrate-contract.js';
 import { AdmissionBudget, admissionConfigFromEnv } from './admission.js';
+import { PersistentSessionManager } from './persistent-session-manager.js';
 import {
   asRecord,
   errorMessage,
@@ -35,6 +36,7 @@ import {
   sessionStopArgs,
 } from './session-helpers.js';
 import type { SessionTable } from './session-table.js';
+import { startPersistentSession } from './persistent-session-start.js';
 
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
@@ -48,6 +50,9 @@ export interface SessionSubsystemOptions {
   readonly sessionStorageRoot?: string;
   readonly substrate?: SubstrateClient;
   readonly sessionTable?: SessionTable;
+  readonly idleTimeoutMs?: number;
+  readonly reaperIntervalMs?: number;
+  readonly now?: () => Date;
 }
 type SessionRecord = { summary: SessionSummary; readonly startedSeq: number };
 export class SessionSubsystem implements Subsystem {
@@ -62,11 +67,15 @@ export class SessionSubsystem implements Subsystem {
   private readonly sessionStorageDirs = new Map<string, string>();
   private readonly stoppedSessions = new Set<string>();
   private readonly substrateAttachments = new Map<string, SubstrateAttachment>();
+  private persistentManager: PersistentSessionManager | undefined;
   private readonly reconciledSubstrateSessions = new Set<string>();
   private readonly sessionStorageRoot: string;
   private readonly admission: AdmissionBudget;
   private context: SubsystemContext | undefined;
   private reconciliationPromise: Promise<void> | undefined;
+  private readonly idleTimeoutMs: number | undefined;
+  private readonly reaperIntervalMs: number | undefined;
+  private readonly now: () => Date;
   private reconciliationStarted = false;
   private registered = false;
   public constructor(options: SessionSubsystemOptions = {}) {
@@ -78,11 +87,30 @@ export class SessionSubsystem implements Subsystem {
     this.admission = options.admission ?? new AdmissionBudget(admissionConfigFromEnv());
     this.substrate = options.substrate;
     this.sessionTable = options.sessionTable;
+    this.idleTimeoutMs = options.idleTimeoutMs;
+    this.reaperIntervalMs = options.reaperIntervalMs;
+    this.now = options.now ?? (() => new Date());
   }
   public register(context: SubsystemContext): void {
     if (this.registered) throw new Error('session subsystem is already registered');
     this.registered = true;
     this.context = context;
+    if (this.substrate) {
+      this.persistentManager = new PersistentSessionManager({
+        substrate: this.substrate,
+        ...(this.sessionTable === undefined ? {} : { sessionTable: this.sessionTable }),
+        sessionStorageRoot: this.sessionStorageRoot,
+        sessionStorageDirs: this.sessionStorageDirs,
+        append: context.append.bind(context),
+        summaryFor: (sessionId) => this.sessionRecords.get(sessionId)?.summary,
+        onStateChange: (sessionId, state, reason) =>
+          this.emitSessionState(sessionId, state, reason),
+        now: this.now,
+        ...(this.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: this.idleTimeoutMs }),
+        ...(this.reaperIntervalMs === undefined ? {} : { reaperIntervalMs: this.reaperIntervalMs }),
+      });
+      this.persistentManager.startReaper();
+    }
     context.registerProjector('session-summaries', (event) => this.projectEvent(event), 0);
     context.registerCommand(COMMAND_NAMES.sessionOpen, (command: unknown) => this.open(command));
     context.registerCommand(COMMAND_NAMES.sessionResume, (command: unknown) =>
@@ -92,6 +120,18 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
     context.registerCommand(COMMAND_NAMES.sessionList, (command: unknown) => this.list(command));
     context.registerCommand(COMMAND_NAMES.sessionFork, (command: unknown) => this.fork(command));
+    context.registerCommand(
+      COMMAND_NAMES.sessionEnsureLive,
+      (command: unknown) =>
+        this.persistentManager?.ensureLiveCommand(command) ??
+        Promise.reject(new Error('persistent substrate is not configured')),
+    );
+    context.registerCommand(
+      COMMAND_NAMES.sessionSendKeys,
+      (command: unknown) =>
+        this.persistentManager?.sendKeysCommand(command) ??
+        Promise.reject(new Error('persistent substrate is not configured')),
+    );
     void this.reconcile().catch(() => undefined);
   }
   public reconcile(): Promise<void> {
@@ -162,6 +202,16 @@ export class SessionSubsystem implements Subsystem {
     }
     this.reconciledSubstrateSessions.add(record.sessionId);
     this.emitSessionState(record.sessionId, 'live', 'reconciled');
+    if (this.persistentManager?.supports(record.provider)) {
+      try {
+        const updated = await this.persistentManager.attach(record);
+        this.sessionStorageDirs.set(record.sessionId, updated.storageDir);
+      } catch {
+        this.reconciledSubstrateSessions.delete(record.sessionId);
+        this.emitSessionState(record.sessionId, 'resumable', 'reconciled');
+      }
+      return;
+    }
     try {
       const attachment = await substrate.attach(record.substrateName);
       this.substrateAttachments.set(record.sessionId, attachment);
@@ -198,11 +248,28 @@ export class SessionSubsystem implements Subsystem {
     });
   }
   private startSession(args: SessionOpenArgs, resumeRef?: string): Promise<SessionOpenResult> {
+    if (this.persistentManager?.supports(args.provider)) {
+      const active =
+        [...this.sessions.values()].filter((state) => state.terminal === false).length +
+        (this.persistentManager.activeCount ?? 0);
+      return startPersistentSession({
+        args,
+        ...(resumeRef === undefined ? {} : { resumeRef }),
+        active,
+        admission: this.admission,
+        idFactory: this.idFactory,
+        context: this.requireContext(),
+        manager: this.persistentManager,
+        onStarted: (sessionId) => this.markSessionLive(sessionId),
+      });
+    }
     return spawnSession({
       args,
       ...(resumeRef === undefined ? {} : { resumeRef }),
       context: this.requireContext(),
-      active: [...this.sessions.values()].filter((state) => state.terminal === false).length,
+      active:
+        [...this.sessions.values()].filter((state) => state.terminal === false).length +
+        (this.persistentManager?.activeCount ?? 0),
       admission: this.admission,
       sessionStorageDirs: this.sessionStorageDirs,
       idFactory: this.idFactory,
@@ -216,8 +283,13 @@ export class SessionSubsystem implements Subsystem {
       onWorkerError: (state, message, terminal) => this.failSession(state, message, terminal),
     });
   }
+
   public send(command: unknown): SessionSendResult {
     const args = sessionSendArgs(command);
+    if (this.persistentManager?.has(args.session_id)) {
+      const turn = this.persistentManager.send(args.session_id, args.prompt);
+      return { stream_id: `session:${args.session_id}`, turn };
+    }
     const state = this.sessions.get(args.session_id);
     if (!state || state.terminal) throw new Error('session not found');
     if (state.busy) throw new Error('session is busy');
@@ -244,6 +316,19 @@ export class SessionSubsystem implements Subsystem {
   }
   public async stop(command: unknown): Promise<SessionStopResult> {
     const args = sessionStopArgs(command);
+    if (this.persistentManager?.has(args.session_id)) {
+      const provider = this.sessionTable?.get(args.session_id)?.provider ?? 'omp';
+      this.requireContext().append(`session:${args.session_id}`, 'session_complete', {
+        session_id: args.session_id,
+        provider,
+      });
+      this.stoppedSessions.add(args.session_id);
+      await this.persistentManager.stop(args.session_id);
+      if (this.sessionTable?.get(args.session_id) !== undefined) {
+        this.sessionTable.updateState(args.session_id, 'closed');
+      }
+      return { stopped: true };
+    }
     const state = this.sessions.get(args.session_id);
     if (!state || state.terminal) return { stopped: false };
     state.terminal = true;
@@ -277,6 +362,7 @@ export class SessionSubsystem implements Subsystem {
       if (state.worker.connected || !state.worker.killed) state.worker.kill();
     }
     this.sessions.clear();
+    void this.persistentManager?.shutdown();
   }
   private handleWorkerMessage(state: SessionState, message: WorkerOutputMessage): void {
     if (state.terminal || !message || message.stream_id !== state.stream_id) return;
@@ -300,6 +386,11 @@ export class SessionSubsystem implements Subsystem {
       this.sessions.delete(state.session_id);
     }
   }
+  public reapIdle(): Promise<readonly string[]> {
+    if (!this.persistentManager) return Promise.resolve([]);
+    return this.persistentManager.runReaper();
+  }
+
   private projectEvent(event: EventEnvelope): void {
     const payload = asRecord(event.payload);
     const eventType = event.type as string;
@@ -347,6 +438,7 @@ export class SessionSubsystem implements Subsystem {
       payload?.state === 'live' &&
       ((this.substrate === undefined && this.sessionTable === undefined) ||
         this.sessions.has(session_id) ||
+        this.persistentManager?.has(session_id) === true ||
         this.reconciledSubstrateSessions.has(session_id));
     const status = substrateStateEvent
       ? stateIsLive
@@ -368,15 +460,15 @@ export class SessionSubsystem implements Subsystem {
     };
   }
   private sessionStartStatus(session_id: string): SessionSummary['status'] {
-    if (this.substrate === undefined && this.sessionTable === undefined) return 'live';
-    if (this.sessions.has(session_id)) return 'live';
+    if (this.sessions.has(session_id) || this.persistentManager?.has(session_id) === true)
+      return 'live';
     const record = this.sessionTable?.get(session_id);
     return this.reconciledSubstrateSessions.has(session_id) && record?.state === 'live'
       ? 'live'
       : 'stopped';
   }
   private markSessionLive(session_id: string): void {
-    this.applySubstrateState(session_id, 'live', new Date().toISOString());
+    this.applySubstrateState(session_id, 'live', this.now().toISOString());
   }
   private applySubstrateState(
     session_id: string,

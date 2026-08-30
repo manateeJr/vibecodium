@@ -1,0 +1,335 @@
+import assert from 'node:assert/strict';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import type { EventEnvelope, EventKind, EventPayload } from '../src/contracts/events.js';
+import type { EventHandler, SubsystemContext } from '../src/contracts/subsystem.js';
+import type {
+  SubstrateAttachment,
+  SubstrateClient,
+  SubstrateCreateOptions,
+  SubstrateKey,
+  SubstrateOutputListener,
+  SubstrateSessionInfo,
+} from '../src/contracts/substrate-contract.js';
+import { OmpHarnessPlugin } from '../src/provider/omp-harness-plugin.js';
+import { SessionSubsystem } from '../src/session/index.js';
+import { SessionTranscriptTailer } from '../src/session/transcript-tailer.js';
+import { SessionTable } from '../src/session/session-table.js';
+
+class TestContext implements SubsystemContext {
+  public readonly events: EventEnvelope[] = [];
+  public readonly commands = new Map<string, (command: unknown) => unknown>();
+  private readonly projectors = new Map<string, EventHandler>();
+  private nextSequence = 1;
+
+  public registerProjector(name: string, onEvent: EventHandler, from_seq = 0): void {
+    this.projectors.set(name, onEvent);
+    for (const event of this.events) if (event.seq > from_seq) onEvent(event);
+  }
+
+  public registerCommand(name: string, handler: (command: unknown) => unknown): void {
+    this.commands.set(name, handler);
+  }
+
+  public registerListener(): void {}
+
+  public subscribe(): () => void {
+    return () => undefined;
+  }
+
+  public append<K extends EventKind>(stream_id: string, type: K, payload: EventPayload<K>): number {
+    const event: EventEnvelope<K> = {
+      stream_id,
+      seq: this.nextSequence++,
+      type,
+      payload,
+      ts: new Date(this.nextSequence * 1000).toISOString(),
+    };
+    this.events.push(event);
+    for (const projector of this.projectors.values()) projector(event);
+    return event.seq;
+  }
+}
+
+class TestSubstrate implements SubstrateClient {
+  public readonly created: Array<{ name: string; argv: readonly string[] }> = [];
+  public readonly sentKeys: Array<{ name: string; key: SubstrateKey }> = [];
+  public readonly writes: Array<{ name: string; text: string }> = [];
+  public readonly killedNames: string[] = [];
+  public readonly attachedNames: string[] = [];
+  public readonly liveNames = new Set<string>();
+
+  public async createSession(
+    name: string,
+    argv: readonly string[],
+    options?: SubstrateCreateOptions,
+  ): Promise<SubstrateSessionInfo> {
+    void options;
+    this.created.push({ name, argv });
+    this.liveNames.add(name);
+    return { name, live: true };
+  }
+
+  public async attach(name: string): Promise<SubstrateAttachment> {
+    this.attachedNames.push(name);
+    return { name, detach: async () => undefined };
+  }
+
+  public async write(name: string, bytes: Uint8Array): Promise<void> {
+    this.writes.push({ name, text: new TextDecoder().decode(bytes) });
+  }
+
+  public async sendKey(name: string, key: SubstrateKey): Promise<void> {
+    this.sentKeys.push({ name, key });
+  }
+
+  public onOutput(listener: SubstrateOutputListener): () => void {
+    void listener;
+    return () => undefined;
+  }
+
+  public async isLive(name: string): Promise<boolean> {
+    return this.liveNames.has(name);
+  }
+
+  public async kill(name: string): Promise<void> {
+    this.killedNames.push(name);
+    this.liveNames.delete(name);
+  }
+
+  public async listSessions(): Promise<readonly SubstrateSessionInfo[]> {
+    return [...this.liveNames].map((name) => ({ name, live: true }));
+  }
+}
+const plugin = new OmpHarnessPlugin();
+
+function nextImmediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+test('OMP plugin parses fixture records and distinguishes idle stop from error', () => {
+  const fixture = readFileSync(
+    path.resolve(import.meta.dirname, '..', '..', 'test/fixtures/omp-transcript.jsonl'),
+    'utf8',
+  );
+  const records = fixture
+    .trim()
+    .split('\n')
+    .map((line) => plugin.parseTranscriptLine(line))
+    .filter((record) => record !== null);
+  assert.deepEqual(
+    records.map((record) => record.kind),
+    ['user', 'assistant', 'steering', 'assistant'],
+  );
+  assert.equal(plugin.idleDetector(records[1]!), true);
+  assert.equal(plugin.idleDetector(records[3]!), false);
+  assert.equal(plugin.parseTranscriptLine('{broken'), null);
+  assert.deepEqual(
+    plugin.launchArgv({ sessionId: 'session-1', cwd: '/workspace', storageDir: '/tmp/s1' }),
+    ['omp', '--session-dir', '/tmp/s1'],
+  );
+  assert.deepEqual(
+    plugin.launchArgv({
+      sessionId: 'session-1',
+      cwd: '/workspace',
+      storageDir: '/tmp/s1',
+      resumeRef: 'omp-ref',
+    }),
+    ['omp', '--session-dir', '/tmp/s1', '--resume', 'omp-ref'],
+  );
+});
+
+test('JSONL tailer waits for complete lines and labels steering input', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-tailer-'));
+  const transcriptPath = path.join(root, 'session.jsonl');
+  writeFileSync(transcriptPath, '');
+  const context = new TestContext();
+  const tailer = new SessionTranscriptTailer({
+    transcriptPath,
+    sessionId: 'tail-session',
+    streamId: 'session:tail-session',
+    plugin,
+    append: context.append.bind(context),
+  });
+  try {
+    await tailer.start();
+    appendFileSync(transcriptPath, '{"type":"message","message":{"role":"user"');
+    await tailer.readAvailable();
+    assert.equal(context.events.length, 0);
+    appendFileSync(
+      transcriptPath,
+      ',"content":[{"type":"text","text":"hello"}]}}\nnot-json\n{"type":"message","message":{"role":"user","steering":true,"content":[{"type":"text","text":"steer"}]}}\n',
+    );
+    await tailer.readAvailable();
+    assert.deepEqual(
+      context.events.map((event) => event.type),
+      ['session_input', 'session_input'],
+    );
+    assert.deepEqual(context.events[0]?.payload, {
+      session_id: 'tail-session',
+      turn: 1,
+      text: 'hello',
+    });
+    assert.deepEqual(context.events[1]?.payload, {
+      session_id: 'tail-session',
+      turn: 1,
+      text: 'steer',
+      steering: true,
+    });
+  } finally {
+    await tailer.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('persistent session commands use resume argv and raw key passthrough', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-session-'));
+  const context = new TestContext();
+  const substrate = new TestSubstrate();
+  const table = new SessionTable({ filename: ':memory:' });
+  let nextId = 0;
+  const subsystem = new SessionSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    idFactory: () => `session-${++nextId}`,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    const opened = await subsystem.open({ provider: 'omp', prompt: 'first prompt' });
+    assert.deepEqual(substrate.created[0]?.argv, [
+      'omp',
+      '--session-dir',
+      path.join(root, 'session-1'),
+      'first prompt',
+    ]);
+    const beforeKeys = substrate.sentKeys.length;
+    const sendKeys = context.commands.get('session.send_keys');
+    assert.ok(sendKeys);
+    assert.deepEqual(
+      await sendKeys({ session_id: opened.session_id, keys: ['escape', 'interrupt'] }),
+      {
+        sent: 2,
+      },
+    );
+    assert.deepEqual(
+      substrate.sentKeys.slice(beforeKeys).map((entry) => entry.key),
+      ['escape', 'interrupt'],
+    );
+
+    const ensureLive = context.commands.get('session.ensure_live');
+    assert.ok(ensureLive);
+    assert.deepEqual(await ensureLive({ session_id: opened.session_id }), {
+      state: 'live',
+      substrate_name: 'substrate-session-1',
+    });
+    assert.equal(substrate.created.length, 1);
+
+    await subsystem.stop({ session_id: opened.session_id });
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ensure-live relaunches a resumable record with its resume reference', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-resume-'));
+  const context = new TestContext();
+  const substrate = new TestSubstrate();
+  const table = new SessionTable({ filename: ':memory:' });
+  table.upsert({
+    sessionId: 'resume-session',
+    provider: 'omp',
+    harnessRef: 'omp-ref',
+    substrateName: 'substrate-resume-session',
+    transcriptPath: path.join(root, 'resume-session', 'session.jsonl'),
+    storageDir: path.join(root, 'resume-session'),
+    state: 'resumable',
+    updatedAt: '2026-08-30T00:00:00.000Z',
+  });
+  context.append('session:resume-session', 'session_started', {
+    session_id: 'resume-session',
+    provider: 'omp',
+    prompt: 'old prompt',
+    cwd: '/workspace',
+  });
+  const subsystem = new SessionSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    const ensureLive = context.commands.get('session.ensure_live');
+    assert.ok(ensureLive);
+    assert.deepEqual(await ensureLive({ session_id: 'resume-session' }), {
+      state: 'live',
+      substrate_name: 'substrate-resume-session',
+    });
+    assert.deepEqual(substrate.created[0]?.argv, [
+      'omp',
+      '--session-dir',
+      path.join(root, 'resume-session'),
+      '--resume',
+      'omp-ref',
+    ]);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('idle reaper kills persistent substrate and emits reaped state', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-reaper-'));
+  const context = new TestContext();
+  const substrate = new TestSubstrate();
+  const table = new SessionTable({ filename: ':memory:' });
+  let clock = 1_000;
+  const subsystem = new SessionSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    idFactory: () => 'idle-session',
+    now: () => new Date(clock),
+    idleTimeoutMs: 10_000,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    const opened = await subsystem.open({ provider: 'omp', prompt: 'first' });
+    assert.equal(opened.session_id, 'idle-session');
+    assert.deepEqual(
+      table.list().map((record) => record.sessionId),
+      ['idle-session'],
+    );
+    const transcriptPath = table.get('idle-session')?.transcriptPath;
+    assert.ok(transcriptPath);
+    appendFileSync(
+      transcriptPath,
+      '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"first"}]}}\n' +
+        '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"stopReason":"stop"}}\n',
+    );
+    await nextImmediate();
+    await subsystem.reapIdle();
+    clock += 10_000;
+    const reaped = await subsystem.reapIdle();
+    assert.deepEqual(reaped, ['idle-session']);
+    assert.deepEqual(substrate.killedNames, ['substrate-idle-session']);
+    assert.equal(table.get('idle-session')?.state, 'resumable');
+    assert.deepEqual(context.events.at(-1)?.payload, {
+      session_id: 'idle-session',
+      state: 'resumable',
+      reason: 'reaped',
+    });
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

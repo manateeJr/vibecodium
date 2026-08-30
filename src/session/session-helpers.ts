@@ -1,14 +1,17 @@
 import { cp, mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  SessionEnsureLiveArgs,
   SessionForkResult,
   SessionListResult,
   SessionOpenArgs,
   SessionResumeArgs,
   SessionSendArgs,
+  SessionSendKeysArgs,
   SessionStopArgs,
   SessionSummary,
 } from '../contracts/commands.js';
+import type { SubstrateKey } from '../contracts/substrate-contract.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
 
 export async function copySessionStore(
@@ -85,6 +88,30 @@ export function sessionSendArgs(command: unknown): SessionSendArgs {
     throw new Error('session_id is required');
   if (typeof value.prompt !== 'string') throw new Error('prompt is required');
   return { session_id: value.session_id, prompt: value.prompt };
+}
+
+export function sessionEnsureLiveArgs(command: unknown): SessionEnsureLiveArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim()) {
+    throw new Error('session_id is required');
+  }
+  return { session_id: value.session_id };
+}
+
+export function sessionSendKeysArgs(command: unknown): SessionSendKeysArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim()) {
+    throw new Error('session_id is required');
+  }
+  if (
+    !Array.isArray(value.keys) ||
+    value.keys.some(
+      (key) => key !== 'ctrl_u' && key !== 'enter' && key !== 'escape' && key !== 'interrupt',
+    )
+  ) {
+    throw new Error('keys must contain valid substrate keys');
+  }
+  return { session_id: value.session_id, keys: value.keys as SubstrateKey[] };
 }
 
 export function sessionStopArgs(command: unknown): SessionStopArgs {
