@@ -7,6 +7,30 @@
   "orientation": "portrait",
   "background_color": "#06130d",
   "theme_color": "#06130d",
+  "share_target": {
+    "action": "/share-intake",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "project",
+      "text": "note",
+      "files": [
+        {
+          "name": "file",
+          "accept": [
+            "*/*",
+            "image/*",
+            "video/*",
+            "audio/*",
+            "text/*",
+            "application/pdf",
+            "application/json",
+            "application/zip"
+          ]
+        }
+      ]
+    }
+  },
   "icons": [
     {
       "src": "/icons/icon-192.png",
