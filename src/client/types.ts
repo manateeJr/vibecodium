@@ -24,6 +24,7 @@ export interface VibecodiumClient {
   ): Promise<Commands.SessionAttachInfoResult>;
   listWorkspaces(): Promise<Commands.WorkspaceListResult>;
   machineList(): Promise<Commands.MachineListResult>;
+  machineRead(args: Commands.MachineReadArgs): Promise<Commands.MachineReadResult>;
   workspaceStatus(args: Commands.WorkspaceStatusArgs): Promise<Commands.WorkspaceStatusResult>;
   listProjects(): Promise<Commands.ProjectListResult>;
   detectProject(args: Commands.ProjectDetectArgs): Promise<Commands.ProjectDetectResult>;
@@ -36,6 +37,9 @@ export interface VibecodiumClient {
   filesDownload(args: Commands.FilesDownloadArgs): Promise<Commands.FilesDownloadResult>;
   filesUpload(args: Commands.FilesUploadArgs): Promise<Commands.FilesUploadResult>;
   filesSharedDir(): Promise<Commands.FilesSharedDirResult>;
+  filesSharedStaged(
+    args: Commands.FilesSharedStagedArgs,
+  ): Promise<Commands.FilesSharedStagedResult>;
   skillList(): Promise<Commands.SkillListResult>;
   skillDraft(args: Commands.SkillDraftArgs): Promise<Commands.SkillDraftResult>;
   skillSave(args: Commands.SkillSaveArgs): Promise<Commands.SkillSaveResult>;

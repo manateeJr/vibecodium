@@ -4,8 +4,15 @@ import path from 'node:path';
 import {
   COMMAND_NAMES,
   type MachineListResult,
+  type MachineReadResult,
   type MachineSessionSummary,
 } from '../contracts/commands.js';
+import {
+  DEFAULT_MACHINE_READ_LIMIT,
+  machineReadArgs,
+  machineReadResult,
+  readMachineTranscript,
+} from './read.js';
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 
 const SESSION_PREFIX_BYTES = 256 * 1024;
@@ -48,6 +55,7 @@ export class MachineSessionsSubsystem implements Subsystem, MachineSessionResolv
 
   public register(context: SubsystemContext): void {
     context.registerCommand(COMMAND_NAMES.machineList, () => this.list());
+    context.registerCommand(COMMAND_NAMES.machineRead, (command: unknown) => this.read(command));
   }
 
   public async list(): Promise<MachineListResult> {
@@ -72,6 +80,19 @@ export class MachineSessionsSubsystem implements Subsystem, MachineSessionResolv
         kind: session.kind,
       }));
     return { sessions };
+  }
+  public async read(command: unknown): Promise<MachineReadResult> {
+    const args = machineReadArgs(command);
+    if (args.source === 'codex') {
+      return machineReadResult([], 'codex transcript parsing is unavailable');
+    }
+    const ref = args.ref.startsWith('machine:') ? args.ref : `machine:omp:${args.ref}`;
+    const resolved = await this.resolve(ref);
+    if (!resolved || resolved.source !== 'omp')
+      throw new Error(`machine session not found: ${args.ref}`);
+    return machineReadResult(
+      await readMachineTranscript(resolved.path, args.limit ?? DEFAULT_MACHINE_READ_LIMIT),
+    );
   }
 
   public async resolve(ref: string): Promise<ResolvedMachineSession | undefined> {

@@ -13,6 +13,8 @@ import type {
   SubstrateOutputListener,
   SubstrateSessionInfo,
 } from '../src/contracts/substrate-contract.js';
+import { ompHarnessPlugin } from '../src/provider/omp-harness-plugin.js';
+import { PersistentSessionWorker } from '../src/server/session-worker.js';
 import { SessionSubsystem } from '../src/session/index.js';
 import { SessionTable } from '../src/session/session-table.js';
 
@@ -284,6 +286,56 @@ test('concurrent cold sends reject while the first relaunch is in flight', async
     substrate.release();
     subsystem.stopAll();
     table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+test('warm mid-turn sends inject the prompt without advancing the turn', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-steering-send-'));
+  const substrate = new TestSubstrate();
+  const worker = new PersistentSessionWorker({
+    substrate,
+    plugin: ompHarnessPlugin,
+    sessionId: 'steering-session',
+    streamId: 'session:steering-session',
+    provider: 'omp',
+    substrateName: 'substrate-steering-session',
+    storageDir: path.join(root, 'storage'),
+    transcriptPath: path.join(root, 'storage', 'session.jsonl'),
+    append: () => 1,
+  });
+  try {
+    await worker.start('initial prompt');
+    assert.equal(worker.isBusy, true);
+    assert.equal(await worker.sendPrompt('steering prompt'), 0);
+    assert.deepEqual(
+      substrate.sentKeys.map((entry) => entry.key),
+      ['ctrl_u', 'enter'],
+    );
+    assert.deepEqual(substrate.writes, [
+      { name: 'substrate-steering-session', text: 'steering prompt' },
+    ]);
+  } finally {
+    await worker.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('persistent sends before attach reject as not live', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-not-live-send-'));
+  const worker = new PersistentSessionWorker({
+    substrate: new TestSubstrate(),
+    plugin: ompHarnessPlugin,
+    sessionId: 'not-live-session',
+    streamId: 'session:not-live-session',
+    provider: 'omp',
+    substrateName: 'substrate-not-live-session',
+    storageDir: path.join(root, 'storage'),
+    transcriptPath: path.join(root, 'storage', 'session.jsonl'),
+    append: () => 1,
+  });
+  try {
+    await assert.rejects(() => worker.sendPrompt('prompt'), /persistent session is not live/);
+  } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });

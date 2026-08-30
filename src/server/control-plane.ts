@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { tokensToCssVars } from '../design/tokens.js';
 import { serveStaticAsset } from './static-assets.js';
 import { errorMessage, readJsonBody } from './control-plane-helpers.js';
+import { handleShareIntake } from './share-intake.js';
 import {
   COMMAND_NAMES,
   type CommandFrame,
@@ -232,6 +233,10 @@ export class ControlPlane {
         return;
       }
       this.sendJson(response, 200, { events: this.eventStore.read(stream_id, from_seq) });
+      return;
+    }
+    if (request.method === 'POST' && requestUrl.pathname === '/share-intake') {
+      void handleShareIntake(request, response);
       return;
     }
     if (request.method === 'GET') {

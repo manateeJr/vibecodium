@@ -169,8 +169,7 @@ export class PersistentSessionManager {
         return result.turn;
       });
     }
-    if (worker.isBusy) throw new Error('session is busy');
-    const turn = worker.currentTurn + 1;
+    const turn = worker.isBusy ? worker.currentTurn : worker.currentTurn + 1;
     void worker.sendPrompt(prompt).catch((error: unknown) => {
       this.append(`session:${sessionId}`, 'verify_failed', {
         session_id: sessionId,
