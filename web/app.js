@@ -275,6 +275,14 @@ async function loadSessions() {
     if (project?.name) args.project = project.name;
     const result = await client.listSessions(args);
     remoteSessions = [...result.sessions];
+    // Event replay can create a local entry before session.list resolves. Keep the local overlay's
+    // durable metadata in sync, or it hides labels/origins from the server summary after reload.
+    for (const summary of remoteSessions) {
+      const entry = sessions.get(summary.stream_id);
+      if (!entry) continue;
+      entry.sessionLabel = summary.label || '';
+      entry.origin = summary.origin || '';
+    }
     if (elements.composeNote.textContent.startsWith(SESSION_NOTE)) setComposeNote('');
   } catch (error) {
     remoteSessions = [];
