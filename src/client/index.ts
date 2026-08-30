@@ -58,6 +58,7 @@ const COMMAND_NAMES = {
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
   machineList: 'machine.list',
+  machineRead: 'machine.read',
   sessionResume: 'session.resume',
   workspaceStatus: 'workspace.status',
   projectList: 'project.list',
@@ -74,6 +75,7 @@ const COMMAND_NAMES = {
   filesDownload: 'files.download',
   filesUpload: 'files.upload',
   filesSharedDir: 'files.shared_dir',
+  filesSharedStaged: 'files.shared_staged',
   skillList: 'skill.list',
   skillDraft: 'skill.draft',
   skillSave: 'skill.save',
@@ -195,6 +197,8 @@ export function createClient(options: ClientOptions): VibecodiumClient {
 
   const machineList = (): Promise<MachineListResult> =>
     post<MachineListResult>(baseUrl, COMMAND_NAMES.machineList, {}, options.token);
+  const machineRead = (args: Commands.MachineReadArgs): Promise<Commands.MachineReadResult> =>
+    post<Commands.MachineReadResult>(baseUrl, COMMAND_NAMES.machineRead, args, options.token);
   const workspaceStatus = (args: WorkspaceStatusArgs): Promise<WorkspaceStatusResult> =>
     post<WorkspaceStatusResult>(baseUrl, COMMAND_NAMES.workspaceStatus, args, options.token);
   const listProjects = (): Promise<ProjectListResult> =>
@@ -353,6 +357,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     sessionAttachInfo,
     listWorkspaces,
     machineList,
+    machineRead,
     workspaceStatus,
     listProjects,
     detectProject,
@@ -368,6 +373,8 @@ export function createClient(options: ClientOptions): VibecodiumClient {
       postCommand(COMMAND_NAMES.filesDownload, args),
     filesUpload: (args: Commands.FilesUploadArgs) => postCommand(COMMAND_NAMES.filesUpload, args),
     filesSharedDir: () => postCommand(COMMAND_NAMES.filesSharedDir, {}),
+    filesSharedStaged: (args: Commands.FilesSharedStagedArgs) =>
+      postCommand(COMMAND_NAMES.filesSharedStaged, args),
     skillList: () => postCommand(COMMAND_NAMES.skillList, {}),
     skillDraft: (args: Commands.SkillDraftArgs) => postCommand(COMMAND_NAMES.skillDraft, args),
     skillSave: (args: Commands.SkillSaveArgs) => postCommand(COMMAND_NAMES.skillSave, args),

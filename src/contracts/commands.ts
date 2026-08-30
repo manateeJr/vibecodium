@@ -1,4 +1,8 @@
 import type { EventEnvelope } from './events.js';
+import { MACHINE_READ_COMMAND } from './machine-commands.js';
+import type * as MachineCommands from './machine-commands.js';
+import { FILES_SHARED_STAGED_COMMAND } from './files-commands.js';
+import type * as FilesCommands from './files-commands.js';
 import type {
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
@@ -50,6 +54,9 @@ export type {
   SessionStopResult,
   SessionSummary,
 } from './session-commands.js';
+export type * from './machine-commands.js';
+export { MACHINE_READ_COMMAND, FILES_SHARED_STAGED_COMMAND };
+export type * from './files-commands.js';
 
 export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
@@ -62,6 +69,7 @@ export const COMMAND_NAMES = {
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
   machineList: 'machine.list',
+  machineRead: MACHINE_READ_COMMAND,
   sessionResume: 'session.resume',
   workspaceStatus: 'workspace.status',
   projectList: 'project.list',
@@ -78,6 +86,7 @@ export const COMMAND_NAMES = {
   filesDownload: 'files.download',
   filesUpload: 'files.upload',
   filesSharedDir: 'files.shared_dir',
+  filesSharedStaged: FILES_SHARED_STAGED_COMMAND,
   skillList: 'skill.list',
   skillDraft: 'skill.draft',
   skillSave: 'skill.save',
@@ -122,21 +131,6 @@ export const SKILL_PROPOSE_COMMAND = COMMAND_NAMES.skillPropose;
 export const SKILL_INVOKE_COMMAND = COMMAND_NAMES.skillInvoke;
 
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
-
-export interface MachineSessionSummary {
-  readonly source: 'omp' | 'codex';
-  readonly ref: string;
-  readonly title: string;
-  readonly cwd: string;
-  readonly kind: 'main' | 'subagent';
-  readonly updated_at: string;
-}
-
-export type MachineListArgs = Record<string, never>;
-
-export interface MachineListResult {
-  readonly sessions: readonly MachineSessionSummary[];
-}
 
 export interface WorkspaceEntry {
   readonly name: string;
@@ -261,44 +255,6 @@ export interface HostSetSessionCapArgs {
 export interface HostSetSessionCapResult {
   readonly max_concurrent: number;
 }
-export interface FileEntry {
-  readonly name: string;
-  readonly path: string;
-  readonly is_dir: boolean;
-  readonly size?: number;
-  readonly mtime?: string;
-}
-export interface FilesListArgs {
-  readonly dir?: string;
-}
-export interface FilesListResult {
-  readonly entries: readonly FileEntry[];
-  readonly scope_roots: readonly string[];
-}
-export interface FilesDownloadArgs {
-  readonly path: string;
-}
-export interface FilesDownloadResult {
-  readonly name: string;
-  readonly mime: string;
-  readonly content_base64: string;
-  readonly size: number;
-}
-export interface FilesUploadArgs {
-  readonly session_id: string;
-  readonly name: string;
-  readonly content_base64: string;
-  readonly mime?: string;
-}
-export interface FilesUploadResult {
-  readonly path: string;
-  readonly size: number;
-}
-export type FilesSharedDirArgs = Record<string, never>;
-
-export interface FilesSharedDirResult {
-  readonly path: string;
-}
 export interface SkillParam {
   readonly name: string;
   readonly type: 'text' | 'enum' | 'bool';
@@ -374,7 +330,8 @@ export interface CommandArgsMap {
   'workspace.list': WorkspaceListArgs;
   'workflow.run': WorkflowRunArgs;
   'workflow.approve': WorkflowApproveArgs;
-  'machine.list': MachineListArgs;
+  'machine.list': MachineCommands.MachineListArgs;
+  'machine.read': MachineCommands.MachineReadArgs;
   'session.resume': SessionResumeArgs;
   'workspace.status': WorkspaceStatusArgs;
   'project.list': ProjectListArgs;
@@ -389,10 +346,11 @@ export interface CommandArgsMap {
   'session.ensure_live': SessionEnsureLiveArgs;
   'session.send_keys': SessionSendKeysArgs;
   'session.attach_info': SessionAttachInfoArgs;
-  'files.list': FilesListArgs;
-  'files.download': FilesDownloadArgs;
-  'files.upload': FilesUploadArgs;
-  'files.shared_dir': FilesSharedDirArgs;
+  'files.list': FilesCommands.FilesListArgs;
+  'files.download': FilesCommands.FilesDownloadArgs;
+  'files.upload': FilesCommands.FilesUploadArgs;
+  'files.shared_dir': FilesCommands.FilesSharedDirArgs;
+  'files.shared_staged': FilesCommands.FilesSharedStagedArgs;
   'skill.list': SkillListArgs;
   'skill.draft': SkillDraftArgs;
   'skill.save': SkillSaveArgs;
@@ -410,7 +368,8 @@ export interface CommandResultMap {
   'session.stop': SessionStopResult;
   'workflow.run': WorkflowRunResult;
   'workflow.approve': WorkflowApproveResult;
-  'machine.list': MachineListResult;
+  'machine.list': MachineCommands.MachineListResult;
+  'machine.read': MachineCommands.MachineReadResult;
   'session.resume': SessionResumeResult;
   'workspace.status': WorkspaceStatusResult;
   'project.list': ProjectListResult;
@@ -425,10 +384,11 @@ export interface CommandResultMap {
   'session.ensure_live': SessionEnsureLiveResult;
   'session.send_keys': SessionSendKeysResult;
   'session.attach_info': SessionAttachInfoResult;
-  'files.list': FilesListResult;
-  'files.download': FilesDownloadResult;
-  'files.upload': FilesUploadResult;
-  'files.shared_dir': FilesSharedDirResult;
+  'files.list': FilesCommands.FilesListResult;
+  'files.download': FilesCommands.FilesDownloadResult;
+  'files.upload': FilesCommands.FilesUploadResult;
+  'files.shared_dir': FilesCommands.FilesSharedDirResult;
+  'files.shared_staged': FilesCommands.FilesSharedStagedResult;
   'skill.list': SkillListResult;
   'skill.draft': SkillDraftResult;
   'skill.save': SkillSaveResult;

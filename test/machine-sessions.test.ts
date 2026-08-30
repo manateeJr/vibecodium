@@ -103,3 +103,64 @@ test('machine.list skips missing and malformed stores', async () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+test('machine.read returns bounded OMP transcript turns and a Codex note', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-machine-read-'));
+  const ompRoot = path.join(root, 'omp');
+  const codexRoot = path.join(root, 'codex');
+  const ref = '01a04c8a-9a8a-7000-bd8e-6ee0c36ece1f';
+  const transcript = path.join(ompRoot, `session_${ref}.jsonl`);
+  const commands = new Map<string, CommandHandler>();
+  fs.mkdirSync(ompRoot, { recursive: true });
+  fs.copyFileSync(
+    path.resolve(import.meta.dirname, '..', '..', 'test/fixtures/omp-transcript.jsonl'),
+    transcript,
+  );
+  try {
+    createMachineSessionsSubsystem({ ompRoot, codexRoot }).register({
+      registerCommand(name: string, handler: CommandHandler) {
+        commands.set(name, handler);
+      },
+    } as unknown as SubsystemContext);
+
+    assert.deepEqual(
+      await commands.get(COMMAND_NAMES.machineRead)?.({
+        source: 'omp',
+        ref,
+        limit: 10,
+      }),
+      {
+        turns: [
+          { role: 'user', text: 'inspect the project' },
+          { role: 'assistant', text: 'I will inspect it.', ts: '2026-08-30T00:00:02.000Z' },
+          { role: 'user', text: 'also check tests' },
+          { role: 'assistant', text: 'retrying' },
+        ],
+      },
+    );
+    assert.deepEqual(
+      await commands.get(COMMAND_NAMES.machineRead)?.({
+        source: 'omp',
+        ref,
+        limit: 2,
+      }),
+      {
+        turns: [
+          { role: 'user', text: 'also check tests' },
+          { role: 'assistant', text: 'retrying' },
+        ],
+      },
+    );
+    assert.deepEqual(
+      await commands.get(COMMAND_NAMES.machineRead)?.({
+        source: 'codex',
+        ref: 'missing-codex',
+      }),
+      {
+        turns: [],
+        note: 'codex transcript parsing is unavailable',
+      },
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
