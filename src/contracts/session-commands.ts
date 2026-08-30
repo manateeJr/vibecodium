@@ -1,15 +1,26 @@
 import type { SubstrateKey, SubstrateSessionState } from './substrate-contract.js';
+export type SessionOrigin = 'operator' | 'agent';
 
 export interface SessionOpenArgs {
   readonly provider: string;
   readonly prompt: string;
   readonly cwd?: string;
   readonly project?: string;
+  readonly model?: string;
+  readonly origin?: SessionOrigin;
 }
 
 export interface SessionOpenResult {
   readonly session_id: string;
   readonly stream_id: string;
+}
+export interface SessionRenameArgs {
+  readonly session_id: string;
+  readonly label: string;
+}
+
+export interface SessionRenameResult {
+  readonly label: string;
 }
 
 export interface SessionResumeArgs {
@@ -49,6 +60,8 @@ export interface SessionSummary {
   readonly session_id: string;
   readonly stream_id: string;
   readonly provider: string;
+  readonly label: string;
+  readonly origin: SessionOrigin;
   readonly project?: string;
   readonly cwd?: string;
   readonly status: 'live' | 'done' | 'failed' | 'stopped';

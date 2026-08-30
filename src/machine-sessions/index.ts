@@ -16,15 +16,23 @@ export interface MachineSessionsSubsystemOptions {
   readonly codexRoot?: string;
   readonly now?: () => Date;
 }
+export interface ResolvedMachineSession extends MachineSessionSummary {
+  readonly path: string;
+}
+
+export interface MachineSessionResolver {
+  resolve(ref: string): Promise<ResolvedMachineSession | undefined>;
+}
 
 interface ParsedMetadata {
   readonly valid: boolean;
   readonly title?: string;
   readonly cwd?: string;
   readonly userText?: string;
+  readonly kind: MachineSessionSummary['kind'];
 }
 
-export class MachineSessionsSubsystem implements Subsystem {
+export class MachineSessionsSubsystem implements Subsystem, MachineSessionResolver {
   public readonly name = 'machine-sessions';
   private readonly ompRoot: string;
   private readonly codexRoot: string;
@@ -54,8 +62,30 @@ export class MachineSessionsSubsystem implements Subsystem {
         if (counts[session.source] >= 100) return false;
         counts[session.source] += 1;
         return true;
-      });
+      })
+      .map((session) => ({
+        source: session.source,
+        ref: session.ref,
+        title: session.title,
+        cwd: session.cwd,
+        updated_at: session.updated_at,
+        kind: session.kind,
+      }));
     return { sessions };
+  }
+
+  public async resolve(ref: string): Promise<ResolvedMachineSession | undefined> {
+    const parsed = parseMachineRef(ref);
+    const sources: readonly MachineSessionSummary['source'][] = parsed
+      ? [parsed.source]
+      : ['omp', 'codex'];
+    for (const source of sources) {
+      const root = source === 'omp' ? this.ompRoot : this.codexRoot;
+      const sessions = await readStore(source, root, this.now);
+      const match = sessions.find((session) => session.ref === (parsed?.ref ?? ref));
+      if (match) return match;
+    }
+    return undefined;
   }
 }
 
@@ -69,11 +99,11 @@ async function readStore(
   source: MachineSessionSummary['source'],
   root: string,
   now: () => Date,
-): Promise<MachineSessionSummary[]> {
+): Promise<ResolvedMachineSession[]> {
   const files: string[] = [];
   await collectJsonlFiles(root, files);
   const summaries = await Promise.all(files.map((file) => readSummary(source, file, now)));
-  return summaries.filter((summary): summary is MachineSessionSummary => summary !== undefined);
+  return summaries.filter((summary): summary is ResolvedMachineSession => summary !== undefined);
 }
 
 async function collectJsonlFiles(directory: string, files: string[]): Promise<void> {
@@ -99,7 +129,7 @@ async function readSummary(
   source: MachineSessionSummary['source'],
   file: string,
   now: () => Date,
-): Promise<MachineSessionSummary | undefined> {
+): Promise<ResolvedMachineSession | undefined> {
   let modified: number;
   try {
     modified = (await stat(file)).mtimeMs;
@@ -119,7 +149,9 @@ async function readSummary(
     ref,
     title,
     cwd,
+    kind: metadata.kind,
     updated_at: updated.toISOString(),
+    path: file,
   };
 }
 
@@ -134,6 +166,7 @@ async function readMetadata(file: string): Promise<ParsedMetadata> {
     let title: string | undefined;
     let cwd: string | undefined;
     let userText: string | undefined;
+    let kind: MachineSessionSummary['kind'] = 'main';
     for (const line of text.split(/\r?\n/)) {
       if (!line.trim()) continue;
       let value: unknown;
@@ -147,20 +180,32 @@ async function readMetadata(file: string): Promise<ParsedMetadata> {
       title ??= findStringField(value, 'title');
       cwd ??= findStringField(value, 'cwd');
       userText ??= findUserText(value);
+      if (value.type === 'session_init' && typeof value.agent === 'string' && value.agent.trim()) {
+        kind = 'subagent';
+      }
     }
     return {
       valid,
+      kind,
       ...(title === undefined ? {} : { title }),
       ...(cwd === undefined ? {} : { cwd }),
       ...(userText === undefined ? {} : { userText }),
     };
   } catch {
-    return { valid: false };
+    return { valid: false, kind: 'main' };
   } finally {
     await handle?.close().catch(() => undefined);
   }
 }
 
+function parseMachineRef(
+  ref: string,
+): { source: MachineSessionSummary['source']; ref: string } | undefined {
+  const match = ref.match(/^machine:(omp|codex):(.+)$/);
+  return match?.[1] && match[2]
+    ? { source: match[1] as MachineSessionSummary['source'], ref: match[2] }
+    : undefined;
+}
 function sessionRef(source: MachineSessionSummary['source'], file: string): string | undefined {
   const stem = path.basename(file, '.jsonl');
   const parent = path.basename(path.dirname(file));

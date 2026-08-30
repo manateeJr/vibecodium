@@ -154,7 +154,7 @@ test('open creates an omp session for the requested path and attaches it', async
     assert.deepEqual(operations, ['session.open', 'session.attach_info', 'spawn']);
     assert.deepEqual(requests[0], {
       name: 'session.open',
-      args: { provider: 'omp', prompt: '', cwd: '/work/project' },
+      args: { provider: 'omp', prompt: '', cwd: '/work/project', origin: 'operator' },
     });
     assert.deepEqual(calls[0], {
       command: '/opt/vibecodium/bin/abduco',

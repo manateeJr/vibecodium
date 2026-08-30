@@ -125,7 +125,7 @@ async function openAndAttach(
   cwd: string,
   spawnProcess: AttachSpawner,
 ): Promise<void> {
-  const result = await client.openSession({ provider: 'omp', prompt: '', cwd });
+  const result = await client.openSession({ provider: 'omp', prompt: '', cwd, origin: 'operator' });
   await attachSession(client, result.session_id, spawnProcess);
 }
 

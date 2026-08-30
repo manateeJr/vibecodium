@@ -105,6 +105,7 @@ export class PersistentSessionManager {
       storageDir,
       transcriptPath: path.join(storageDir, 'session.jsonl'),
       ...(args.cwd === undefined ? {} : { cwd: args.cwd }),
+      ...(args.model === undefined ? {} : { model: args.model }),
     });
     return worker.start(args.prompt, resumeRef).then((started) => {
       const record = this.recordFromStart(args.provider, worker, started, 'live');
@@ -148,8 +149,13 @@ export class PersistentSessionManager {
       return updated;
     });
   }
-  public send(sessionId: string, prompt: string): number {
-    const worker = this.requireWorker(sessionId);
+  public send(sessionId: string, prompt: string): number | Promise<number> {
+    const worker = this.workers.get(sessionId);
+    if (!worker) {
+      const record = this.sessionTable?.get(sessionId);
+      if (!record || record.state !== 'resumable') throw new Error('session not found');
+      return this.ensureLive(sessionId).then(() => this.send(sessionId, prompt));
+    }
     if (worker.isBusy) throw new Error('session is busy');
     const turn = worker.currentTurn + 1;
     void worker.sendPrompt(prompt).catch((error: unknown) => {
@@ -270,6 +276,7 @@ export class PersistentSessionManager {
     state: SubstrateSessionState,
     previous?: SubstrateSessionRecord,
   ): SubstrateSessionRecord {
+    const summary = this.summaryFor(worker.sessionId);
     return {
       sessionId: worker.sessionId,
       provider,
@@ -278,6 +285,8 @@ export class PersistentSessionManager {
       transcriptPath: started.transcriptPath,
       storageDir: worker.storageDir,
       state,
+      label: previous?.label ?? summary?.label ?? '',
+      origin: previous?.origin ?? summary?.origin ?? 'agent',
       updatedAt: previous?.updatedAt ?? this.now().toISOString(),
     };
   }

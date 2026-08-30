@@ -13,6 +13,7 @@ export interface VibecodiumClient {
   stopSession(args: Commands.SessionStopArgs): Promise<Commands.SessionStopResult>;
   sendMessage(args: Commands.SessionSendArgs): Promise<Commands.SessionSendResult>;
   listSessions(args: Commands.SessionListArgs): Promise<Commands.SessionListResult>;
+  sessionRename(args: Commands.SessionRenameArgs): Promise<Commands.SessionRenameResult>;
   forkSession(args: Commands.SessionForkArgs): Promise<Commands.SessionForkResult>;
   sessionEnsureLive(
     args: Commands.SessionEnsureLiveArgs,

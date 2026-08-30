@@ -13,6 +13,7 @@ export class OmpHarnessPlugin implements HarnessPlugin {
 
   public launchArgv(context: HarnessSessionContext): readonly string[] {
     const args = ['omp'];
+    if (context.model !== undefined) args.push(`--model=${context.model}`);
     if (context.storageDir !== undefined) args.push('--session-dir', context.storageDir);
     if (context.resumeRef !== undefined) args.push('--resume', context.resumeRef);
     if (context.prompt !== undefined) args.push(context.prompt);

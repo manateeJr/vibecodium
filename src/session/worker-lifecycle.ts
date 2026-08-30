@@ -70,6 +70,7 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     prompt: options.args.prompt,
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
+    origin: options.args.origin ?? 'agent',
   });
   let worker: ChildProcess;
   try {

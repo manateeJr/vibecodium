@@ -25,14 +25,16 @@ export function registerSubsystems(
   subsystems?: readonly Subsystem[],
   options: SubsystemRegistrationOptions = {},
 ): readonly Subsystem[] {
+  const machineSessions = createMachineSessionsSubsystem();
   const selected = subsystems ?? [
     createTelemetrySubsystem(),
     createWorkflowSubsystem(),
     createNotifySubsystem(),
     createHostSubsystem(),
     createVoiceSubsystem(),
-    createMachineSessionsSubsystem(),
+    machineSessions,
     createSessionSubsystem({
+      machineSessions,
       substrate: options.substrate ?? createSubstrateClient(),
       sessionTable:
         options.sessionTable ??

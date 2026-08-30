@@ -19,6 +19,8 @@ import type {
   SessionForkResult,
   SessionListArgs,
   SessionListResult,
+  SessionRenameArgs,
+  SessionRenameResult,
   SessionOpenArgs,
   SessionOpenResult,
   SessionResumeArgs,
@@ -48,6 +50,7 @@ import type { ClientOptions, SocketConstructor, SocketLike, VibecodiumClient } f
 const COMMAND_NAMES = {
   sessionOpen: 'session.open',
   sessionStop: 'session.stop',
+  sessionRename: 'session.rename',
   sessionSend: 'session.send',
   sessionList: 'session.list',
   sessionFork: 'session.fork',
@@ -176,6 +179,8 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<SessionSendResult>(baseUrl, COMMAND_NAMES.sessionSend, args, options.token);
   const listSessions = (args: SessionListArgs): Promise<SessionListResult> =>
     post<SessionListResult>(baseUrl, COMMAND_NAMES.sessionList, args, options.token);
+  const sessionRename = (args: SessionRenameArgs): Promise<SessionRenameResult> =>
+    post<SessionRenameResult>(baseUrl, COMMAND_NAMES.sessionRename, args, options.token);
   const forkSession = (args: SessionForkArgs): Promise<SessionForkResult> =>
     post<SessionForkResult>(baseUrl, COMMAND_NAMES.sessionFork, args, options.token);
   const sessionEnsureLive = (args: SessionEnsureLiveArgs): Promise<SessionEnsureLiveResult> =>
@@ -341,6 +346,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     stopSession,
     sendMessage,
     listSessions,
+    sessionRename,
     forkSession,
     sessionEnsureLive,
     sessionSendKeys,

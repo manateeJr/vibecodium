@@ -71,6 +71,7 @@ export interface PersistentSessionWorkerOptions {
   readonly transcriptPath: string;
   readonly harnessRef?: string;
   readonly cwd?: string;
+  readonly model?: string;
   readonly append: SubsystemContext['append'];
   readonly now?: () => number;
   readonly startAtEnd?: boolean;
@@ -95,6 +96,7 @@ export class PersistentSessionWorker {
   private readonly transcriptFallback: string;
   private readonly configuredHarnessRef: string | undefined;
   private readonly cwd: string | undefined;
+  private readonly model: string | undefined;
   private readonly append: SubsystemContext['append'];
   private readonly now: (() => number) | undefined;
   private readonly startAtEnd: boolean;
@@ -121,6 +123,7 @@ export class PersistentSessionWorker {
     this.transcriptFallback = options.transcriptPath;
     this.configuredHarnessRef = options.harnessRef;
     this.cwd = options.cwd;
+    this.model = options.model;
     this.append = options.append;
     this.now = options.now;
     this.startAtEnd = options.startAtEnd ?? false;
@@ -165,6 +168,7 @@ export class PersistentSessionWorker {
         cwd: this.cwd ?? process.cwd(),
         ...(prompt === undefined ? {} : { prompt }),
         ...(resumeRef === undefined ? {} : { resumeRef }),
+        ...(this.model === undefined ? {} : { model: this.model }),
         storageDir: this.storageDir,
       }),
       this.cwd === undefined ? undefined : { cwd: this.cwd },

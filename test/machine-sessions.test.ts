@@ -32,6 +32,7 @@ test('machine.list reads OMP and nested Codex session stores newest-first', asyn
       ompFile,
       [
         { type: 'title', title: 'OMP title' },
+        { type: 'session_init', agent: 'task' },
         { type: 'session', cwd: '/workspace/omp' },
       ],
       2_000,
@@ -68,6 +69,7 @@ test('machine.list reads OMP and nested Codex session stores newest-first', asyn
           title: 'Codex title',
           cwd: '/workspace/codex',
           updated_at: new Date(3_000).toISOString(),
+          kind: 'main',
         },
         {
           source: 'omp',
@@ -75,6 +77,7 @@ test('machine.list reads OMP and nested Codex session stores newest-first', asyn
           title: 'OMP title',
           cwd: '/workspace/omp',
           updated_at: new Date(2_000).toISOString(),
+          kind: 'subagent',
         },
       ],
     });
