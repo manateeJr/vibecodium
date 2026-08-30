@@ -6,6 +6,7 @@ import test from 'node:test';
 import { COMMAND_NAMES, type SkillDef } from '../src/contracts/commands.js';
 import type { CommandHandler, SubsystemContext } from '../src/contracts/subsystem.js';
 import { createSkillsSubsystem } from '../src/skills/index.js';
+import { parseSkillDef } from '../src/skills/helpers.js';
 
 class TestContext implements SubsystemContext {
   public readonly commands = new Map<string, CommandHandler>();
@@ -162,4 +163,24 @@ test('skills library supports built-ins, custom persistence, adoption, invocatio
     else process.env.VIBECODIUM_SKILLS_PATH = previousPath;
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('parseSkillDef coerces non-boolean approval from model output', () => {
+  assert.equal(
+    parseSkillDef({ id: 'x', name: 'X', body: 'do it', approval: 'true' }, false).approval,
+    true,
+  );
+  assert.equal(
+    parseSkillDef({ id: 'x', name: 'X', body: 'do it', approval: 'false' }, false).approval,
+    false,
+  );
+  assert.equal(
+    parseSkillDef({ id: 'x', name: 'X', body: 'do it', approval: 'maybe' }, false).approval,
+    false,
+  );
+  assert.equal(parseSkillDef({ id: 'x', name: 'X', body: 'do it' }, false).approval, undefined);
+  assert.equal(
+    parseSkillDef({ id: 'x', name: 'X', body: 'do it', approval: true }, false).approval,
+    true,
+  );
 });

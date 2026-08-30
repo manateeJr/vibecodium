@@ -112,9 +112,12 @@ export function parseSkillDef(value: unknown, allowEmptyId: boolean): SkillDef {
   if (record.description !== undefined && typeof record.description !== 'string') {
     throw new Error('skill description must be a string');
   }
-  if (record.approval !== undefined && typeof record.approval !== 'boolean') {
-    throw new Error('skill approval must be a boolean');
-  }
+  const approvalValue =
+    typeof record.approval === 'boolean'
+      ? record.approval
+      : typeof record.approval === 'string'
+        ? record.approval.trim().toLowerCase() === 'true'
+        : undefined;
   if (record.builtin !== undefined && typeof record.builtin !== 'boolean') {
     throw new Error('skill builtin must be a boolean');
   }
@@ -126,7 +129,7 @@ export function parseSkillDef(value: unknown, allowEmptyId: boolean): SkillDef {
     params,
     builtin: record.builtin === true,
     ...(record.description === undefined ? {} : { description: record.description }),
-    ...(record.approval === undefined ? {} : { approval: record.approval }),
+    ...(approvalValue === undefined ? {} : { approval: approvalValue }),
   };
   validateSkillDef(def, allowEmptyId);
   return def;
