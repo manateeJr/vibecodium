@@ -62,6 +62,13 @@ function main() {
     }
 
     try {
+      execFileSync(npm, ['run', 'setup:substrate'], { cwd: repositoryRoot, stdio: 'inherit' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`deploy: substrate setup failed; sessions may not start: ${message}\n`);
+    }
+
+    try {
       execFileSync('systemctl', ['--user', 'restart', 'vibecodium'], {
         cwd: repositoryRoot,
         stdio: 'inherit',
