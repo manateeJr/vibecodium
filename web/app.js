@@ -18,8 +18,11 @@ import { createFilesPanel } from '/ui/files.js';
 import { createGitStatus } from '/ui/git-status.js';
 import { createHostPanel } from '/ui/host-panel.js';
 import { createModelPicker } from '/ui/model-picker.js';
+import { createMachineHistory } from '/ui/machine-history.js';
 import { createProjectManager } from '/ui/project-manager.js';
+import { createRestartAction } from '/ui/restart-action.js';
 import { createSessionBar } from '/ui/session-bar.js';
+import { createShareIntake } from '/ui/share-intake.js';
 import { createSkillsPanel } from '/ui/skills.js';
 import { createSessionSurface } from '/ui/session-surface.js';
 import { createStreamLog } from '/ui/stream-log.js';
@@ -58,6 +61,12 @@ const { transcript, sessionView } = createSessionSurface({
   elements,
   // Ratified: "Steer now" escalates natively with escape; the separate stop control interrupts.
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
+});
+const restartAction = createRestartAction({
+  elements,
+  getProject: () => projectManager.selectedProject()?.name ?? '',
+  selectProject: (name) => projectManager.selectProject(name),
+  showTransient: (cls, text) => streamLog.showTransient(cls, text),
 });
 const streamLog = createStreamLog({
   transcript,
@@ -194,6 +203,20 @@ const files = createFilesPanel({
     settings.close();
   },
 });
+const machineHistory = createMachineHistory({
+  connection,
+  getEntry: (streamId) => sessions.get(streamId),
+  render: () => streamLog.render(),
+  errorMessage,
+});
+const shareIntake = createShareIntake({
+  connection,
+  elements,
+  projectManager,
+  attachPaths: (paths) => files.attachPaths(paths),
+  onError: (message) => streamLog.error(message),
+  errorMessage,
+});
 const skills = createSkillsPanel({
   client,
   elements,
@@ -235,11 +258,12 @@ wireConnectivity({
 wireServiceWorkerUpdates({ button: elements.updateReload });
 client.subscribe(0, feed.ingest, '*');
 
-// Projects come first: external sessions and adopted skills are both keyed off the project list.
+// Projects come first: external sessions, adopted skills and a share's project guess are all
+// keyed off the project list.
 async function boot() {
   await projectManager.load();
   refreshPresets();
-  await Promise.all([skills.refresh(), loadMachineSessions()]);
+  await Promise.all([skills.refresh(), loadMachineSessions(), shareIntake.run()]);
 }
 
 function commitToken(value) {
@@ -397,9 +421,12 @@ function selectSessionItem(item) {
 }
 
 // External sessions are read-only here: the machine owns them until the operator writes into them.
+// Read-only is not the same as blank, though — the transcript the machine already wrote is fetched
+// once, so the operator can see what they are about to continue.
 function adoptExternalItem(item) {
   const entry = externalEntry(item);
   sessions.set(entry.stream_id, entry);
+  void machineHistory.load(entry);
   return entry;
 }
 
@@ -457,34 +484,6 @@ function sessionItems() {
     limit: SESSION_LIMIT,
     showAgents,
   });
-}
-
-function restartAction(entry) {
-  const restartable =
-    entry.kind === 'session' &&
-    (entry.status === 'done' || entry.status === 'failed' || entry.status === 'external');
-  if (!restartable) return undefined;
-  const target = entry.project || '';
-  const current = projectManager.selectedProject()?.name ?? '';
-  return {
-    label: target && target !== current ? `Open new session in ${target}` : 'Open new session here',
-    run: () => prepareRestart(entry),
-  };
-}
-
-function prepareRestart(entry) {
-  const target = entry.project || '';
-  const current = projectManager.selectedProject()?.name ?? '';
-  if (target && target !== current) {
-    projectManager.selectProject(target);
-    streamLog.showTransient('meta', `project switched to ${target} · you asked for this session`);
-  }
-  elements.composeInput.focus();
-  elements.composeInput.scrollIntoView?.({ block: 'nearest' });
-  streamLog.showTransient(
-    'meta',
-    `new session ready · ${entry.cwd || '(default cwd)'} · harness ${elements.harness.value}`,
-  );
 }
 
 function errorMessage(error) {
