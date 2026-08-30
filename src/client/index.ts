@@ -166,6 +166,7 @@ export interface VibecodiumClient {
     onEvent: (event: EventEnvelope) => void,
     streamId?: string,
   ): () => void;
+  reconnect(): void;
 }
 
 interface SocketLike {
@@ -181,6 +182,7 @@ type SocketConstructor = new (url: string) => SocketLike;
 const OPEN_STATE = 1;
 
 export function createClient(options: ClientOptions): VibecodiumClient {
+  const reconnectors = new Set<() => void>();
   const baseUrl = normalizeBaseUrl(options.baseUrl);
   let activeStreamId: string | undefined;
 
@@ -334,15 +336,30 @@ export function createClient(options: ClientOptions): VibecodiumClient {
         scheduleReconnect();
       });
     };
+    const forceReconnect = (): void => {
+      if (cancelled || !Socket) return;
+      if (reconnectTimer !== undefined) globalThis.clearTimeout(reconnectTimer);
+      reconnectTimer = undefined;
+      reconnectAttempt = 0;
+      const currentSocket = socket;
+      socket = undefined;
+      currentSocket?.close();
+      connect();
+    };
+    reconnectors.add(forceReconnect);
     if (Socket) connect();
     return () => {
       cancelled = true;
+      reconnectors.delete(forceReconnect);
       if (reconnectTimer !== undefined) globalThis.clearTimeout(reconnectTimer);
       reconnectTimer = undefined;
       const currentSocket = socket;
       socket = undefined;
       currentSocket?.close();
     };
+  };
+  const reconnect = (): void => {
+    for (const forceReconnect of reconnectors) forceReconnect();
   };
 
   const postCommand = <Name extends Commands.CommandName>(
@@ -384,6 +401,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     skillInvoke: (args: Commands.SkillInvokeArgs) => postCommand(COMMAND_NAMES.skillInvoke, args),
     getEvents,
     subscribe,
+    reconnect,
   };
 }
 

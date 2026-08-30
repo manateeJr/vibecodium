@@ -183,6 +183,14 @@ globalThis.addEventListener('online', () => {
   if (selectedStreamId) void hydrateStream(selectedStreamId);
 });
 globalThis.addEventListener('offline', () => setStatus('OFFLINE', 'bad'));
+globalThis.document.addEventListener('visibilitychange', () => {
+  if (globalThis.document.visibilityState !== 'visible') return;
+  client.reconnect();
+  if (selectedStreamId) void hydrateStream(selectedStreamId);
+  void globalThis.navigator.serviceWorker?.ready
+    .then((registration) => registration.update())
+    .catch(() => undefined);
+});
 client.subscribe(0, onEvent, '*');
 
 // Projects come first: external sessions and adopted skills are both keyed off the project list.

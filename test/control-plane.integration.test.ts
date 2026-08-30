@@ -201,3 +201,52 @@ test('opens an echo session, streams ordered events, and catches up after reconn
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('replays only stream events after the requested cursor', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-cursor-replay-'));
+  const controlPlane = new ControlPlane({
+    dataPath: path.join(directory, 'events.sqlite'),
+    port: 0,
+  });
+  let socket: WebSocket | undefined;
+  try {
+    const streamId = 'session:cursor';
+    const cursor = controlPlane.eventStore.append(streamId, 'session_started', {
+      session_id: 'cursor',
+      provider: 'fake',
+      prompt: 'initial',
+    });
+    const outputSeq = controlPlane.eventStore.append(streamId, 'session_output', {
+      session_id: 'cursor',
+      index: 0,
+      text: 'missed reply',
+    });
+    const completeSeq = controlPlane.eventStore.append(streamId, 'turn_complete', {
+      session_id: 'cursor',
+      turn: 1,
+    });
+
+    const address = await controlPlane.start();
+    socket = await connect(address);
+    const inbox = new Inbox(socket);
+    socket.send(JSON.stringify({ type: 'subscribe', streamId, fromSeq: cursor }));
+    await inbox.wait((message) => message.type === 'subscribed');
+
+    const replayed: EventEnvelope[] = [];
+    while (replayed.length < 2) {
+      const message = await inbox.wait(
+        (candidate) => candidate.type === 'event' && !!candidate.event,
+      );
+      replayed.push(message.event!);
+    }
+    assert.deepEqual(
+      replayed.map((event) => event.seq),
+      [outputSeq, completeSeq],
+    );
+    assert.ok(replayed.every((event) => event.seq > cursor));
+  } finally {
+    if (socket) await close(socket);
+    await controlPlane.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
