@@ -1,6 +1,7 @@
+import { blobToBase64 } from '../lib/base64.js';
+
 const IDLE_LABEL = 'MIC';
 const RECORDING_LABEL = 'REC';
-const BASE64_CHUNK = 0x8000;
 
 export function createVoiceRecorder({ client, button, input, note, onError, errorMessage }) {
   const supported =
@@ -113,12 +114,4 @@ export function createVoiceRecorder({ client, button, input, note, onError, erro
 
   setIdle();
   return { supported: true };
-}
-
-async function blobToBase64(blob) {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = '';
-  for (let index = 0; index < bytes.length; index += BASE64_CHUNK)
-    binary += String.fromCharCode(...bytes.subarray(index, index + BASE64_CHUNK));
-  return globalThis.btoa(binary);
 }

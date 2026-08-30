@@ -1,4 +1,5 @@
 /* global document */
+import { projectForPath } from '../lib/paths.js';
 import { loadDefaultHarness, saveDefaultHarness } from '../lib/storage.js';
 import { relativeTime } from '../lib/time.js';
 
@@ -188,32 +189,7 @@ function activityTime(entry) {
 function projectForEntry(entry, projects) {
   const explicit = entry.project?.trim();
   if (explicit) return explicit;
-  const cwd = normalizePath(entry.cwd);
-  const match = projects
-    .filter((project) => pathMatches(cwd, project.path))
-    .sort((left, right) => normalizePath(right.path).length - normalizePath(left.path).length)[0];
-  return match?.name || 'Scratch';
-}
-
-function pathMatches(cwd, projectPath) {
-  const root = normalizePath(projectPath);
-  if (!cwd || !root) return false;
-  return root === '/' ? cwd.startsWith('/') : cwd === root || cwd.startsWith(`${root}/`);
-}
-
-function normalizePath(value) {
-  const normalized = String(value ?? '')
-    .trim()
-    .replace(/\\/g, '/')
-    .replace(/\/+$/, '');
-  return (
-    normalized ||
-    (String(value ?? '')
-      .trim()
-      .startsWith('/')
-      ? '/'
-      : '')
-  );
+  return projectForPath(entry.cwd, projects) || 'Scratch';
 }
 
 export function createSettingsDrawer({
