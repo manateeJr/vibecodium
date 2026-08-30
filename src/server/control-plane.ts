@@ -6,6 +6,7 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
 import { tokensToCssVars } from '../design/tokens.js';
 import { serveStaticAsset } from './static-assets.js';
+import { errorMessage, readJsonBody } from './control-plane-helpers.js';
 import {
   COMMAND_NAMES,
   type CommandFrame,
@@ -471,29 +472,4 @@ function isLoopbackAddress(address: string | undefined): boolean {
 
 function remoteAddress(socket: WebSocket): string | undefined {
   return (socket as WebSocket & { _socket?: { remoteAddress?: string } })._socket?.remoteAddress;
-}
-
-function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let serialized = '';
-    request.setEncoding('utf8');
-    request.on('data', (chunk: string) => {
-      serialized += chunk;
-    });
-    request.on('end', () => {
-      if (!serialized.trim()) {
-        resolve(undefined);
-        return;
-      }
-      try {
-        resolve(JSON.parse(serialized) as unknown);
-      } catch (error: unknown) {
-        reject(error);
-      }
-    });
-    request.on('error', reject);
-  });
-}
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
