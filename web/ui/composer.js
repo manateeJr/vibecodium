@@ -8,6 +8,45 @@ const MAX_ROWS = 8;
 
 export function createComposer({ input, form }) {
   let metrics;
+  const attachments = [];
+  const shareNotes = [];
+
+  // A share and the ATT picker both stage into this one draft. Keeping the paths outside the
+  // textarea matters because replacing the text while writing the prompt must not drop a staged
+  // file before OPEN gets a chance to assemble it.
+  const stageAttachments = (paths) => {
+    const incoming = Array.isArray(paths) ? paths : [];
+    const fresh = [
+      ...new Set(incoming.map((path) => String(path ?? '').trim()).filter(Boolean)),
+    ].filter((path) => !attachments.includes(path));
+    if (fresh.length === 0) return;
+    attachments.push(...fresh);
+    appendAttachments(input, fresh);
+  };
+
+  const stageNote = (value) => {
+    const note = String(value ?? '').trim();
+    if (!note || shareNotes.includes(note)) return;
+    shareNotes.push(note);
+    const current = input.value.trim();
+    input.value = current === '' ? note : `${note}\n${current}`;
+    input.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
+  };
+
+  const getPrompt = () => {
+    const current = input.value.trim();
+    const lines = current.split('\n');
+    const notes = shareNotes.filter((note) => !current.includes(note));
+    const missingAttachments = attachments
+      .filter((path) => {
+        const line = `Attached file: ${path}`;
+        return !lines.some(
+          (currentLine) => currentLine === line || currentLine.startsWith(`${line} `),
+        );
+      })
+      .map((path) => `Attached file: ${path}`);
+    return [...notes, ...(current ? [current] : []), ...missingAttachments].join('\n');
+  };
 
   // scrollHeight excludes the border on a border-box element, so the border is added back before
   // the height is applied — otherwise every composer would sit two pixels short and always scroll.
@@ -23,9 +62,8 @@ export function createComposer({ input, form }) {
   };
 
   // Collapse first: scrollHeight only shrinks once the element stops reserving its old height.
-  // An empty composer is one row by definition — its scrollHeight would otherwise size to the
-  // wrapped placeholder, so the box would open two lines tall and shrink on the first keystroke.
-  // Overflow is decided from the applied geometry, which also covers the CSS max-height clamp.
+  // An empty composer is one row by definition — its scrollHeight would otherwise size two lines
+  // tall and shrink on the first keystroke.
   const autosize = () => {
     const { border, row, max } = measure();
     input.style.overflowY = 'hidden';
@@ -46,9 +84,21 @@ export function createComposer({ input, form }) {
 
   return {
     autosize,
+    getPrompt,
+    stageAttachments,
+    stageNote,
     reset() {
       input.value = '';
+      attachments.length = 0;
+      shareNotes.length = 0;
       autosize();
     },
   };
+}
+function appendAttachments(input, paths) {
+  const current = input.value.trim();
+  const lines = paths.map((path) => `Attached file: ${path}`);
+  input.value = [...(current ? [current] : []), ...lines].join('\n');
+  // The composer sizes itself from input events; a programmatic write has to announce itself.
+  input.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
 }

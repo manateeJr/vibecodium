@@ -165,6 +165,7 @@ const actions = createActions({
   getModel: () => modelPicker.selected(),
   connection,
   resetInput: () => composer.reset(),
+  getPrompt: () => composer.getPrompt(),
   setStatus,
   refreshControls,
   renderSessions,
@@ -198,6 +199,7 @@ const files = createFilesPanel({
   onError: (message) => streamLog.error(message),
   note: setComposeNote,
   getSessionId: () => sessions.get(selectedStreamId)?.session_id ?? '',
+  attachPaths: (paths) => composer.stageAttachments(paths),
   onOpen: () => {
     history.close();
     settings.close();
@@ -214,6 +216,7 @@ const shareIntake = createShareIntake({
   elements,
   projectManager,
   attachPaths: (paths) => files.attachPaths(paths),
+  stageNote: (note) => composer.stageNote(note),
   onError: (message) => streamLog.error(message),
   errorMessage,
 });

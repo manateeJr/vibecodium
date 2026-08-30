@@ -20,6 +20,7 @@ export function createShareIntake({
   elements,
   projectManager,
   attachPaths,
+  stageNote,
   onError,
   errorMessage,
 }) {
@@ -66,13 +67,9 @@ export function createShareIntake({
       say(`share ${token} staged nothing · share it again`, 'bad');
       return;
     }
-    // The note leads, so what the operator was looking at when they shared becomes the prompt and
-    // the attachments are named under it — the same order the ATT button produces.
-    if (note !== '') {
-      const current = elements.composeInput.value.trim();
-      elements.composeInput.value = current === '' ? note : `${current}\n${note}`;
-      elements.composeInput.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
-    }
+    // Keep the note and paths in the composer's draft state. The visible textarea is only a view
+    // of that state: replacing it while writing a prompt must not make OPEN forget the share.
+    if (note !== '') stageNote(note);
     if (staged.length > 0) attachPaths(staged);
     say(`${describe(staged.length, note)} · ${scope(value?.project)} · OPEN to start`);
     // No second picker: the scope selector is already on screen, so the landing highlights it and

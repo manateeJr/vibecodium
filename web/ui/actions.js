@@ -13,6 +13,7 @@ export function createActions({
   getModel,
   connection,
   resetInput,
+  getPrompt,
   setStatus,
   refreshControls,
   renderSessions,
@@ -120,7 +121,7 @@ export function createActions({
   // One input, three verbs: send into the selected live session, continue the selected machine
   // session in place, or open a new one.
   const submitCompose = async () => {
-    const prompt = elements.composeInput.value.trim();
+    const prompt = getPrompt();
     if (!prompt) {
       appendError('a prompt is required');
       return;

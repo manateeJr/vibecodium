@@ -13,6 +13,7 @@ export function createFilesPanel({
   note,
   getSessionId,
   onOpen,
+  attachPaths,
 }) {
   let roots = [];
   let currentDir = '';
@@ -206,12 +207,8 @@ export function createFilesPanel({
     }
   };
 
-  // The one staging mechanism there is. A file the control plane already holds — everything a
-  // share landing arrives with — only has to be named in the composer, because naming it is how
-  // an attachment reaches the next turn in the first place.
-  const attachPaths = (paths) => {
-    appendAttachments(elements.composeInput, paths);
-  };
+  // Both the file picker and a share landing feed the composer's single draft attachment list.
+  // The callback also renders the same `Attached file:` lines for both paths.
 
   const sessionIdForUpload = () => {
     const selected = String(getSessionId() ?? '').trim();
@@ -277,16 +274,6 @@ function deepestRoot(dir, roots) {
 function compareEntries(left, right) {
   if (left.is_dir !== right.is_dir) return left.is_dir ? -1 : 1;
   return String(left.name).localeCompare(String(right.name));
-}
-
-// One line per attachment, appended to whatever is already in the composer — so every file staged
-// this turn is visible and named, and deleting a line is still how one of them is dropped.
-function appendAttachments(input, paths) {
-  const current = input.value.trim();
-  const lines = paths.map((path) => `Attached file: ${path}`);
-  input.value = [...(current ? [current] : []), ...lines].join('\n');
-  // The composer sizes itself from input events; a programmatic write has to announce itself.
-  input.dispatchEvent(new globalThis.Event('input', { bubbles: true }));
 }
 
 function saveBlob(blob, name) {
