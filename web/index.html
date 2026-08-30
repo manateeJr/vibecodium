@@ -149,6 +149,7 @@
           </form>
         </section>
         <p id="compose-hint" class="compose-hint" role="status" aria-live="polite" hidden></p>
+        <p id="share-status" class="share-status" role="status" aria-live="polite" hidden></p>
         <form id="compose-form" class="compose-bar">
           <label class="sr-only" for="compose-input">Message</label>
           <textarea
@@ -159,38 +160,40 @@
             placeholder="Describe a task to start a session…"
             required
           ></textarea>
-          <button
-            id="attach-file"
-            class="button button--attach"
-            type="button"
-            aria-label="Attach a file"
-            title="Attach a file"
-          >
-            ATT
-          </button>
-          <div class="compose-voice" role="group" aria-label="Voice note">
+          <div class="compose-actions" role="group" aria-label="Composer actions">
             <button
-              id="voice-record"
-              class="button button--mic"
+              id="attach-file"
+              class="button button--attach"
               type="button"
-              aria-pressed="false"
-              aria-label="Record a voice note"
-              title="Record a voice note"
+              aria-label="Attach files"
+              title="Attach one or more files"
             >
-              MIC
+              ATT
             </button>
-            <button
-              id="voice-cancel"
-              class="button button--cancel"
-              type="button"
-              aria-label="Discard the voice recording"
-              title="Discard the voice recording without transcribing"
-              hidden
-            >
-              CXL
-            </button>
+            <div class="compose-voice" role="group" aria-label="Voice note">
+              <button
+                id="voice-record"
+                class="button button--mic"
+                type="button"
+                aria-pressed="false"
+                aria-label="Record a voice note"
+                title="Record a voice note"
+              >
+                MIC
+              </button>
+              <button
+                id="voice-cancel"
+                class="button button--cancel"
+                type="button"
+                aria-label="Discard the voice recording"
+                title="Discard the voice recording without transcribing"
+                hidden
+              >
+                CXL
+              </button>
+            </div>
+            <button id="compose-send" class="button button--open" type="submit">OPEN</button>
           </div>
-          <button id="compose-send" class="button button--open" type="submit">OPEN</button>
         </form>
         <div class="control-strip" role="group" aria-label="Session controls">
           <span class="control-strip__label">CONTROL</span>
@@ -205,8 +208,8 @@
             CTRL-C
           </button>
         </div>
-        <label class="sr-only" for="attach-input">Attach a file</label>
-        <input id="attach-input" class="sr-only" type="file" />
+        <label class="sr-only" for="attach-input">Attach files</label>
+        <input id="attach-input" class="sr-only" type="file" multiple />
         <p id="compose-note" class="compose-note" role="status" aria-live="polite" hidden></p>
       </section>
 
