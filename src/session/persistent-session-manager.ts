@@ -27,7 +27,6 @@ import { sessionEnsureLiveArgs, sessionSendKeysArgs } from './session-helpers.js
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type { SessionTable } from './session-table.js';
-
 export interface PersistentSessionManagerOptions {
   readonly substrate: SubstrateClient;
   readonly sessionTable?: SessionTable;
@@ -50,16 +49,13 @@ type PersistentWorkerConfig = Omit<
   ConstructorParameters<typeof PersistentSessionWorker>[0],
   'substrate' | 'append' | 'onActivity' | 'onSessionExit'
 >;
-
 export interface PersistentSessionEnsureResult {
   readonly state: SubstrateSessionState;
   readonly substrateName: string;
 }
-
 interface PersistentSessionRelaunchResult extends PersistentSessionEnsureResult {
   readonly turn?: number;
 }
-
 export class PersistentSessionManager {
   private readonly substrate: SubstrateClient;
   private readonly sessionTable: SessionTable | undefined;
@@ -73,7 +69,6 @@ export class PersistentSessionManager {
   private readonly relaunches = new Map<string, Promise<PersistentSessionRelaunchResult>>();
   private readonly sessionExitTasks = new Map<string, Promise<void>>();
   private readonly reaper: SessionIdleReaper;
-
   public constructor(options: PersistentSessionManagerOptions) {
     this.substrate = options.substrate;
     this.sessionTable = options.sessionTable;
@@ -98,7 +93,6 @@ export class PersistentSessionManager {
         : { memoryAvailableMb: options.memoryAvailableMb }),
     });
   }
-
   public supports(provider: string): boolean {
     try {
       const adapter = providerByName(provider);

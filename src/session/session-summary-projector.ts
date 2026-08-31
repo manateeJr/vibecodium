@@ -52,8 +52,7 @@ export function projectSessionEvent(
       payload?.abort_key === 'interrupt'
         ? payload.abort_key
         : harnessAbortKey(provider);
-    const source =
-      isSessionSource(payload?.source) ? payload.source : persisted?.source;
+    const source = isSessionSource(payload?.source) ? payload.source : persisted?.source;
     options.records.set(session_id, {
       startedSeq: event.seq,
       summary: {

@@ -114,6 +114,7 @@ test('SessionSubsystem keeps a conversation active across turns', async () => {
     cwd: '/tmp/project',
     project: 'vibecodium',
     origin: 'agent',
+    source: 'api',
   });
   assert.deepEqual(worker.messages[0], {
     type: 'start',

@@ -93,9 +93,7 @@ export function createHistoryDrawer({
       return;
     }
     for (const item of items) {
-      target.append(
-        sessionRecentRow(item, onSelect, onPin, registeredProjects),
-      );
+      target.append(sessionRecentRow(item, onSelect, onPin, registeredProjects));
     }
   };
 
@@ -106,14 +104,13 @@ export function createHistoryDrawer({
     machineList.replaceChildren();
     const showAgents = getShowAgents();
     const live = liveItems
-      .filter(
-        (item) =>
-          isLive(item.status) && visible(item, showAgents),
-      )
+      .filter((item) => isLive(item.status) && visible(item, showAgents))
       .sort(compareActivity);
     const recent = recentItems.filter((item) => visible(item, showAgents)).sort(compareActivity);
     const pinned = recent.filter((item) => item.pinned === true);
-    const ended = recent.filter((item) => item.pinned !== true && !isLive(item.state ?? item.status));
+    const ended = recent.filter(
+      (item) => item.pinned !== true && !isLive(item.state ?? item.status),
+    );
     const machine = machineEntries
       .filter(
         (entry) =>
@@ -124,7 +121,9 @@ export function createHistoryDrawer({
       .sort(compareActivity);
     renderRows(pinnedList, pinned, onRecentSelect);
     if (live.length === 0)
-      liveList.append(emptyItem(query || selectedProject ? 'No matching sessions.' : 'No sessions.'));
+      liveList.append(
+        emptyItem(query || selectedProject ? 'No matching sessions.' : 'No sessions.'),
+      );
     else renderLiveGroups(liveList, live, onLiveSelect, registeredProjects, onPin);
     renderRows(endedList, ended, onRecentSelect);
     if (machine.length === 0)

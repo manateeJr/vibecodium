@@ -24,7 +24,9 @@ export function createHomeView({
 
   const render = (sessions) => {
     list.replaceChildren();
-    const visible = sessions.filter((session) => getShowAllSessions() || session.source === 'pocket');
+    const visible = sessions.filter(
+      (session) => getShowAllSessions() || session.source === 'pocket',
+    );
     if (visible.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'drawer-empty';

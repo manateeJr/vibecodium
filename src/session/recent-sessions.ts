@@ -58,9 +58,7 @@ export function recentSessions(
     .filter((record) => args.project === undefined || record.summary.project === args.project)
     .filter(
       (record) =>
-        record.summary.pinned === true ||
-        args.include_ended ||
-        !isTerminal(record.summary.status),
+        record.summary.pinned === true || args.include_ended || !isTerminal(record.summary.status),
     )
     .sort(byRecency);
   const pinned = candidates.filter((record) => record.summary.pinned === true);

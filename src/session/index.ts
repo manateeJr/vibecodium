@@ -34,13 +34,13 @@ import { projectSessionEvent, type SessionSummaryRecord } from './session-summar
 import { AdmissionBudget, admissionConfigFromEnv } from './admission.js';
 import { PersistentSessionManager } from './persistent-session-manager.js';
 import { registerRecentSessions } from './recent-sessions.js';
+import { pinSession } from './session-pinning.js';
 import {
   errorMessage,
   forkSession,
   listSessions,
   sessionAttachInfo,
   sessionOpenArgs,
-  sessionPinArgs,
   sessionRenameArgs,
   sessionResumeArgs,
   sessionSendArgs,
@@ -52,6 +52,7 @@ import { requireContext, requireSessionTable } from './session-context.js';
 import { startPersistentSession } from './persistent-session-start.js';
 import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
+import { applySessionSubstrateState } from './session-state.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
@@ -169,7 +170,12 @@ export class SessionSubsystem implements Subsystem {
   public saveSessionRecord(record: SubstrateSessionRecord): SubstrateSessionRecord {
     const table = requireSessionTable(this.sessionTable);
     const saved = table.upsert(record);
-    this.applySubstrateState(record.sessionId, record.state, record.updatedAt);
+    applySessionSubstrateState(
+      this.sessionRecords,
+      record.sessionId,
+      record.state,
+      record.updatedAt,
+    );
     return saved;
   }
   public updateSessionState(
@@ -182,7 +188,7 @@ export class SessionSubsystem implements Subsystem {
       updatedAt === undefined
         ? table.updateState(session_id, state)
         : table.updateState(session_id, state, updatedAt);
-    this.applySubstrateState(session_id, state, record.updatedAt);
+    applySessionSubstrateState(this.sessionRecords, session_id, state, record.updatedAt);
     return record;
   }
   public emitSessionState(
@@ -299,20 +305,7 @@ export class SessionSubsystem implements Subsystem {
     return { label: args.label };
   }
   public pin(command: unknown): SessionPinResult {
-    const args = sessionPinArgs(command);
-    const record = this.sessionRecords.get(args.session_id);
-    if (!record) throw new Error('session not found');
-    if (this.sessionTable?.get(args.session_id) !== undefined) {
-      this.sessionTable.setPinned(args.session_id, args.pinned);
-    }
-    if (args.pinned) {
-      record.summary = { ...record.summary, pinned: true };
-    } else {
-      const summary = { ...record.summary };
-      delete summary.pinned;
-      record.summary = summary;
-    }
-    return { pinned: args.pinned };
+    return pinSession(this.sessionRecords, this.sessionTable, command);
   }
 
   public async fork(command: unknown): Promise<SessionForkResult> {
@@ -497,20 +490,7 @@ export class SessionSubsystem implements Subsystem {
       : 'stopped';
   }
   private markSessionLive(session_id: string): void {
-    this.applySubstrateState(session_id, 'live', this.now().toISOString());
-  }
-  private applySubstrateState(
-    session_id: string,
-    state: SubstrateSessionState,
-    updatedAt: string,
-  ): void {
-    const record = this.sessionRecords.get(session_id);
-    if (!record) return;
-    record.summary = {
-      ...record.summary,
-      status: state === 'live' ? 'live' : 'stopped',
-      updated_at: updatedAt,
-    };
+    applySessionSubstrateState(this.sessionRecords, session_id, 'live', this.now().toISOString());
   }
 }
 export function createSessionSubsystem(options: SessionSubsystemOptions = {}): SessionSubsystem {
