@@ -16,6 +16,7 @@ import {
   type SocketPathOptions,
 } from './paths.js';
 
+import { stopSubstrateScope } from './session-scope.js';
 export interface AbducoSubstrateClientOptions {
   readonly binaryPath?: string;
   readonly abducoPath?: string;
@@ -275,6 +276,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
 
   public async kill(name: string): Promise<void> {
     validateSessionName(name);
+    const systemdRunAvailable = detectSystemdRun();
     const state = this.attachments.get(name);
     const activeConnection = state?.connection;
     if (state) {
@@ -283,6 +285,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
       this.attachments.delete(name);
       state.connection = undefined;
     }
+    stopSubstrateScope(name, systemdRunAvailable, this.operationTimeoutMs);
     if (activeConnection) {
       await activeConnection.send(MESSAGE_TYPES.exit).catch(() => undefined);
       activeConnection.destroy();
@@ -306,6 +309,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
         );
       await sleep(this.reattachMinDelayMs);
     }
+    stopSubstrateScope(name, systemdRunAvailable, this.operationTimeoutMs);
   }
 
   public async listSessions(): Promise<readonly SubstrateSessionInfo[]> {

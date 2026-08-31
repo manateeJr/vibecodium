@@ -19,6 +19,20 @@ forms such as `512M`, `2G`, or `80%`; unset or malformed values apply no
 ceiling. If `systemd-run` is unavailable, Vibecodium falls back to direct
 abduco spawning and logs a warning.
 
+### Session sleep and wake
+
+The idle reaper puts an inactive persistent OMP session to sleep: it stops the
+whole session scope, releases the OMP and abduco processes and their RAM, and
+records the session as resumable. The next `session.send` cold-resumes that
+session and delivers the prompt to the same transcript. Set
+`VIBECODIUM_IDLE_TIMEOUT_MS` to tune the idle period (the default is 30 minutes;
+`0` reaps every idle session on the next sweep). When
+`MemAvailable` falls below `VIBECODIUM_MEMORY_PRESSURE_MIN_MB` (default `2048`
+MB), the reaper also evicts the oldest idle sessions early until memory recovers;
+set it to `0` to disable pressure-triggered reaping. Pressure evictions emit a
+`session_state` event with reason `reaped-pressure`; ordinary idle evictions use
+`reaped`.
+
 ### Attach to a session
 
 `vibecodium attach` lists known sessions and their current state. To take over
