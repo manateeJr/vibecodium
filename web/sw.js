@@ -3,7 +3,7 @@
 // Bumped by hand with every shell change: the assets are served straight off disk with no build
 // step, so there is no content hash or build stamp to derive a cache name from. Changing this is
 // what makes install/activate replace the old shell — see web/ui/updates.js for the page's half.
-const CACHE_NAME = 'vibecodium-shell-v18';
+const CACHE_NAME = 'vibecodium-shell-v19';
 // The share_target the manifest declares POSTs here. The fetch handler below turns that POST into
 // the `/?share=<token>` navigation the app knows how to land on.
 const SHARE_INTAKE_PATH = '/share-intake';
@@ -35,6 +35,7 @@ const SHELL_ASSETS = Object.freeze([
   '/ui/actions.js',
   '/ui/compose-controls.js',
   '/ui/composer.js',
+  '/ui/context-chip.js',
   '/ui/drawers.js',
   '/ui/elements.js',
   '/ui/event-feed.js',

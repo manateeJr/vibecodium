@@ -46,6 +46,34 @@
   padding: 0 3px;
 }
 
+/* Context-window usage hangs off the bottom of the action column — directly under SEND, in the
+ * empty right half of the CONTROL row. It is absolutely positioned inside the action column, so it
+ * claims no grid row: the button stack, and the textarea floor derived from it, are pixel-identical
+ * whether the reading is showing or hidden, and a number that changes on every assistant turn can
+ * never reflow the composer under the owner's thumb. The action column is the containing block; it
+ * had no `position` of its own and nothing inside it positions against an ancestor. */
+.compose-actions {
+  position: relative;
+}
+
+.context-chip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  /* The CONTROL row's own geometry (surface.css: 7px lead-in, 32px control key), so the readout
+   * lands on that row's centre line instead of floating in the gap above it. Expressed as
+   * line-height rather than a flex box on purpose: any `display` here would override the UA rule
+   * behind the `hidden` attribute and the chip could never hide. */
+  margin-top: 7px;
+  line-height: 32px;
+  /* A readout, not a control: it must not eat a tap meant for STOP or for the bar above it. */
+  pointer-events: none;
+  white-space: nowrap;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
 .compose-bar input,
 .compose-bar textarea,
 .token-panel input {

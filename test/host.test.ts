@@ -2,13 +2,24 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import { after, test } from 'node:test';
 import { COMMAND_NAMES } from '../src/contracts/commands.js';
 import type { EventKind, EventPayload } from '../src/contracts/events.js';
 import type { SubsystemContext } from '../src/contracts/subsystem.js';
 import { createHostSubsystem } from '../src/host/index.js';
 import { AdmissionBudget, admissionConfigFromEnv } from '../src/session/admission.js';
 import { EventStore } from '../src/server/event-store.js';
+
+// Keep tests off the operator's live host-config.json: a raised cap there would override constructed caps and fail this suite.
+const previousHostConfigPath = process.env.VIBECODIUM_HOST_CONFIG_PATH;
+const isolatedHostConfigRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-host-test-'));
+process.env.VIBECODIUM_HOST_CONFIG_PATH = path.join(isolatedHostConfigRoot, 'host-config.json');
+
+after(() => {
+  if (previousHostConfigPath === undefined) delete process.env.VIBECODIUM_HOST_CONFIG_PATH;
+  else process.env.VIBECODIUM_HOST_CONFIG_PATH = previousHostConfigPath;
+  fs.rmSync(isolatedHostConfigRoot, { recursive: true, force: true });
+});
 
 type RegisteredCommand = (command: unknown) => unknown | Promise<unknown>;
 

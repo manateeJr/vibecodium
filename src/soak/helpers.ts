@@ -46,6 +46,7 @@ const EVENT_KINDS: readonly EventKind[] = [
   'notify_emitted',
   'inbound_received',
   'session_state',
+  'session_context',
 ];
 const EVENT_KIND_MAP: Readonly<Record<string, true>> = Object.fromEntries(
   EVENT_KINDS.map((kind) => [kind, true]),
@@ -167,7 +168,11 @@ export function assertEventInvariants(
         throw new Error(`session_output index missing at seq ${event.seq}`);
       if (typeof payload.text !== 'string')
         throw new Error(`session_output text missing at seq ${event.seq}`);
-    } else if (event.type === 'session_complete' || event.type === 'session_state') {
+    } else if (
+      event.type === 'session_complete' ||
+      event.type === 'session_state' ||
+      event.type === 'session_context'
+    ) {
       requireSessionId(payload, event.seq);
     }
     if (

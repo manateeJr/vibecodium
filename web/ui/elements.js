@@ -28,6 +28,7 @@ export function queryElements() {
     composeForm: document.querySelector('#compose-form'),
     composeInput: document.querySelector('#compose-input'),
     composeSend: document.querySelector('#compose-send'),
+    contextChip: document.querySelector('#context-chip'),
     composeNote: document.querySelector('#compose-note'),
     externalHint: document.querySelector('#external-hint'),
     externalHintText: document.querySelector('#external-hint-text'),

@@ -1,5 +1,6 @@
 import { isExternalEntry } from '../lib/external-session.js';
 import { sessionIdOf } from '../lib/session-items.js';
+import { renderContextChip } from './context-chip.js';
 
 // What the compose bar promises before the operator commits. One verb — SEND — because a button
 // that renamed itself between OPEN and SEND read as two different buttons on a phone while saying
@@ -23,6 +24,10 @@ export function renderComposeControls({ elements, entry, state, project, hint })
   );
   elements.interruptKey.disabled =
     state.opening || state.interrupting || !sendable || !sessionIdOf(entry) || !entry?.abort_key;
+  // The chip is part of the compose surface, so it repaints on the same call the buttons do: one
+  // pass covers a selection change and every event the feed folds, with no second render path to
+  // keep in step. app.js sits exactly on the 500-line cap and has no room to call it itself.
+  renderContextChip({ element: elements.contextChip, entry });
 }
 function composePlaceholder(sendable, external, project) {
   if (sendable) return 'Write something…';

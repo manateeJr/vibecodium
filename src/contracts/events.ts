@@ -17,7 +17,8 @@ export type EventKind =
   | 'proposal_approved'
   | 'notify_emitted'
   | 'inbound_received'
-  | 'session_state';
+  | 'session_state'
+  | 'session_context';
 
 export interface SessionStartedPayload {
   readonly session_id: string;
@@ -128,6 +129,13 @@ export interface SessionStatePayload {
   readonly reason: SessionStateReason;
 }
 
+export interface SessionContextPayload {
+  readonly session_id: string;
+  readonly tokens: number;
+  readonly model?: string;
+  readonly context_window?: number;
+}
+
 export interface EventPayloadMap {
   readonly session_started: SessionStartedPayload;
   readonly session_output: SessionOutputPayload;
@@ -145,6 +153,7 @@ export interface EventPayloadMap {
   readonly inbound_received: InboundReceivedPayload;
   readonly session_forked: SessionForkedPayload;
   readonly session_state: SessionStatePayload;
+  readonly session_context: SessionContextPayload;
 }
 
 export type EventPayload<K extends EventKind = EventKind> = EventPayloadMap[K];

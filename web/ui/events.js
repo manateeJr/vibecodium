@@ -1,5 +1,6 @@
 import { IDLE_WORK_STATE, applyWorkEvent } from '../lib/session-state.js';
 import { eventClock } from '../lib/time.js';
+import { contextUsage } from './context-chip.js';
 
 const EVENT_TONES = Object.freeze({
   session_started: 'ok',
@@ -26,6 +27,14 @@ export function applySessionEvent(entry, event, pushLine) {
   // Every event folds into the work state, so "working" never depends on which branch runs below.
   entry.work = applyWorkEvent(entry.work ?? IDLE_WORK_STATE, event);
   entry.busy = entry.work.working;
+  // session_context is a meter, not a turn: the harness restates the session's context-window
+  // usage after every assistant record. Folding it onto the entry is what feeds the composer's
+  // chip; letting it fall through to pushEventLine would stamp a `ctx` line into the conversation
+  // on every single turn — the same noise session_state is dropped for further down.
+  if (event.type === 'session_context') {
+    entry.context = contextUsage(payload);
+    return;
+  }
   const clock = eventClock(event.ts);
   if (event.type === 'session_started') {
     if (typeof payload.provider === 'string' && payload.provider.trim())

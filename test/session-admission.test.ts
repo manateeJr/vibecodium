@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
-import test from 'node:test';
+import { after, test } from 'node:test';
 import type { EventEnvelope, EventKind, EventPayload } from '../src/contracts/events.js';
 import type { EventHandler, SubsystemContext } from '../src/contracts/subsystem.js';
 import {
@@ -10,6 +13,19 @@ import {
   SessionThrottledError,
 } from '../src/session/admission.js';
 import { SessionSubsystem } from '../src/session/index.js';
+
+// Keep tests off the operator's live host-config.json: a raised cap there would override constructed caps and fail this suite.
+const previousHostConfigPath = process.env.VIBECODIUM_HOST_CONFIG_PATH;
+const isolatedHostConfigRoot = fs.mkdtempSync(
+  path.join(os.tmpdir(), 'vibecodium-session-admission-test-'),
+);
+process.env.VIBECODIUM_HOST_CONFIG_PATH = path.join(isolatedHostConfigRoot, 'host-config.json');
+
+after(() => {
+  if (previousHostConfigPath === undefined) delete process.env.VIBECODIUM_HOST_CONFIG_PATH;
+  else process.env.VIBECODIUM_HOST_CONFIG_PATH = previousHostConfigPath;
+  fs.rmSync(isolatedHostConfigRoot, { recursive: true, force: true });
+});
 
 type RegisteredCommand = (command: unknown) => unknown | Promise<unknown>;
 

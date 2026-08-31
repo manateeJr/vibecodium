@@ -14,11 +14,17 @@ export interface OmpToolResult {
   readonly durationMs?: number;
 }
 
+export interface OmpContextSnapshot {
+  readonly tokens: number;
+  readonly model?: string;
+}
+
 export interface OmpAssistantRecord extends HarnessTranscriptRecord {
   readonly kind: 'assistant';
   readonly thinking: readonly string[];
   readonly toolCalls: readonly OmpToolCall[];
   readonly timeMs?: number;
+  readonly context?: OmpContextSnapshot;
 }
 
 export interface OmpUserRecord extends HarnessTranscriptRecord {
@@ -114,6 +120,16 @@ export function parseOmpTranscriptLine(line: string): OmpTranscriptRecord | null
     .map((part) => parseToolCall(part))
     .filter((call): call is OmpToolCall => call !== null);
   const text = transcriptText(content);
+  const contextSnapshot = objectField(message, 'contextSnapshot');
+  const tokens = positiveFiniteNumberField(contextSnapshot, 'promptTokens');
+  const model = stringField(message, 'model');
+  const context =
+    tokens === undefined
+      ? undefined
+      : {
+          tokens,
+          ...(model === undefined || model.length === 0 ? {} : { model }),
+        };
   return {
     kind: 'assistant',
     raw: line,
@@ -122,6 +138,7 @@ export function parseOmpTranscriptLine(line: string): OmpTranscriptRecord | null
     ...(text === undefined ? {} : { text }),
     ...(timeMs === undefined ? {} : { timeMs }),
     ...(ts === undefined ? {} : { ts }),
+    ...(context === undefined ? {} : { context }),
   };
 }
 
@@ -225,6 +242,16 @@ function objectField(
 function stringField(value: Record<string, unknown>, key: string): string | undefined {
   const candidate = value[key];
   return typeof candidate === 'string' ? candidate : undefined;
+}
+
+function positiveFiniteNumberField(
+  value: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const candidate = value?.[key];
+  return typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0
+    ? candidate
+    : undefined;
 }
 
 function recordTimestamp(

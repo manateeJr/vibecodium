@@ -11,6 +11,7 @@ import {
   type OmpSessionExitRecord,
   type OmpToolResultRecord,
 } from './omp-record-parser.js';
+import { contextWindowFor } from './model-context-window.js';
 
 export interface SessionTranscriptActivity {
   readonly record: HarnessTranscriptRecord;
@@ -65,6 +66,7 @@ export class SessionTranscriptTailer {
       readonly startedAt?: number;
     }
   >();
+  private lastContextKey?: string;
 
   public constructor(options: SessionTranscriptTailerOptions) {
     this.activeTranscriptPath = options.transcriptPath;
@@ -218,6 +220,20 @@ export class SessionTranscriptTailer {
       if (parsed?.kind === 'assistant') this.appendAssistant(parsed);
       else if (record.text?.trim()) {
         this.appendOutput(record.text, 'text');
+      }
+      if (parsed?.kind === 'assistant' && parsed.context) {
+        const { tokens, model } = parsed.context;
+        const window = contextWindowFor(model);
+        const contextKey = `${tokens}|${model ?? ''}|${window ?? ''}`;
+        if (contextKey !== this.lastContextKey) {
+          this.lastContextKey = contextKey;
+          this.appendEvent('session_context', {
+            session_id: this.sessionId,
+            tokens,
+            ...(model === undefined ? {} : { model }),
+            ...(window === undefined ? {} : { context_window: window }),
+          });
+        }
       }
       this.idle = this.plugin.idleDetector(record);
       if (this.idle) {
