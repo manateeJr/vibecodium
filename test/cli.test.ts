@@ -95,7 +95,7 @@ test('attach resumes a resumable session before spawning abduco', async () => {
   }
 });
 
-test('attach uses a live session directly without ensure-live', async () => {
+test('attach ensures a live record is actually alive before spawning abduco', async () => {
   const operations: string[] = [];
   const calls: SpawnCall[] = [];
   const originalFetch = globalThis.fetch;
@@ -107,21 +107,30 @@ test('attach uses a live session directly without ensure-live', async () => {
         state: 'live',
       };
     }
+    if (name === 'session.ensure_live') return { state: 'live', substrate_name: 'substrate-live' };
     throw new Error(`unexpected command: ${name}`);
   });
+  let output = '';
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    return true;
+  }) as typeof process.stdout.write;
   const originalExitCode = process.exitCode;
   try {
     await main(['attach', 'session-live'], {
       client,
       spawn: spawnSpy(operations, calls),
     });
-    assert.deepEqual(operations, ['session.attach_info', 'spawn']);
+    assert.deepEqual(operations, ['session.attach_info', 'session.ensure_live', 'spawn']);
     assert.deepEqual(calls[0], {
       command: '/tmp/vibecodium-abduco',
       args: ['-a', 'substrate-live'],
       stdio: 'inherit',
     });
+    assert.equal(output, 'detach: Ctrl+\\; double Ctrl+C exits the agent\n');
   } finally {
+    process.stdout.write = originalWrite;
     process.exitCode = originalExitCode;
     globalThis.fetch = originalFetch;
   }
@@ -144,6 +153,8 @@ test('open creates an omp session for the requested path and attaches it', async
         state: 'live',
       };
     }
+    if (name === 'session.ensure_live')
+      return { state: 'live', substrate_name: 'substrate-opened' };
     throw new Error(`unexpected command: ${name}`);
   });
   const originalExitCode = process.exitCode;
@@ -152,7 +163,12 @@ test('open creates an omp session for the requested path and attaches it', async
       client,
       spawn: spawnSpy(operations, calls),
     });
-    assert.deepEqual(operations, ['session.open', 'session.attach_info', 'spawn']);
+    assert.deepEqual(operations, [
+      'session.open',
+      'session.attach_info',
+      'session.ensure_live',
+      'spawn',
+    ]);
     assert.deepEqual(requests[0], {
       name: 'session.open',
       args: { provider: 'omp', prompt: '', cwd: '/work/project', origin: 'operator' },

@@ -87,12 +87,10 @@ export interface PersistentSessionWorkerOptions {
   readonly onSessionExit?: (record: OmpSessionExitRecord) => void;
   readonly onActivity?: (activity: SessionTranscriptActivity) => void;
 }
-
 export interface PersistentSessionStartResult {
   readonly transcriptPath: string;
   readonly harnessRef: string;
 }
-
 export class PersistentSessionWorker {
   public readonly sessionId: string;
   public readonly streamId: string;
@@ -123,7 +121,6 @@ export class PersistentSessionWorker {
   private launchTranscriptPath: string;
   private launchTranscriptSize = -1;
   private launchTranscriptMtimeMs = -1;
-
   public constructor(options: PersistentSessionWorkerOptions) {
     this.substrate = options.substrate;
     this.plugin = options.plugin;
@@ -148,27 +145,21 @@ export class PersistentSessionWorker {
     this.harnessRef = options.harnessRef ?? options.sessionId;
     this.launchTranscriptPath = options.transcriptPath;
   }
-
   public get isBusy(): boolean {
     return this.busy;
   }
-
   public get isIdle(): boolean {
     return this.tailer?.isIdle ?? false;
   }
-
   public get lastActivityAt(): number {
     return this.tailer?.lastActivityAt ?? 0;
   }
-
   public get currentTurn(): number {
     return Math.max(this.nextTurn, this.tailer?.currentTurn ?? 0);
   }
-
   public get currentTranscriptPath(): string {
     return this.transcriptPath;
   }
-
   public get currentHarnessRef(): string {
     return this.harnessRef;
   }
@@ -210,13 +201,11 @@ export class PersistentSessionWorker {
     await this.attachAndTail(false);
     return { transcriptPath: this.transcriptPath, harnessRef: this.harnessRef };
   }
-
   public async attachExisting(): Promise<PersistentSessionStartResult> {
     if (this.started) throw new Error(`persistent session already started: ${this.sessionId}`);
     await this.attachAndTail(true);
     return { transcriptPath: this.transcriptPath, harnessRef: this.harnessRef };
   }
-
   public async sendPrompt(prompt: string): Promise<number> {
     if (!this.started || this.stopping) throw new Error('persistent session is not live');
     const turn = this.busy
@@ -232,7 +221,6 @@ export class PersistentSessionWorker {
     }
     return turn;
   }
-
   public async sendKeys(keys: readonly SubstrateKey[]): Promise<number> {
     if (!this.started || this.stopping) throw new Error('persistent session is not live');
     for (const key of keys) await this.substrate.sendKey(this.substrateName, key);
@@ -242,20 +230,12 @@ export class PersistentSessionWorker {
   public async stop(): Promise<void> {
     await this.close(true);
   }
-
   public async shutdown(): Promise<void> {
     await this.close(false);
   }
-
   public async reap(): Promise<void> {
     await this.close(true);
   }
-
-  /**
-   * The harness already exited, so kill the substrate first. Waiting for the
-   * tailer before killing would deadlock while its current read is dispatching
-   * this callback.
-   */
   public async cleanupAfterHarnessExit(): Promise<void> {
     if (this.stopping) return;
     this.stopping = true;
@@ -267,11 +247,9 @@ export class PersistentSessionWorker {
     this.attachment = undefined;
     this.started = false;
   }
-
   public flushTranscript(): Promise<void> {
     return this.tailer?.readAvailable() ?? Promise.resolve();
   }
-
   public verifyRelaunchLiveness(timeoutMs = 3_000): Promise<RelaunchLivenessResult> {
     return verifyRelaunchLiveness({
       substrate: this.substrate,
@@ -283,7 +261,6 @@ export class PersistentSessionWorker {
       timeoutMs,
     });
   }
-
   private async attachAndTail(startAtEnd: boolean): Promise<void> {
     this.transcriptPath = await discoverTranscript(
       this.storageDir,
@@ -319,7 +296,6 @@ export class PersistentSessionWorker {
     await this.tailer.start();
     this.started = true;
   }
-
   private async inject(prompt: string): Promise<void> {
     for (const key of this.plugin.injectionRecipe.clearKeys) {
       await this.substrate.sendKey(this.substrateName, key);
@@ -331,7 +307,6 @@ export class PersistentSessionWorker {
       await this.substrate.sendKey(this.substrateName, key);
     }
   }
-
   private async close(kill: boolean): Promise<void> {
     if (this.stopping) return;
     this.stopping = true;

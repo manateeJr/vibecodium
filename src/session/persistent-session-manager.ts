@@ -195,7 +195,6 @@ export class PersistentSessionManager {
     });
     return turn;
   }
-
   public sendKeys(sessionId: string, keys: readonly SubstrateKey[]): Promise<number> {
     return this.requireWorker(sessionId).sendKeys(keys);
   }
@@ -204,13 +203,11 @@ export class PersistentSessionManager {
     const result = await this.ensureLive(args.session_id);
     return { state: result.state, substrate_name: result.substrateName };
   }
-
   public async sendKeysCommand(command: unknown): Promise<SessionSendKeysResult> {
     const args = sessionSendKeysArgs(command);
     const sent = await this.sendKeys(args.session_id, args.keys);
     return { sent };
   }
-
   public async stop(sessionId: string): Promise<void> {
     const worker = this.workers.get(sessionId);
     if (!worker) return;
@@ -225,7 +222,10 @@ export class PersistentSessionManager {
     if (record.state === 'closed') throw new Error('session is closed');
     const relaunch = this.relaunches.get(sessionId);
     if (relaunch) return relaunch;
-    if (record.state === 'live' && (await isSubstrateSessionLive(this.substrate, record.substrateName))) {
+    if (
+      record.state === 'live' &&
+      (await isSubstrateSessionLive(this.substrate, record.substrateName))
+    ) {
       if (this.workers.has(sessionId))
         return { state: 'live', substrateName: record.substrateName };
       const attached = await this.attach(record);
@@ -247,20 +247,16 @@ export class PersistentSessionManager {
     }
     return this.relaunch(record);
   }
-
   public async runReaper(): Promise<readonly string[]> {
     await this.flush();
     return this.reaper.runOnce();
   }
-
   public async flush(): Promise<void> {
     await Promise.all([...this.workers.values()].map((worker) => worker.flushTranscript()));
   }
-
   public startReaper(): void {
     this.reaper.start();
   }
-
   public async shutdown(): Promise<void> {
     this.reaper.stop();
     const workers = [...this.workers.values()];
@@ -270,11 +266,9 @@ export class PersistentSessionManager {
   public get activeCount(): number {
     return this.workers.size;
   }
-
   public has(sessionId: string): boolean {
     return this.workers.has(sessionId);
   }
-
   private workerFor(options: PersistentWorkerConfig): PersistentSessionWorker {
     return new PersistentSessionWorker({
       ...options,

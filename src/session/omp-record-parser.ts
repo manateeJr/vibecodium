@@ -38,10 +38,7 @@ export interface OmpSessionExitRecord extends HarnessTranscriptRecord {
 }
 
 export type OmpTranscriptRecord =
-  | OmpAssistantRecord
-  | OmpUserRecord
-  | OmpToolResultRecord
-  | OmpSessionExitRecord;
+  OmpAssistantRecord | OmpUserRecord | OmpToolResultRecord | OmpSessionExitRecord;
 
 /** Parse the persisted JSONL shape emitted by omp's session store. */
 export function parseOmpTranscriptLine(line: string): OmpTranscriptRecord | null {

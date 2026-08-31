@@ -45,11 +45,12 @@ import {
 } from './session-helpers.js';
 import { registerRecentSessions } from './recent-sessions.js';
 import type { SessionTable } from './session-table.js';
-import { startPersistentSession } from './persistent-session-start.js';
 import { createPtySubscription, type PtySubscriptionHub } from './pty-subscriptions.js';
 import { requireContext, requireSessionTable } from './session-context.js';
+import { startPersistentSession } from './persistent-session-start.js';
 import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
+import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
 export const DEFAULT_SESSION_STORAGE_ROOT = sessionStorageRootFromEnvironment();
@@ -66,7 +67,6 @@ export interface SessionSubsystemOptions {
   readonly now?: () => Date;
   readonly machineSessions?: MachineSessionResolver;
 }
-type SessionRecord = SessionSummaryRecord;
 export class SessionSubsystem implements Subsystem {
   public readonly name = 'session';
   public readonly substrate: SubstrateClient | undefined;
@@ -75,7 +75,7 @@ export class SessionSubsystem implements Subsystem {
   private readonly forkProcess: SessionFork;
   private readonly idFactory: () => string;
   private readonly sessions = new Map<string, SessionState>();
-  private readonly sessionRecords = new Map<string, SessionRecord>();
+  private readonly sessionRecords = new Map<string, SessionSummaryRecord>();
   private readonly sessionStorageDirs = new Map<string, string>();
   private readonly stoppedSessions = new Set<string>();
   private readonly substrateAttachments = new Map<string, SubstrateAttachment>();
@@ -219,7 +219,7 @@ export class SessionSubsystem implements Subsystem {
   ): Promise<void> {
     let live = false;
     try {
-      live = await substrate.isLive(record.substrateName);
+      live = await isSubstrateSessionLive(substrate, record.substrateName);
     } catch {
       live = false;
     }

@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { spawn, spawnSync, type ChildProcess, type SpawnSyncOptions, type SpawnSyncReturns } from 'node:child_process';
+import {
+  spawn,
+  spawnSync,
+  type ChildProcess,
+  type SpawnSyncOptions,
+  type SpawnSyncReturns,
+} from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient, type ProjectSaveArgs, type VibecodiumClient } from './client/index.js';
