@@ -13,7 +13,7 @@ import {
 import { createActions } from '/ui/actions.js';
 import { renderComposeControls } from '/ui/compose-controls.js';
 import { createComposer } from '/ui/composer.js';
-import { wireConnectivity } from '/ui/connectivity.js';
+import { createConnectionMonitor, wireConnectivity } from '/ui/connectivity.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { createExternalHint } from '/ui/external-hint.js';
 import { queryElements } from '/ui/elements.js';
@@ -31,16 +31,17 @@ import { createSessionSurface } from '/ui/session-surface.js';
 import { createStreamLog } from '/ui/stream-log.js';
 import { wireServiceWorkerUpdates } from '/ui/updates.js';
 import { createVoiceRecorder } from '/ui/voice.js';
-
 const SESSION_LIMIT = 10;
 const SESSION_NOTE = 'recent sessions unavailable';
-
 const elements = queryElements();
 let clientToken = loadToken();
-const clientOptions = {
-  baseUrl: globalThis.location.origin,
-  ...(clientToken ? { token: clientToken } : {}),
-};
+const clientOptions = { baseUrl: globalThis.location.origin };
+if (clientToken) clientOptions.token = clientToken;
+clientOptions.webSocket = createConnectionMonitor(
+  setStatus,
+  () => selectedStreamId,
+  () => actions.flushQueuedSends(),
+);
 const client = createClient(clientOptions);
 // Read lazily everywhere it is used, so a token saved in Settings reaches the next request.
 const connection = () => ({ baseUrl: globalThis.location.origin, token: clientToken });
