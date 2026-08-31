@@ -16,6 +16,7 @@ import type {
 import { ompHarnessPlugin } from '../src/provider/omp-harness-plugin.js';
 import { PersistentSessionWorker } from '../src/server/session-worker.js';
 import { SessionSubsystem } from '../src/session/index.js';
+import { harnessRefFromTranscriptPath } from '../src/session/transcript-ref.js';
 import { SessionTable } from '../src/session/session-table.js';
 
 class TestContext implements SubsystemContext {
@@ -100,6 +101,25 @@ class TestSubstrate implements SubstrateClient {
   }
 }
 
+class DeadOnCreateSubstrate extends TestSubstrate {
+  private deadName: string | undefined;
+
+  public override async createSession(
+    name: string,
+    argv: readonly string[],
+    options?: SubstrateCreateOptions,
+  ): Promise<SubstrateSessionInfo> {
+    const created = await super.createSession(name, argv, options);
+    this.deadName = name;
+    this.liveNames.delete(name);
+    return created;
+  }
+
+  public override async listSessions(): Promise<readonly SubstrateSessionInfo[]> {
+    return this.deadName === undefined ? [] : [{ name: this.deadName, live: false }];
+  }
+}
+
 class BlockingSubstrate extends TestSubstrate {
   private readonly createGate: Promise<void>;
   private releaseCreate!: () => void;
@@ -134,6 +154,102 @@ class BlockingSubstrate extends TestSubstrate {
 function nextImmediate(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+test('transcript ref parser handles real and malformed filenames', () => {
+  assert.equal(
+    harnessRefFromTranscriptPath(
+      '/tmp/omp/2026-08-30T20-43-53-324Z_01a0546a-146c-7000-9032-3674b9943f50.jsonl',
+    ),
+    '01a0546a-146c-7000-9032-3674b9943f50',
+  );
+  assert.equal(
+    harnessRefFromTranscriptPath('/tmp/omp/2026-08-30T20-43-53-324Z_ref_with_underscores.jsonl'),
+    'ref_with_underscores',
+  );
+  assert.equal(harnessRefFromTranscriptPath('/tmp/omp/no-underscore.jsonl'), undefined);
+  assert.deepEqual(
+    ompHarnessPlugin.launchArgv({
+      sessionId: 'session-id',
+      cwd: '/workspace',
+      resumeRef: 'session-id',
+      transcriptPath:
+        '/tmp/omp/2026-08-30T20-43-53-324Z_01a0546a-146c-7000-9032-3674b9943f50.jsonl',
+    }),
+    ['omp', '--resume', '01a0546a-146c-7000-9032-3674b9943f50'],
+  );
+});
+
+test('failed cold resume remains resumable and surfaces the undelivered prompt', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-resume-failed-'));
+  const context = new TestContext();
+  const substrate = new DeadOnCreateSubstrate();
+  const table = new SessionTable({ filename: ':memory:' });
+  const sessionId = 'failed-resume-session';
+  table.upsert({
+    sessionId,
+    provider: 'omp',
+    harnessRef: 'stored-ref',
+    substrateName: `substrate-${sessionId}`,
+    transcriptPath: path.join(
+      root,
+      sessionId,
+      '2026-08-30T20-43-53-324Z_01a0546a-146c-7000-9032-3674b9943f50.jsonl',
+    ),
+    storageDir: path.join(root, sessionId),
+    state: 'resumable',
+    updatedAt: '2026-08-30T00:00:00.000Z',
+  });
+  context.append(`session:${sessionId}`, 'session_started', {
+    session_id: sessionId,
+    provider: 'omp',
+    prompt: 'old prompt',
+  });
+  const subsystem = new SessionSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    await assert.rejects(
+      async () => await subsystem.send({ session_id: sessionId, prompt: 'retry this prompt' }),
+      /resume-failed: .*undelivered prompt: retry this prompt/,
+    );
+    assert.equal(table.get(sessionId)?.state, 'resumable');
+    assert.equal(
+      context.events.some(
+        (event) =>
+          event.type === 'session_state' &&
+          (event.payload as EventPayload<'session_state'>).state === 'live',
+      ),
+      false,
+    );
+    const failure = context.events.find(
+      (event) =>
+        event.type === 'verify_failed' &&
+        (event.payload as EventPayload<'verify_failed'>).session_id === sessionId,
+    );
+    assert.ok(failure);
+    assert.equal(failure.type, 'verify_failed');
+    const failurePayload = failure.payload as EventPayload<'verify_failed'>;
+    assert.equal(failurePayload.prompt, 'retry this prompt');
+    assert.match(failurePayload.error, /undelivered prompt: retry this prompt/);
+    assert.deepEqual(substrate.created[0]?.argv, [
+      'omp',
+      '--session-dir',
+      path.join(root, sessionId),
+      '--resume',
+      '01a0546a-146c-7000-9032-3674b9943f50',
+      'retry this prompt',
+    ]);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('bare ensure-live relaunches without injecting a prompt', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-resume-'));

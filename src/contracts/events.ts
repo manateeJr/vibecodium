@@ -62,6 +62,7 @@ export interface VerifyFailedPayload {
   readonly error: string;
   readonly session_id?: string;
   readonly error_class?: string;
+  readonly prompt?: string;
 }
 
 export interface ActionEventPayload {
@@ -102,7 +103,8 @@ export interface InboundReceivedPayload {
   readonly capability_token_id?: string;
 }
 
-export type SessionStateReason = 'reaped' | 'reconciled' | 'shutdown' | 'resumed';
+export type SessionStateReason =
+  'reaped' | 'reconciled' | 'shutdown' | 'resumed' | `resume-failed: ${string}`;
 
 export interface SessionStatePayload {
   readonly session_id: string;

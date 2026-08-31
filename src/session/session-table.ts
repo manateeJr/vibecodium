@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import type { SessionOrigin } from '../contracts/session-commands.js';
+import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type {
   SubstrateSessionRecord,
   SubstrateSessionState,
@@ -96,20 +97,25 @@ export class SessionTable {
   }
 
   public upsert(record: SubstrateSessionRecord): SubstrateSessionRecord {
-    validateRecord(record);
+    const derivedHarnessRef = harnessRefFromTranscriptPath(record.transcriptPath);
+    const persisted =
+      derivedHarnessRef === undefined || derivedHarnessRef === record.harnessRef
+        ? record
+        : { ...record, harnessRef: derivedHarnessRef };
+    validateRecord(persisted);
     this.upsertRecord.run(
-      record.sessionId,
-      record.provider,
-      record.harnessRef,
-      record.substrateName,
-      record.transcriptPath,
-      record.storageDir,
-      record.state,
-      record.label ?? '',
-      record.origin ?? 'agent',
-      record.updatedAt,
+      persisted.sessionId,
+      persisted.provider,
+      persisted.harnessRef,
+      persisted.substrateName,
+      persisted.transcriptPath,
+      persisted.storageDir,
+      persisted.state,
+      persisted.label ?? '',
+      persisted.origin ?? 'agent',
+      persisted.updatedAt,
     );
-    return record;
+    return persisted;
   }
 
   public get(sessionId: string): SubstrateSessionRecord | undefined {
@@ -149,6 +155,23 @@ export class SessionTable {
     const record = this.get(sessionId);
     if (record === undefined) throw new Error(`session record disappeared: ${sessionId}`);
     return record;
+  }
+
+  public repairHarnessRefs(updatedAt = new Date().toISOString()): number {
+    let repaired = 0;
+    for (const record of this.list()) {
+      const derivedHarnessRef = harnessRefFromTranscriptPath(record.transcriptPath);
+      if (
+        record.harnessRef !== record.sessionId ||
+        derivedHarnessRef === undefined ||
+        derivedHarnessRef === record.harnessRef
+      ) {
+        continue;
+      }
+      this.upsert({ ...record, harnessRef: derivedHarnessRef, updatedAt });
+      repaired += 1;
+    }
+    return repaired;
   }
 
   public close(): void {

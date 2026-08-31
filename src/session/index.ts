@@ -200,6 +200,7 @@ export class SessionSubsystem implements Subsystem {
     const substrate = this.substrate;
     const table = this.sessionTable;
     if (!substrate || !table) return;
+    table.repairHarnessRefs(this.now().toISOString());
     for (const record of table.list()) {
       if (record.state === 'closed') continue;
       await this.reconcileRecord(record, substrate);
