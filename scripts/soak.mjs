@@ -1,14 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { ControlPlane } from '../dist/src/server/control-plane.js';
@@ -16,25 +8,18 @@ import { createFilesSubsystem } from '../dist/src/files/index.js';
 import { SessionTable } from '../dist/src/session/session-table.js';
 import { SessionSubsystem } from '../dist/src/session/index.js';
 import { createSubstrateClient } from '../dist/src/substrate/index.js';
-import {
-  SOAK_PHASES,
-  assertEventInvariants,
-  assertNoStuckSessions,
-  assertReplayMatchesLive,
-  parseSoakArgs,
-  soakDurationMs,
-} from '../dist/src/soak/helpers.js';
-const options = parseSoakArgs(process.argv.slice(2));
-const root = mkdtempSync(path.join(tmpdir(), 'vibecodium-soak-'));
+import * as soak from '../dist/src/soak/helpers.js';
+const options = soak.parseSoakArgs(process.argv.slice(2));
+const root = fs.mkdtempSync(path.join(tmpdir(), 'vibecodium-soak-'));
 const projectDir = path.join(root, 'project');
 const storageRoot = path.join(root, 'sessions');
 const sharedDir = path.join(root, 'shared');
 const socketDir = path.join('/tmp', `vibecodium-soak-${process.pid}`);
 const databasePath = path.join(root, 'control-plane.sqlite');
-const targetDuration = soakDurationMs(options);
+const targetDuration = soak.soakDurationMs(options);
 const eventTimeoutMs = options.provider === 'fake' ? 15_000 : 180_000;
 const startedAt = Date.now();
-const phaseBudget = targetDuration / SOAK_PHASES.length;
+const phaseBudget = targetDuration / soak.SOAK_PHASES.length;
 const state = {
   runtime: undefined,
   sessionId: undefined,
@@ -50,9 +35,9 @@ const environment = new Map([
   ['VIBECODIUM_SESSION_STORAGE_ROOT', process.env.VIBECODIUM_SESSION_STORAGE_ROOT],
   ['ABDUCO_SOCKET_DIR', process.env.ABDUCO_SOCKET_DIR],
 ]);
-mkdirSync(projectDir, { recursive: true });
-mkdirSync(storageRoot, { recursive: true });
-mkdirSync(socketDir, { recursive: true, mode: 0o700 });
+fs.mkdirSync(projectDir, { recursive: true });
+fs.mkdirSync(storageRoot, { recursive: true });
+fs.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
 process.env.VIBECODIUM_SHARED_DIR = sharedDir;
 process.env.VIBECODIUM_SESSION_STORAGE_ROOT = storageRoot;
 process.env.ABDUCO_SOCKET_DIR = socketDir;
@@ -226,6 +211,17 @@ async function runScenario() {
       'session.send',
     );
     if (typeof base.turn !== 'number') throw new Error('steering base turn missing');
+    await waitForEvents(
+      (events) =>
+        events.some(
+          (event) =>
+            event?.type === 'session_input' &&
+            event.payload?.turn === base.turn &&
+            event.payload?.steering !== true &&
+            String(event.payload?.text ?? '').includes('SOAK-STEERING-BASE'),
+        ),
+      'base steering prompt input',
+    );
     const keys = recordValue(
       await command('session.send_keys', { session_id: state.sessionId, keys: ['escape'] }),
       'session.send_keys',
@@ -310,7 +306,7 @@ async function runScenario() {
     if (!Array.isArray(metadata.files) || metadata.files.length !== 1)
       throw new Error('share-intake did not stage exactly one file');
     const sharedFile = recordValue(metadata.files[0], 'shared file');
-    if (sharedFile.name !== fileName || readFileSync(sharedFile.path, 'utf8') !== content)
+    if (sharedFile.name !== fileName || fs.readFileSync(sharedFile.path, 'utf8') !== content)
       throw new Error('shared file content did not round-trip');
     const uploaded = recordValue(
       await command('files.upload', {
@@ -321,7 +317,7 @@ async function runScenario() {
       }),
       'files.upload',
     );
-    if (readFileSync(uploaded.path, 'utf8') !== content)
+    if (fs.readFileSync(uploaded.path, 'utf8') !== content)
       throw new Error('composer upload did not preserve shared file content');
     await sendTurn('SOAK-SHARE-RIDE-ALONG: continue with the staged note and file');
   });
@@ -409,14 +405,14 @@ async function runScenario() {
     await stopSession();
     const live = await readEvents();
     const replayed = await readEvents();
-    assertReplayMatchesLive(live, replayed);
-    const report = assertEventInvariants(live, state.streamId);
+    soak.assertReplayMatchesLive(live, replayed);
+    const report = soak.assertEventInvariants(live, state.streamId);
     if (report.kinds.session_started !== 1 || report.kinds.session_complete !== 1)
       throw new Error('session start/complete invariant failed');
     if (report.kinds.verify_failed !== 0)
       throw new Error('verify_failed event entered the soak stream');
     const listed = recordValue(await command('session.list', {}), 'session.list');
-    assertNoStuckSessions(listed.sessions ?? []);
+    soak.assertNoStuckSessions(listed.sessions ?? []);
     state.report = report;
     log(
       `invariants kinds=${JSON.stringify(report.kinds)} turns=${report.turnCount} replay=${report.replayCount}`,
@@ -424,9 +420,9 @@ async function runScenario() {
   });
 }
 function transcriptPaths(directory) {
-  if (!existsSync(directory)) return [];
+  if (!fs.existsSync(directory)) return [];
   const paths = [];
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
     const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) paths.push(...transcriptPaths(entryPath));
     else if (entry.isFile() && entry.name.endsWith('.jsonl')) paths.push(entryPath);
@@ -434,12 +430,12 @@ function transcriptPaths(directory) {
   return paths;
 }
 function writeFailureArtifacts(error) {
-  const artifactDir = mkdtempSync(path.join(tmpdir(), 'vibecodium-soak-failure-'));
-  writeFileSync(
+  const artifactDir = fs.mkdtempSync(path.join(tmpdir(), 'vibecodium-soak-failure-'));
+  fs.writeFileSync(
     path.join(artifactDir, 'error.txt'),
     `${error instanceof Error ? error.stack : String(error)}\n`,
   );
-  writeFileSync(
+  fs.writeFileSync(
     path.join(artifactDir, 'events.json'),
     `${JSON.stringify(state.lastEvents, null, 2)}\n`,
   );
@@ -447,16 +443,16 @@ function writeFailureArtifacts(error) {
     encoding: 'utf8',
     env: { ...process.env, ABDUCO_SOCKET_DIR: socketDir },
   });
-  writeFileSync(
+  fs.writeFileSync(
     path.join(artifactDir, 'abduco-l.txt'),
     `${listing.stdout ?? ''}${listing.stderr ?? ''}`,
   );
   const paths = transcriptPaths(storageRoot);
   if (paths.length === 0)
-    writeFileSync(path.join(artifactDir, 'transcripts.none'), 'no JSONL transcripts\n');
+    fs.writeFileSync(path.join(artifactDir, 'transcripts.none'), 'no JSONL transcripts\n');
   paths.forEach((transcript, index) => {
-    const lines = readFileSync(transcript, 'utf8').split(/\r?\n/);
-    writeFileSync(
+    const lines = fs.readFileSync(transcript, 'utf8').split(/\r?\n/);
+    fs.writeFileSync(
       path.join(artifactDir, `transcript-${index}.tail`),
       `# ${transcript}\n${lines.slice(-40).join('\n')}\n`,
     );
@@ -494,6 +490,6 @@ try {
     if (value === undefined) delete process.env[name];
     else process.env[name] = value;
   }
-  rmSync(root, { recursive: true, force: true });
-  rmSync(socketDir, { recursive: true, force: true });
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(socketDir, { recursive: true, force: true });
 }
