@@ -88,7 +88,7 @@ test('abduco listing parser preserves session names and liveness marker', () => 
 
 test('substrate liveness requires the listed hosted child process', async () => {
   const substrate = {
-    listSessions: async () => [{ name: 'session', live: true, pid: process.pid }],
+    listSessions: async () => [{ name: 'session', live: true }],
     isLive: async () => false,
   } as unknown as SubstrateClient;
   assert.equal(await isSubstrateSessionLive(substrate, 'session'), true);

@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import type { SubstrateClient } from '../contracts/substrate-contract.js';
 
 export interface RelaunchLivenessResult {
@@ -32,7 +32,7 @@ export async function isSubstrateSessionLive(
   try {
     const sessions = await substrate.listSessions();
     const session = sessions.find((candidate) => candidate.name === substrateName);
-    return session !== undefined && session.live && hostedChildIsLive(session.pid);
+    return session !== undefined && session.live && (await hostedChildIsLive(session.pid));
   } catch {
     try {
       return await substrate.isLive(substrateName);
@@ -42,16 +42,17 @@ export async function isSubstrateSessionLive(
   }
 }
 
-function hostedChildIsLive(pid: number | undefined): boolean {
-  if (pid === undefined) return true;
+async function hostedChildIsLive(serverPid: number | undefined): Promise<boolean> {
+  if (serverPid === undefined) return true;
   try {
-    process.kill(pid, 0);
-    return true;
+    const children = (
+      await readFile(`/proc/${serverPid}/task/${serverPid}/children`, 'utf8')
+    ).trim();
+    return children.length > 0;
   } catch {
     return false;
   }
 }
-
 export async function verifyRelaunchLiveness(options: {
   readonly substrate: SubstrateClient;
   readonly substrateName: string;
@@ -102,7 +103,7 @@ async function childLiveness(
     const sessions = await substrate.listSessions();
     const session = sessions.find((candidate) => candidate.name === substrateName);
     if (session !== undefined)
-      return { known: true, live: session.live && hostedChildIsLive(session.pid) };
+      return { known: true, live: session.live && (await hostedChildIsLive(session.pid)) };
   } catch {
     // Fall back to the substrate's liveness check for test and alternate clients.
   }
