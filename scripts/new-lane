@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+root=$(/usr/bin/git rev-parse --show-toplevel)
+exec node "$root/scripts/new-lane.mjs" "$@"
