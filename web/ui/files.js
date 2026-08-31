@@ -1,5 +1,6 @@
 /* global document */
 import { base64ToBlob, blobToBase64 } from '../lib/base64.js';
+import { formatBytes } from '../lib/bytes.js';
 import { basename, normalizePath, pathMatches } from '../lib/paths.js';
 
 // Uploads land in the shared folder; the control plane enforces the same ceiling server-side.
@@ -126,7 +127,7 @@ export function createFilesPanel({
     name.textContent = entry.name;
     const meta = document.createElement('span');
     meta.className = 'file-row__meta';
-    meta.textContent = formatFileSize(entry.size);
+    meta.textContent = formatBytes(entry.size);
     details.append(name, meta);
     const action = document.createElement('button');
     action.className = 'file-row__download';
@@ -144,7 +145,7 @@ export function createFilesPanel({
     try {
       const result = await client.filesDownload({ path: entry.path });
       saveBlob(base64ToBlob(result.content_base64, result.mime), result.name || entry.name);
-      setStatus(`downloaded ${result.name || entry.name} · ${formatFileSize(result.size)}`);
+      setStatus(`downloaded ${result.name || entry.name} · ${formatBytes(result.size)}`);
     } catch (error) {
       report(`download failed: ${errorMessage(error)}`);
     }
@@ -185,13 +186,13 @@ export function createFilesPanel({
 
   const stageOne = async (file, progress) => {
     if (file.size > MAX_UPLOAD_BYTES) {
-      note(`${file.name} is ${formatFileSize(file.size)} · attachments cap at 200 MB`);
+      note(`${file.name} is ${formatBytes(file.size)} · attachments cap at 200 MB`);
       return '';
     }
-    note(`reading ${file.name} · ${formatFileSize(file.size)}${progress}…`);
+    note(`reading ${file.name} · ${formatBytes(file.size)}${progress}…`);
     try {
       const content_base64 = await blobToBase64(file);
-      note(`uploading ${file.name} · ${formatFileSize(file.size)}${progress}…`);
+      note(`uploading ${file.name} · ${formatBytes(file.size)}${progress}…`);
       const result = await client.filesUpload({
         session_id: sessionIdForUpload(),
         name: file.name,
@@ -291,14 +292,4 @@ function saveBlob(blob, name) {
 function freshSessionId() {
   const uuid = globalThis.crypto?.randomUUID?.();
   return uuid ?? `attach-${Date.now().toString(36)}`;
-}
-
-function formatFileSize(value) {
-  const bytes = Number(value);
-  if (!Number.isFinite(bytes) || bytes < 0) return 'unknown size';
-  if (bytes < 1024) return `${Math.round(bytes)} B`;
-  const kib = bytes / 1024;
-  if (kib < 1024) return `${kib.toFixed(1)} KB`;
-  const mib = kib / 1024;
-  return mib < 1024 ? `${mib.toFixed(1)} MB` : `${(mib / 1024).toFixed(1)} GB`;
 }

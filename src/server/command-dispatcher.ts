@@ -1,6 +1,8 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { COMMAND_NAMES, WORKFLOW_START_COMMAND } from '../contracts/commands.js';
 import type { CapabilityTokenClaims, CapabilityTokenManager } from '../notify/index.js';
 import type { CommandHandler, Subsystem } from '../contracts/subsystem.js';
+import { isLoopbackAddress } from './control-plane-helpers.js';
 import type { CommandTokenVerifier } from './control-plane.js';
 
 export class CommandAuthorizationError extends Error {
@@ -94,6 +96,25 @@ export function sessionStopHandlersFrom(subsystems: readonly Subsystem[]): reado
   }
   return handlers;
 }
+export type ReportIntakeHandler = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  options?: { readonly verifyToken?: (token: string | undefined) => boolean },
+) => Promise<void>;
+
+export function reportIntakeFrom(
+  subsystems: readonly Subsystem[],
+): ReportIntakeHandler | undefined {
+  const reports = subsystems.find((subsystem) => subsystem.name === 'reports');
+  if (!reports || !isReportIntakeSubsystem(reports)) return undefined;
+  return (request, response, options) => reports.intake(request, response, options);
+}
+
+export function reportSweepStopFrom(subsystems: readonly Subsystem[]): (() => void) | undefined {
+  const reports = subsystems.find((subsystem) => subsystem.name === 'reports');
+  if (!reports || !isReportSweepSubsystem(reports)) return undefined;
+  return () => reports.stopSweep();
+}
 
 function normalizeCommand(
   name: string,
@@ -150,7 +171,18 @@ function isTokenVerifier(
   return typeof candidate.verify === 'function' && typeof candidate.consume === 'function';
 }
 
-function isLoopbackAddress(address: string | undefined): boolean {
-  if (!address) return true;
-  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+interface ReportIntakeSubsystem extends Subsystem {
+  readonly intake: ReportIntakeHandler;
+}
+
+interface ReportSweepSubsystem extends Subsystem {
+  readonly stopSweep: () => void;
+}
+
+function isReportIntakeSubsystem(value: Subsystem): value is ReportIntakeSubsystem {
+  return 'intake' in value && typeof value.intake === 'function';
+}
+
+function isReportSweepSubsystem(value: Subsystem): value is ReportSweepSubsystem {
+  return 'stopSweep' in value && typeof value.stopSweep === 'function';
 }

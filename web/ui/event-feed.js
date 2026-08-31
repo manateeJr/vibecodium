@@ -12,6 +12,7 @@ export function createEventFeed({
   setStatus,
   onSessionEvent,
   isSelected,
+  onNonSessionEvent = () => undefined,
   errorMessage,
 }) {
   const seen = new Set();
@@ -26,7 +27,12 @@ export function createEventFeed({
       return;
     }
     const entry = ensureEntry(event.stream_id);
-    if (!entry) return;
+    // Not every stream is a session: the reports inbox has one of its own. It is handled after the
+    // dedupe above, because a reconnect replays it twice like anything else.
+    if (!entry) {
+      onNonSessionEvent(event);
+      return;
+    }
     applySessionEvent(entry, event, streamLog.push);
     const eventTime = Date.parse(event.ts);
     entry.lastActivityAt = Number.isFinite(eventTime) ? eventTime : Date.now();

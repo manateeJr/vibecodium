@@ -20,17 +20,15 @@ import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { createExternalHint } from '/ui/external-hint.js';
 import { queryElements } from '/ui/elements.js';
 import { createEventFeed } from '/ui/event-feed.js';
-import { createFilesPanel } from '/ui/files.js';
 import { createGitStatus } from '/ui/git-status.js';
 import { createHostPanel } from '/ui/host-panel.js';
 import { createModelPicker } from '/ui/model-picker.js';
-import { createMachineHistory } from '/ui/machine-history.js';
 import { createProjectManager } from '/ui/project-manager.js';
+import { createReportsDrawer } from '/ui/reports-drawer.js';
 import { createRestartAction } from '/ui/restart-action.js';
-import { createShareIntake } from '/ui/share-intake.js';
-import { createSkillsPanel } from '/ui/skills.js';
 import { createSessionSurface } from '/ui/session-surface.js';
 import { createStreamLog } from '/ui/stream-log.js';
+import { createToolPanels } from '/ui/tool-panels.js';
 import { wireServiceWorkerUpdates } from '/ui/updates.js';
 import { createVoiceRecorder } from '/ui/voice.js';
 const SESSION_LIMIT = 10;
@@ -219,6 +217,19 @@ const actions = createActions({
   notify: setComposeNote,
   reloadSessions: loadSessions,
 });
+const reports = createReportsDrawer({
+  connection,
+  errorMessage,
+  onError: (message) => streamLog.error(message),
+  getSelectedSessionId: () => sessions.get(selectedStreamId)?.session_id ?? '',
+  onOpen: () => closeDrawers('reports'),
+  onPromoted: ({ stream_id, session_id, label }) => {
+    const entry = ensureEntry(stream_id, label);
+    if (entry) entry.session_id = session_id;
+    selectStream(stream_id);
+    void loadSessions();
+  },
+});
 const feed = createEventFeed({
   client,
   sessions,
@@ -234,53 +245,30 @@ const feed = createEventFeed({
     if (entry.stream_id === selectedStreamId) void gitStatus.update(entry);
   },
   isSelected: (streamId) => selectedStreamId === streamId,
-  errorMessage,
-});
-const files = createFilesPanel({
-  client,
-  elements,
-  errorMessage,
-  onError: (message) => streamLog.error(message),
-  note: setComposeNote,
-  getSessionId: () => sessions.get(selectedStreamId)?.session_id ?? '',
-  attachPaths: (paths) => composer.stageAttachments(paths),
-  onOpen: () => {
-    history.close();
-    settings.close();
+  onNonSessionEvent: (event) => {
+    if (event.type === 'report_received') reports.refresh();
   },
-});
-const machineHistory = createMachineHistory({
-  connection,
-  getEntry: (streamId) => sessions.get(streamId),
-  render: () => streamLog.render(),
   errorMessage,
 });
-const shareIntake = createShareIntake({
+const { files, machineHistory, shareIntake, skills } = createToolPanels({
+  client,
   connection,
   elements,
   projectManager,
-  attachPaths: (paths) => files.attachPaths(paths),
+  errorMessage,
+  onError: (message) => streamLog.error(message),
+  note: setComposeNote,
+  getEntry: (streamId) => sessions.get(streamId),
+  getSessionId: () => sessions.get(selectedStreamId)?.session_id ?? '',
+  stageAttachments: (paths) => composer.stageAttachments(paths),
   stageNote: (note) => composer.stageNote(note),
-  onError: (message) => streamLog.error(message),
-  errorMessage,
-});
-const skills = createSkillsPanel({
-  client,
-  elements,
-  errorMessage,
-  onError: (message) => streamLog.error(message),
-  getProject: () => projectManager.selectedProject(),
+  render: () => streamLog.render(),
+  closeDrawers: () => closeDrawers('files'),
   onPresetsChange: () => refreshPresets(),
   onPrompt: (prompt) => void actions.openPreset({ prompt }),
 });
-elements.historyToggle.addEventListener('click', () => {
-  settings.close();
-  files.close();
-});
-elements.settingsToggle.addEventListener('click', () => {
-  history.close();
-  files.close();
-});
+elements.historyToggle.addEventListener('click', () => closeDrawers('history'));
+elements.settingsToggle.addEventListener('click', () => closeDrawers('settings'));
 elements.composeForm.addEventListener('submit', (event) => {
   event.preventDefault();
   void actions.submitCompose();
@@ -291,8 +279,7 @@ elements.interruptKey.addEventListener('click', () => {
   void actions.sendKeys(entry, [entry.abort_key], 'interrupting');
 });
 elements.activeProject.addEventListener('click', () => {
-  settings.close();
-  files.close();
+  closeDrawers('history');
   history.openNewFlow();
 });
 setStatus(
@@ -396,6 +383,15 @@ function selectPreset(preset) {
     return;
   }
   void actions.openPreset(preset);
+}
+
+// One drawer at a time: whichever one is opening names itself and the other three shut. Four
+// surfaces now overlap in the same fixed panel, and the toggles used to close each other by hand.
+function closeDrawers(keep) {
+  if (keep !== 'history') history.close();
+  if (keep !== 'settings') settings.close();
+  if (keep !== 'files') files.close();
+  if (keep !== 'reports') reports.close();
 }
 
 function setShowAgents(next) {

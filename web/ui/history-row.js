@@ -1,9 +1,11 @@
 /* global document */
 
-// One row shape for every list of sessions: the History drawer, which is now the session manager,
-// and the cold-start home. The title is the session's own name whenever it has one — the drawer
-// used to render `kind · label` ("session · omp") for every row, which named the provider and
-// never the work — and a session an agent opened is dimmed and tagged rather than hidden.
+// One row shape for every list the drawers hold: sessions in the History drawer, which is now the
+// session manager, sessions on the cold-start home, and reports in the inbox — a report is a
+// session waiting to be started, so it gets the same row rather than a shape of its own. The title
+// is the row's own name whenever it has one — the drawer used to render `kind · label`
+// ("session · omp") for every row, which named the provider and never the work — and a session an
+// agent opened is dimmed and tagged rather than hidden.
 export function historyRow({
   title,
   project,
@@ -13,6 +15,7 @@ export function historyRow({
   sub = false,
   pinned = false,
   onPin,
+  pinLabel = 'session',
   onSelect,
 }) {
   const button = document.createElement('button');
@@ -57,7 +60,7 @@ export function historyRow({
     pin.className = 'history-item__pin';
     pin.type = 'button';
     pin.textContent = pinned ? 'UNPIN' : 'PIN';
-    pin.setAttribute('aria-label', pinned ? 'Unpin session' : 'Pin session');
+    pin.setAttribute('aria-label', `${pinned ? 'Unpin' : 'Pin'} ${pinLabel}`);
     pin.addEventListener('click', (event) => {
       event.stopPropagation();
       onPin(!pinned);

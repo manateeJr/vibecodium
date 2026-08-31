@@ -363,3 +363,44 @@
   display: grid;
   gap: 6px;
 }
+
+/* REPORTS: a peer of HISTORY, holding a list of debug reports an app pushed at the control plane.
+ * The rows are history rows — a report is a session waiting to be started — so only the inbox's
+ * own marks live here. */
+.drawer--reports {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.drawer-heading__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* How many reports are waiting, on the toggle itself: one that landed while the phone was in a
+ * pocket has to be visible without opening anything. Unread over total once any is unread. */
+.header-button__badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink-hi);
+  font-size: 10px;
+  letter-spacing: var(--track-small);
+}
+
+.header-button__badge[data-unread='yes'] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.history-item[data-status='new'] {
+  border-color: var(--amber);
+}
+
+.history-item[data-status='new'] .history-item__status {
+  color: var(--amber);
+}

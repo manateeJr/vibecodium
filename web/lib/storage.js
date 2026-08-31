@@ -92,3 +92,21 @@ export function loadExternalHintSeen() {
 export function saveExternalHintSeen(seen) {
   write(EXTERNAL_HINT_KEY, seen ? 'yes' : '');
 }
+
+// Which reports this phone has already opened. Reports are server state and every phone reads them
+// independently, so "read" is a local mark like every other value in here — the inbox badge counts
+// the reports this device has not looked at, not the ones nobody has.
+const SEEN_REPORTS_KEY = 'vibecodium.seen-reports';
+
+export function loadSeenReports() {
+  try {
+    const value = JSON.parse(read(SEEN_REPORTS_KEY) || '[]');
+    return Array.isArray(value) ? value.filter((id) => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSeenReports(ids) {
+  write(SEEN_REPORTS_KEY, ids.length > 0 ? JSON.stringify(ids) : '');
+}

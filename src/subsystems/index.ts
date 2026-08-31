@@ -11,6 +11,7 @@ import { createWorkspaceSubsystem } from '../workspace/index.js';
 import { createProjectsSubsystem } from '../projects/index.js';
 import { createFilesSubsystem } from '../files/index.js';
 import { createSkillsSubsystem } from '../skills/index.js';
+import { createReportsSubsystem } from '../reports/index.js';
 
 import { createTelemetrySubsystem } from '../telemetry/index.js';
 import { createWorkflowSubsystem } from '../workflow/index.js';
@@ -26,6 +27,13 @@ export function registerSubsystems(
   options: SubsystemRegistrationOptions = {},
 ): readonly Subsystem[] {
   const machineSessions = createMachineSessionsSubsystem();
+  const sessions = createSessionSubsystem({
+    machineSessions,
+    substrate: options.substrate ?? createSubstrateClient(),
+    sessionTable:
+      options.sessionTable ??
+      new SessionTable({ filename: options.sessionTableFilename ?? ':memory:' }),
+  });
   const selected = subsystems ?? [
     createTelemetrySubsystem(),
     createWorkflowSubsystem(),
@@ -33,17 +41,12 @@ export function registerSubsystems(
     createHostSubsystem(),
     createVoiceSubsystem(),
     machineSessions,
-    createSessionSubsystem({
-      machineSessions,
-      substrate: options.substrate ?? createSubstrateClient(),
-      sessionTable:
-        options.sessionTable ??
-        new SessionTable({ filename: options.sessionTableFilename ?? ':memory:' }),
-    }),
+    sessions,
     createWorkspaceSubsystem(),
     createProjectsSubsystem(),
     createFilesSubsystem(),
     createSkillsSubsystem(),
+    createReportsSubsystem({ sessions }),
   ];
   for (const subsystem of selected) subsystem.register(context);
   return selected;

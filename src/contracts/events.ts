@@ -18,7 +18,8 @@ export type EventKind =
   | 'notify_emitted'
   | 'inbound_received'
   | 'session_state'
-  | 'session_context';
+  | 'session_context'
+  | 'report_received';
 
 export interface SessionStartedPayload {
   readonly session_id: string;
@@ -135,6 +136,14 @@ export interface SessionContextPayload {
   readonly model?: string;
   readonly context_window?: number;
 }
+export interface ReportReceivedPayload {
+  readonly report_id: string;
+  readonly app: string;
+  readonly kind: string;
+  readonly title: string;
+  readonly summary?: string;
+  readonly captured_at: string;
+}
 
 export interface EventPayloadMap {
   readonly session_started: SessionStartedPayload;
@@ -154,6 +163,7 @@ export interface EventPayloadMap {
   readonly session_forked: SessionForkedPayload;
   readonly session_state: SessionStatePayload;
   readonly session_context: SessionContextPayload;
+  readonly report_received: ReportReceivedPayload;
 }
 
 export type EventPayload<K extends EventKind = EventKind> = EventPayloadMap[K];

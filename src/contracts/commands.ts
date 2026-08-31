@@ -5,6 +5,16 @@ import { FILES_SHARED_STAGED_COMMAND } from './files-commands.js';
 import type * as FilesCommands from './files-commands.js';
 import { SESSION_RECENT_COMMAND } from './session-recent.js';
 import type * as SessionRecent from './session-recent.js';
+import {
+  REPORT_BODY_FILENAME,
+  REPORT_INTAKE_PATH,
+  REPORT_MAX_INTAKE_BYTES,
+  REPORT_METADATA_FILENAME,
+  REPORT_RETENTION_MS,
+  REPORT_STREAM_ID,
+  REPORT_SWEEP_INTERVAL_MS,
+} from './report-commands.js';
+import type * as ReportCommands from './report-commands.js';
 import type {
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
@@ -65,6 +75,16 @@ export type * from './machine-commands.js';
 export { MACHINE_READ_COMMAND, FILES_SHARED_STAGED_COMMAND, SESSION_RECENT_COMMAND };
 export type * from './files-commands.js';
 export type * from './session-recent.js';
+export type * from './report-commands.js';
+export {
+  REPORT_BODY_FILENAME,
+  REPORT_INTAKE_PATH,
+  REPORT_MAX_INTAKE_BYTES,
+  REPORT_METADATA_FILENAME,
+  REPORT_RETENTION_MS,
+  REPORT_STREAM_ID,
+  REPORT_SWEEP_INTERVAL_MS,
+};
 
 export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
@@ -97,6 +117,11 @@ export const COMMAND_NAMES = {
   filesUpload: 'files.upload',
   filesSharedDir: 'files.shared_dir',
   filesSharedStaged: 'files.shared_staged',
+  reportList: 'report.list',
+  reportGet: 'report.get',
+  reportPin: 'report.pin',
+  reportDismiss: 'report.dismiss',
+  reportPromote: 'report.promote',
   skillList: 'skill.list',
   skillDraft: 'skill.draft',
   skillSave: 'skill.save',
@@ -140,20 +165,15 @@ export const SKILL_REMOVE_COMMAND = COMMAND_NAMES.skillRemove;
 export const SKILL_ADOPT_COMMAND = COMMAND_NAMES.skillAdopt;
 export const SKILL_PROPOSE_COMMAND = COMMAND_NAMES.skillPropose;
 export const SKILL_INVOKE_COMMAND = COMMAND_NAMES.skillInvoke;
-
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
-
 export interface WorkspaceEntry {
   readonly name: string;
   readonly path: string;
 }
-
 export type WorkspaceListArgs = Record<string, never>;
-
 export interface WorkspaceListResult {
   readonly workspaces: readonly WorkspaceEntry[];
 }
-
 export interface WorkspaceStatusArgs {
   readonly path: string;
 }
@@ -164,13 +184,11 @@ export interface WorkspaceStatusResult {
   readonly ahead?: number;
   readonly behind?: number;
 }
-
 export interface QuickAction {
   readonly id: string;
   readonly label: string;
   readonly prompt: string;
 }
-
 export interface Project {
   readonly name: string;
   readonly path: string;
@@ -178,7 +196,6 @@ export interface Project {
   readonly quickActions: readonly QuickAction[];
   readonly scope: 'project';
 }
-
 export type ProjectListArgs = Record<string, never>;
 
 export interface ProjectListResult {
@@ -364,6 +381,11 @@ export interface CommandArgsMap {
   'files.upload': FilesCommands.FilesUploadArgs;
   'files.shared_dir': FilesCommands.FilesSharedDirArgs;
   'files.shared_staged': FilesCommands.FilesSharedStagedArgs;
+  'report.list': ReportCommands.ReportListArgs;
+  'report.get': ReportCommands.ReportGetArgs;
+  'report.pin': ReportCommands.ReportPinArgs;
+  'report.dismiss': ReportCommands.ReportDismissArgs;
+  'report.promote': ReportCommands.ReportPromoteArgs;
   'skill.list': SkillListArgs;
   'skill.draft': SkillDraftArgs;
   'skill.save': SkillSaveArgs;
@@ -404,6 +426,11 @@ export interface CommandResultMap {
   'files.upload': FilesCommands.FilesUploadResult;
   'files.shared_dir': FilesCommands.FilesSharedDirResult;
   'files.shared_staged': FilesCommands.FilesSharedStagedResult;
+  'report.list': ReportCommands.ReportListResult;
+  'report.get': ReportCommands.ReportGetResult;
+  'report.pin': ReportCommands.ReportPinResult;
+  'report.dismiss': ReportCommands.ReportDismissResult;
+  'report.promote': ReportCommands.ReportPromoteResult;
   'skill.list': SkillListResult;
   'skill.draft': SkillDraftResult;
   'skill.save': SkillSaveResult;

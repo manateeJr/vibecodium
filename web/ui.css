@@ -1,6 +1,9 @@
 /* UX wave additions to the pocket phosphor shell. */
+/* REPORTS made this a third toggle, and a 320px phone cannot fit three of them beside the
+ * connection status on one line — so they wrap rather than clip. */
 .top-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;

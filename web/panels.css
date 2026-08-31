@@ -357,3 +357,116 @@
   border-color: var(--focus);
   outline: none;
 }
+
+/* One report: what vibecodium knows about it, the four things that can be done with it, and the
+ * payload printed verbatim. The body is opaque by contract — shown, never interpreted. */
+.report-detail {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 8px;
+}
+
+.report-detail p {
+  margin: 0;
+}
+
+.report-detail__head {
+  display: grid;
+  gap: 3px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.report-detail__title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-hi);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  letter-spacing: var(--track-label);
+}
+
+.report-detail__meta,
+.report-detail__file,
+.report-detail__hint {
+  overflow-wrap: anywhere;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+}
+
+.report-detail__summary {
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-size: var(--fs-small);
+  white-space: pre-wrap;
+}
+
+.report-detail__note {
+  overflow-wrap: anywhere;
+  color: var(--replay);
+  font-size: var(--fs-small);
+  white-space: pre-wrap;
+}
+
+/* The absolute path the promote prompt will attach. Small on purpose: it is provenance, not copy. */
+.report-detail__path {
+  overflow-wrap: anywhere;
+  color: var(--ink-dim);
+  font-size: 10px;
+}
+
+.report-detail__files {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.report-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.report-detail__actions .project-form__button[disabled] {
+  color: var(--ink-dim);
+  opacity: 0.55;
+}
+
+.report-detail__actions .project-form__button[data-tone='bad'] {
+  color: var(--bad);
+}
+
+.report-detail__status {
+  min-height: 18px;
+  overflow-wrap: anywhere;
+  color: var(--amber);
+  font-size: var(--fs-small);
+}
+
+.report-detail__status[data-tone='bad'] {
+  color: var(--bad);
+}
+
+/* The payload. It scrolls in place so the actions above it stay reachable on a phone. */
+.report-detail__body {
+  max-height: 44dvh;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  overscroll-behavior: contain;
+  white-space: pre;
+}
+
+.report-detail__body:focus {
+  border-color: var(--focus);
+  outline: none;
+}

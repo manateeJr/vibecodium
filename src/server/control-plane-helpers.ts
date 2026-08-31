@@ -21,6 +21,16 @@ export function readJsonBody(request: IncomingMessage): Promise<unknown> {
     request.on('error', reject);
   });
 }
+export function bearerToken(authorization: string | undefined): string | undefined {
+  if (!authorization) return undefined;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || undefined;
+}
+
+export function isLoopbackAddress(address: string | undefined): boolean {
+  if (!address) return true;
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

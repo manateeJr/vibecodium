@@ -6,10 +6,16 @@ import { WebSocket, WebSocketServer } from 'ws';
 import type { AddressInfo } from 'node:net';
 import { tokensToCssVars } from '../design/tokens.js';
 import { serveStaticAsset } from './static-assets.js';
-import { errorMessage, readJsonBody } from './control-plane-helpers.js';
+import {
+  bearerToken,
+  errorMessage,
+  isLoopbackAddress,
+  readJsonBody,
+} from './control-plane-helpers.js';
 import { handleShareIntake } from './share-intake.js';
 import {
   COMMAND_NAMES,
+  REPORT_INTAKE_PATH,
   type CommandFrame,
   type CommandServerFrame,
 } from '../contracts/commands.js';
@@ -30,7 +36,10 @@ import {
   CommandAuthorizationError,
   CommandDispatcher,
   capabilityVerifierFrom,
+  reportIntakeFrom,
+  reportSweepStopFrom,
   sessionStopHandlersFrom,
+  type ReportIntakeHandler,
 } from './command-dispatcher.js';
 const WEB_DIR = path.resolve(process.cwd(), 'web');
 const CLIENT_BUNDLE = path.resolve(process.cwd(), 'dist/src/client/index.js');
@@ -89,6 +98,8 @@ export class ControlPlane {
   private readonly tokenVerifier: CommandTokenVerifier | undefined;
   private readonly commandDispatcher: CommandDispatcher;
   private readonly sessionStopAll: readonly (() => void)[];
+  private readonly reportIntake: ReportIntakeHandler | undefined;
+  private readonly reportSweepStop: (() => void) | undefined;
   private httpServer: Server | undefined;
   private websocketServer: WebSocketServer | undefined;
   private boundAddress: ControlPlaneAddress | undefined;
@@ -114,6 +125,8 @@ export class ControlPlane {
       options.capabilityTokens ??
       capabilityVerifierFrom(registeredSubsystems);
     this.sessionStopAll = sessionStopHandlersFrom(registeredSubsystems);
+    this.reportIntake = reportIntakeFrom(registeredSubsystems);
+    this.reportSweepStop = reportSweepStopFrom(registeredSubsystems);
     this.commandDispatcher = new CommandDispatcher(this.commands, this.tokenVerifier);
     this.commandDispatcher.registerWorkflowRun();
   }
@@ -148,6 +161,7 @@ export class ControlPlane {
     }
     this.clientSubscriptions.clear();
     for (const stopAll of this.sessionStopAll) stopAll();
+    this.reportSweepStop?.();
     await new Promise<void>((resolve) => {
       if (!this.websocketServer) return resolve();
       this.websocketServer.close(() => resolve());
@@ -237,6 +251,16 @@ export class ControlPlane {
     }
     if (request.method === 'POST' && requestUrl.pathname === '/share-intake') {
       void handleShareIntake(request, response);
+      return;
+    }
+    if (request.method === 'POST' && requestUrl.pathname === REPORT_INTAKE_PATH) {
+      if (!this.reportIntake) {
+        this.sendJson(response, 404, { error: 'not_found' });
+        return;
+      }
+      void this.reportIntake(request, response, {
+        verifyToken: (token) => this.commandDispatcher.verifyToken(token),
+      });
       return;
     }
     if (request.method === 'GET') {
@@ -462,17 +486,6 @@ function isClientMessage(value: unknown): value is ClientMessage {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const type = (value as Record<string, unknown>).type;
   return /^(?:subscribe|action\.request|pty_(?:subscribe|unsubscribe))$/.test(String(type));
-}
-
-function bearerToken(authorization: string | undefined): string | undefined {
-  if (!authorization) return undefined;
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim() || undefined;
-}
-
-function isLoopbackAddress(address: string | undefined): boolean {
-  if (!address) return true;
-  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }
 
 function remoteAddress(socket: WebSocket): string | undefined {

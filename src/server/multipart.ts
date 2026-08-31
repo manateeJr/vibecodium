@@ -24,16 +24,43 @@ export interface MultipartForm {
   readonly file: MultipartFile;
   readonly fields: Readonly<Record<string, string>>;
 }
+export interface MultipartPart {
+  readonly name: string;
+  readonly filename?: string;
+  readonly contentType?: string;
+  readonly data: Buffer;
+}
+
+export async function parseMultipartParts(
+  request: Pick<IncomingMessage, 'headers'> & AsyncIterable<Buffer | string>,
+  maxBytes = DEFAULT_MAX_MULTIPART_BYTES,
+): Promise<readonly MultipartPart[]> {
+  const contentType = request.headers['content-type'];
+  const header = Array.isArray(contentType) ? contentType[0] : contentType;
+  const boundary = parseBoundary(header);
+  const body = await readBody(request, maxBytes);
+  return parseParts(body, boundary);
+}
 
 export async function parseMultipart(
   request: Pick<IncomingMessage, 'headers'> & AsyncIterable<Buffer | string>,
   maxBytes = DEFAULT_MAX_MULTIPART_BYTES,
 ): Promise<MultipartForm> {
-  const contentType = request.headers['content-type'];
-  const header = Array.isArray(contentType) ? contentType[0] : contentType;
-  const boundary = parseBoundary(header);
-  const body = await readBody(request, maxBytes);
-  return parseBody(body, boundary);
+  const parts = await parseMultipartParts(request, maxBytes);
+  let file: MultipartFile | undefined;
+  const fields: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.name === 'file') {
+      if (file) throw new MultipartError(400, 'only one file part is supported');
+      if (part.filename === undefined) throw new MultipartError(400, 'file filename is required');
+      file = { filename: part.filename, content: part.data };
+    } else if (part.name === 'note' || part.name === 'project') {
+      if (part.name in fields) throw new MultipartError(400, `duplicate ${part.name} field`);
+      fields[part.name] = part.data.toString('utf8');
+    }
+  }
+  if (!file) throw new MultipartError(400, 'file part is required');
+  return { file, fields };
 }
 
 function parseBoundary(contentType: string | undefined): string {
@@ -63,15 +90,14 @@ async function readBody(
   return Buffer.concat(chunks, total);
 }
 
-function parseBody(body: Buffer, boundary: string): MultipartForm {
+function parseParts(body: Buffer, boundary: string): readonly MultipartPart[] {
   const marker = Buffer.from(`--${boundary}`);
   const delimiter = Buffer.concat([CRLF, marker]);
   if (!body.subarray(0, marker.length).equals(marker)) {
     throw new MultipartError(400, 'malformed multipart body');
   }
   let cursor = marker.length;
-  const parts: Array<{ readonly name: string; readonly filename?: string; readonly data: Buffer }> =
-    [];
+  const parts: MultipartPart[] = [];
   while (true) {
     if (body.subarray(cursor, cursor + 2).equals(Buffer.from('--'))) break;
     if (!body.subarray(cursor, cursor + 2).equals(CRLF)) {
@@ -85,30 +111,19 @@ function parseBody(body: Buffer, boundary: string): MultipartForm {
     const name = dispositionParameter(disposition, 'name');
     if (!name) throw new MultipartError(400, 'multipart field name is required');
     const filename = dispositionParameter(disposition, 'filename');
+    const contentType = headers.get('content-type');
     const dataStart = headerEnd + HEADER_SEPARATOR.length;
     const nextBoundary = body.indexOf(delimiter, dataStart);
     if (nextBoundary < 0) throw new MultipartError(400, 'malformed multipart body');
     parts.push({
       name,
       ...(filename === undefined ? {} : { filename: sanitizeFilename(filename) }),
+      ...(contentType === undefined ? {} : { contentType }),
       data: body.subarray(dataStart, nextBoundary),
     });
     cursor = nextBoundary + delimiter.length;
   }
-  let file: MultipartFile | undefined;
-  const fields: Record<string, string> = {};
-  for (const part of parts) {
-    if (part.name === 'file') {
-      if (file) throw new MultipartError(400, 'only one file part is supported');
-      if (part.filename === undefined) throw new MultipartError(400, 'file filename is required');
-      file = { filename: part.filename, content: part.data };
-    } else if (part.name === 'note' || part.name === 'project') {
-      if (part.name in fields) throw new MultipartError(400, `duplicate ${part.name} field`);
-      fields[part.name] = part.data.toString('utf8');
-    }
-  }
-  if (!file) throw new MultipartError(400, 'file part is required');
-  return { file, fields };
+  return parts;
 }
 
 function parseHeaders(text: string): Map<string, string> {
