@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { endianness } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 import {
   AbducoSubstrateClient,
+  buildSubstrateLaunch,
   FrameDecoder,
   encodeFrame,
   MAX_PAYLOAD_BYTES,
@@ -80,6 +82,102 @@ test('abduco listing parser preserves session names and liveness marker', () => 
     { name: 'attached', live: true },
     { name: 'dead', live: false },
   ]);
+});
+
+test('substrate launch wraps abduco in a deterministic transient scope', () => {
+  assert.deepEqual(
+    buildSubstrateLaunch(true, '/opt/abduco', 'substrate-session-123', ['omp', '--resume', 'ref']),
+    {
+      executable: 'systemd-run',
+      args: [
+        '--user',
+        '--scope',
+        '--collect',
+        '--quiet',
+        '--unit=vibecodium-session-substrate-session-123.scope',
+        '--',
+        '/opt/abduco',
+        '-n',
+        'substrate-session-123',
+        'omp',
+        '--resume',
+        'ref',
+      ],
+    },
+  );
+});
+
+test('substrate launch adds a validated MemoryMax property only to scoped argv', () => {
+  assert.deepEqual(
+    buildSubstrateLaunch(true, '/opt/abduco', 'substrate-session-123', ['omp'], ' 2G '),
+    {
+      executable: 'systemd-run',
+      args: [
+        '--user',
+        '--scope',
+        '--collect',
+        '--quiet',
+        '--unit=vibecodium-session-substrate-session-123.scope',
+        '-p',
+        'MemoryMax=2G',
+        '--',
+        '/opt/abduco',
+        '-n',
+        'substrate-session-123',
+        'omp',
+      ],
+    },
+  );
+  assert.deepEqual(
+    buildSubstrateLaunch(true, '/opt/abduco', 'substrate-session-123', ['omp'], '2G;bad'),
+    buildSubstrateLaunch(true, '/opt/abduco', 'substrate-session-123', ['omp']),
+  );
+  assert.deepEqual(
+    buildSubstrateLaunch(false, '/opt/abduco', 'substrate-session-123', ['omp'], '2G'),
+    {
+      executable: '/opt/abduco',
+      args: ['-n', 'substrate-session-123', 'omp'],
+    },
+  );
+});
+
+test('systemd-run availability detection is cached per module', () => {
+  const directory = fs.mkdtempSync(path.join('/tmp', 'vibecodium-systemd-probe-'));
+  const markerPath = path.join(directory, 'calls');
+  const commandPath = path.join(directory, 'systemd-run');
+  fs.writeFileSync(
+    commandPath,
+    '#!/bin/sh\nprintf . >> "$VIBECODIUM_SYSTEMD_PROBE_MARKER"\nexit 0\n',
+  );
+  fs.chmodSync(commandPath, 0o755);
+  try {
+    const modulePath = pathToFileURL(path.join(repositoryRoot, 'dist', 'src/substrate/index.js'));
+    const code = [
+      `import { detectSystemdRun } from ${JSON.stringify(modulePath.href)};`,
+      'process.stdout.write(`${detectSystemdRun()}\\n`);',
+      'process.stdout.write(`${detectSystemdRun()}\\n`);',
+    ].join('\n');
+    const output = execFileSync(process.execPath, ['--input-type=module', '--eval', code], {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        PATH: directory,
+        VIBECODIUM_SYSTEMD_PROBE_MARKER: markerPath,
+      },
+      encoding: 'utf8',
+    });
+    assert.equal(output, 'true\ntrue\n');
+    assert.equal(fs.readFileSync(markerPath, 'utf8'), '.');
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('substrate launch falls back to the direct abduco argv when systemd-run is unavailable', () => {
+  assert.deepEqual(buildSubstrateLaunch(false, '/opt/abduco', 'substrate-session-123', ['omp']), {
+    executable: '/opt/abduco',
+    args: ['-n', 'substrate-session-123', 'omp'],
+  });
 });
 
 test('live cat attachment survives a forced socket disconnect and reattaches', async (t) => {
