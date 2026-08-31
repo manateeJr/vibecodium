@@ -58,6 +58,7 @@ class TestSubstrate implements SubstrateClient {
   public readonly created: Array<{ name: string; argv: readonly string[] }> = [];
   public readonly sentKeys: Array<{ name: string; key: SubstrateKey }> = [];
   public readonly writes: Array<{ name: string; text: string }> = [];
+  public readonly operations: string[] = [];
   public readonly liveNames = new Set<string>();
 
   public async createSession(
@@ -76,10 +77,12 @@ class TestSubstrate implements SubstrateClient {
   }
 
   public async write(name: string, bytes: Uint8Array): Promise<void> {
+    this.operations.push('write');
     this.writes.push({ name, text: new TextDecoder().decode(bytes) });
   }
 
   public async sendKey(name: string, key: SubstrateKey): Promise<void> {
+    this.operations.push(`key:${key}`);
     this.sentKeys.push({ name, key });
   }
 
@@ -346,7 +349,7 @@ test('warm persistent sends use PTY injection instead of relaunch argv', async (
       ['ctrl_u', 'enter'],
     );
     assert.deepEqual(substrate.writes.slice(beforeWrites), [
-      { name: 'substrate-warm-session', text: 'warm prompt' },
+      { name: 'substrate-warm-session', text: '\x1b[200~warm prompt\x1b[201~' },
     ]);
   } finally {
     subsystem.stopAll();
@@ -422,13 +425,15 @@ test('warm mid-turn sends inject the prompt without advancing the turn', async (
   try {
     await worker.start('initial prompt');
     assert.equal(worker.isBusy, true);
-    assert.equal(await worker.sendPrompt('steering prompt'), 0);
+    const prompt = 'line one\nline two\t\x1b[31mred\x07';
+    assert.equal(await worker.sendPrompt(prompt), 0);
     assert.deepEqual(
       substrate.sentKeys.map((entry) => entry.key),
       ['ctrl_u', 'enter'],
     );
+    assert.deepEqual(substrate.operations, ['key:ctrl_u', 'write', 'key:enter']);
     assert.deepEqual(substrate.writes, [
-      { name: 'substrate-steering-session', text: 'steering prompt' },
+      { name: 'substrate-steering-session', text: `\x1b[200~${prompt}\x1b[201~` },
     ]);
   } finally {
     await worker.stop();

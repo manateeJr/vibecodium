@@ -301,7 +301,10 @@ export class PersistentSessionWorker {
       await this.substrate.sendKey(this.substrateName, key);
     }
     if (prompt.length > 0) {
-      await this.substrate.write(this.substrateName, new TextEncoder().encode(prompt));
+      await this.substrate.write(
+        this.substrateName,
+        new TextEncoder().encode(`\x1b[200~${prompt}\x1b[201~`),
+      );
     }
     for (const key of this.plugin.injectionRecipe.submitKeys) {
       await this.substrate.sendKey(this.substrateName, key);
