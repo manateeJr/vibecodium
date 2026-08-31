@@ -47,12 +47,41 @@ test('session storage root honors an explicit env override and HOME default', ()
   assert.equal(DEFAULT_SESSION_STORAGE_ROOT, sessionStorageRootFromEnvironment());
 });
 
-test('legacy roots include tmp and cache roots for the supplied environment', () => {
+test('legacy roots include tmp, literal /tmp, and cache roots for the supplied environment', () => {
   const roots = legacySessionStorageRoots({ HOME: '/tmp/vibecodium-home', TMPDIR: '/tmp/work' });
-  assert.deepEqual(roots, [
-    '/tmp/work/vibecodium-sessions',
-    '/tmp/vibecodium-home/.cache/vibecodium-sessions',
-  ]);
+  assert.ok(roots.includes('/tmp/work/vibecodium-sessions'));
+  assert.ok(roots.includes('/tmp/vibecodium-sessions'));
+  assert.ok(roots.includes('/tmp/vibecodium-home/.cache/vibecodium-sessions'));
+  assert.equal(new Set(roots).size, roots.length);
+});
+
+test('startup migration defers live sessions so open harness fds are never detached', async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-storage-live-'));
+  const oldRoot = path.join(home, '.cache', 'vibecodium-sessions');
+  const newRoot = path.join(home, '.vibecodium', 'sessions');
+  const sessionId = 'live-session';
+  const oldStorageDir = path.join(oldRoot, sessionId);
+  const oldTranscriptPath = path.join(oldStorageDir, 'session.jsonl');
+  const table = new SessionTable({ filename: ':memory:' });
+  table.upsert(sessionRecord(sessionId, oldStorageDir, oldTranscriptPath, 'live'));
+  mkdirSync(oldStorageDir, { recursive: true });
+  appendFileSync(oldTranscriptPath, '{"message":"hello"}\n');
+
+  try {
+    const summary = await migrateSessionStorage(table, {
+      storageRoot: newRoot,
+      oldRoots: [oldRoot],
+      now: () => new Date('2026-08-31T01:02:03.000Z'),
+    });
+    assert.deepEqual(summary, { migrated: 0, missing: 0, skipped: 0 });
+    assert.equal(existsSync(oldTranscriptPath), true);
+    const untouched = table.get(sessionId);
+    assert.equal(untouched?.storageDir, oldStorageDir);
+    assert.equal(untouched?.state, 'live');
+  } finally {
+    table.close();
+    rmSync(home, { recursive: true, force: true });
+  }
 });
 
 test('startup migration moves a legacy session and rewrites both durable paths', async () => {

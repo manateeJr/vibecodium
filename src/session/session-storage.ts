@@ -22,6 +22,8 @@ export function legacySessionStorageRoots(
   const home = environment.HOME?.trim() || os.homedir();
   return uniquePaths([
     path.join(temporary, 'vibecodium-sessions'),
+    path.join(os.tmpdir(), 'vibecodium-sessions'),
+    '/tmp/vibecodium-sessions',
     path.join(home, '.cache', 'vibecodium-sessions'),
   ]);
 }
@@ -88,6 +90,9 @@ async function migrateRecord(
   const storageMatch = matchOldPath(record.storageDir, oldRoots);
   const transcriptMatch = matchOldPath(record.transcriptPath, oldRoots);
   if (!storageMatch && !transcriptMatch) return 'unchanged';
+  // A live session's harness holds open fds inside the old dir; a cross-device
+  // move would detach them. Defer until the session is no longer live.
+  if (record.state === 'live') return 'unchanged';
 
   const sourceDir = storageMatch?.candidate ?? path.dirname(record.transcriptPath);
   const destinationDir = storageMatch
