@@ -86,6 +86,19 @@ export function createHistoryDrawer({
     (showAgents || entry.origin !== 'agent') &&
     (getShowAllSessions() || entry.source === 'pocket') &&
     matchesEntry(entry, query, selectedProject, registeredProjects);
+  const visibleLive = (entry) =>
+    (getShowAllSessions() || entry.source === 'pocket') &&
+    matchesQuery(
+      query,
+      entry.title,
+      entry.label,
+      entry.provider,
+      entry.cwd,
+      entry.source,
+      entry.ref,
+      entry.stream_id,
+      projectForEntry(entry, registeredProjects),
+    );
 
   const renderRows = (target, items, onSelect) => {
     if (items.length === 0) {
@@ -104,7 +117,7 @@ export function createHistoryDrawer({
     machineList.replaceChildren();
     const showAgents = getShowAgents();
     const live = liveItems
-      .filter((item) => isLive(item.status) && visible(item, showAgents))
+      .filter((item) => isLive(item.status) && visibleLive(item))
       .sort(compareActivity);
     const recent = recentItems.filter((item) => visible(item, showAgents)).sort(compareActivity);
     const pinned = recent.filter((item) => item.pinned === true);
