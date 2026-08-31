@@ -1,26 +1,32 @@
-export function createSessionView({
-  structuredTab,
-  mirrorTab,
-  structuredPanel,
-  mirrorPanel,
-  mirror,
-}) {
-  const setView = (nextView) => {
-    const showingMirror = nextView === 'mirror';
-    structuredPanel.hidden = showingMirror;
-    mirrorPanel.hidden = !showingMirror;
-    structuredTab.setAttribute('aria-selected', String(!showingMirror));
-    mirrorTab.setAttribute('aria-selected', String(showingMirror));
-    mirror.setVisible(showingMirror);
+// Three ways the main column can be filled, and only ever one of them at a time: the cold-start
+// home when no session is selected, the structured transcript, and the read-only PTY mirror. The
+// persistent two-button view-tabs strip that used to switch the last two is gone — the mirror is a
+// toggle in the active-session chip menu, and the transcript is full-bleed by default.
+export function createSessionView({ homePanel, structuredPanel, mirrorPanel, mirror }) {
+  let home = false;
+  let mirrorOpen = false;
+
+  const apply = () => {
+    homePanel.hidden = !home;
+    structuredPanel.hidden = home || mirrorOpen;
+    mirrorPanel.hidden = home || !mirrorOpen;
+    mirror.setVisible(!home && mirrorOpen);
   };
 
-  structuredTab.addEventListener('click', () => setView('structured'));
-  mirrorTab.addEventListener('click', () => setView('mirror'));
-  setView('structured');
+  apply();
 
   return {
     selectSession(sessionId) {
       mirror.selectSession(sessionId);
     },
+    setHome(next) {
+      home = next;
+      apply();
+    },
+    toggleMirror() {
+      mirrorOpen = !mirrorOpen;
+      apply();
+    },
+    mirrorVisible: () => mirrorOpen && !home,
   };
 }

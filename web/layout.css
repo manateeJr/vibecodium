@@ -24,14 +24,7 @@ body {
   overflow: hidden;
 }
 
-.section-heading,
-.section-heading__title {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.session-bar {
-  width: 100%;
+.session-heading {
   min-width: 0;
   max-width: 100%;
 }

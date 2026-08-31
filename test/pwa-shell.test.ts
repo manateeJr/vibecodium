@@ -32,15 +32,35 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /href="\/manifest\.webmanifest"/);
     assert.match(index, /script type="module" src="\/app\.js"/);
     assert.match(index, /serviceWorker\.register\('\/sw\.js'/);
-    assert.match(index, /id="session-bar"/);
+    // The main column is header → transcript → composer: the session bar, the AGENTS pill, the
+    // view-tabs strip and the project-scope block above the composer are all gone.
+    assert.doesNotMatch(index, /id="session-bar"/);
+    assert.doesNotMatch(index, /id="structured-view-tab"/);
+    assert.doesNotMatch(index, /id="mirror-view-tab"/);
+    assert.doesNotMatch(index, /class="project-scope/);
+    assert.doesNotMatch(index, /id="compose-hint"/);
+    assert.doesNotMatch(index, /id="stream-caption"/);
+    assert.match(index, /id="session-chip"/);
+    assert.match(index, /id="session-menu"/);
+    assert.match(index, /id="active-project"/);
+    assert.match(index, /id="home-view"/);
+    assert.match(index, /id="home-recent"/);
+    assert.match(index, /id="external-hint"/);
+    // The scope pickers and the project's quick starts moved into HISTORY's `+ NEW` flow.
+    assert.match(index, /id="new-session"/);
+    assert.match(index, /id="new-session-flow"/);
     assert.match(index, /id="session-presets"/);
+    // The AGENTS toggle is a Settings preference now, not a control above the composer.
+    assert.match(index, /id="show-agents"/);
     assert.match(index, /id="compose-form"/);
     assert.match(index, /id="compose-input"/);
     assert.match(index, /id="compose-send"/);
     assert.match(index, /id="compose-note"/);
     assert.match(index, /id="voice-record"/);
     assert.match(index, /id="scope-path"/);
-    assert.match(index, /placeholder="Describe a task to start a session…"/);
+    assert.match(index, /placeholder="New session in Scratch…"/);
+    assert.match(index, />SEND</);
+    assert.doesNotMatch(index, />OPEN</);
     // The unified composer replaced the duplicate open/send inputs and the compose noise.
     assert.doesNotMatch(index, /id="turnForm"/);
     assert.doesNotMatch(index, /id="turnInput"/);
@@ -59,7 +79,6 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="history-toggle"/);
     assert.match(index, /id="settings-toggle"/);
     assert.match(index, /id="project-selector"/);
-    assert.doesNotMatch(index, /class="project-scope__button/);
     assert.match(index, /id="add-project"/);
     assert.match(index, /id="add-project-form"/);
     assert.match(index, /id="managed-projects"/);
@@ -77,9 +96,7 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="settings-drawer"/);
     assert.match(index, /id="history-scroll"/);
     assert.match(index, /JUMP TO LATEST/);
-    // The read-only live mirror and its steering/interrupt controls.
-    assert.match(index, /id="structured-view-tab"/);
-    assert.match(index, /id="mirror-view-tab"/);
+    // The read-only live mirror, reached from the chip menu, and its steering/interrupt controls.
     assert.match(index, /id="mirror-status"/);
     assert.match(index, /id="pty-terminal"/);
     assert.match(index, /id="pty-mirror-empty"/);
@@ -133,7 +150,6 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.equal(markdownResponse.status, 200);
     assert.match(await markdownResponse.text(), /copy-button/);
     for (const module of [
-      '/ui/session-bar.js',
       '/ui/voice.js',
       '/ui/host-panel.js',
       '/ui/elements.js',
@@ -142,13 +158,19 @@ test('serves the installable pocket PWA shell and static assets', async () => {
       '/ui/pty-mirror.js',
       '/ui/session-surface.js',
       '/ui/session-view.js',
+      '/ui/session-chip.js',
+      '/ui/home-view.js',
+      '/ui/history-row.js',
+      '/ui/external-hint.js',
     ]) {
       const moduleResponse = await fetch(`${address.httpUrl}${module}`);
       assert.equal(moduleResponse.status, 200, module);
       assert.equal(moduleResponse.headers.get('content-type'), 'text/javascript');
     }
-    const pickerResponse = await fetch(`${address.httpUrl}/ui/project-picker.js`);
-    assert.equal(pickerResponse.status, 404);
+    // Clean cutover: the deleted session bar must not still be served to a cached shell.
+    for (const orphan of ['/ui/project-picker.js', '/ui/session-bar.js']) {
+      assert.equal((await fetch(`${address.httpUrl}${orphan}`)).status, 404, orphan);
+    }
   } finally {
     await plane.stop();
     fs.rmSync(path.dirname(dataPath), { recursive: true, force: true });

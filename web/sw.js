@@ -3,7 +3,7 @@
 // Bumped by hand with every shell change: the assets are served straight off disk with no build
 // step, so there is no content hash or build stamp to derive a cache name from. Changing this is
 // what makes install/activate replace the old shell — see web/ui/updates.js for the page's half.
-const CACHE_NAME = 'vibecodium-shell-v14';
+const CACHE_NAME = 'vibecodium-shell-v15';
 // The share_target the manifest declares POSTs here. The fetch handler below turns that POST into
 // the `/?share=<token>` navigation the app knows how to land on.
 const SHARE_INTAKE_PATH = '/share-intake';
@@ -16,6 +16,7 @@ const SHELL_ASSETS = Object.freeze([
   '/ui.css',
   '/layout.css',
   '/panels.css',
+  '/drawers.css',
   '/surface.css',
   '/lib/base64.js',
   '/lib/command.js',
@@ -24,6 +25,7 @@ const SHELL_ASSETS = Object.freeze([
   '/lib/markdown.js',
   '/lib/paths.js',
   '/lib/pty-socket.js',
+  '/lib/session-entries.js',
   '/lib/session-items.js',
   '/lib/session-state.js',
   '/lib/skills.js',
@@ -36,14 +38,17 @@ const SHELL_ASSETS = Object.freeze([
   '/ui/elements.js',
   '/ui/event-feed.js',
   '/ui/events.js',
+  '/ui/external-hint.js',
   '/ui/files.js',
   '/ui/git-status.js',
+  '/ui/history-row.js',
+  '/ui/home-view.js',
   '/ui/host-panel.js',
   '/ui/machine-history.js',
   '/ui/model-picker.js',
   '/ui/project-manager.js',
   '/ui/restart-action.js',
-  '/ui/session-bar.js',
+  '/ui/session-chip.js',
   '/ui/share-intake.js',
   '/ui/stream-log.js',
   '/ui/skill-builder.js',

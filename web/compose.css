@@ -1,22 +1,11 @@
-/* The compose surface: the scope selectors above the bar, the input that grows with what the
- * owner writes, and the control buttons beside it. These rules were spread across pocket.css,
- * ui.css and panels.css — with panels.css re-declaring the grid pocket.css had just set — so the
- * composer now owns one sheet and states its final layout once. Loaded last in index.html. */
-.project-scope {
-  display: grid;
-  gap: 5px;
-  padding-bottom: 9px;
-}
-
-/* Scope is two decisions the owner makes together before opening a session: where, and with what. */
-.project-scope__row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-}
+/* The compose surface: the input that grows with what the owner writes, and the control buttons
+ * beside it. These rules were spread across pocket.css, ui.css and panels.css — with panels.css
+ * re-declaring the grid pocket.css had just set — so the composer now owns one sheet and states its
+ * final layout once. The scope selectors that used to sit above it moved into HISTORY's `+ NEW`
+ * flow: the main column is header → transcript → composer and nothing else. Loaded last. */
 
 /* A share arrives with a project guess. The picker that guess landed in is marked, because the
- * operator has to be able to see at a glance which scope OPEN is about to use. */
+ * operator has to be able to see at a glance which scope the next send will use. */
 .project-selector[data-share='yes'] {
   border-color: var(--replay);
   color: var(--ink-hi);
@@ -111,14 +100,33 @@
 .share-status[data-tone='bad'] {
   color: var(--bad);
 }
-
-/* Sending into a machine-owned session continues it in place. That reads as the same tap that used
- * to open a brand new session, so the bar says which one it is before the operator commits. */
-.compose-hint {
+/* D3: the standing caption is gone. This is the one-time cue, shown before the first send that
+ * would land on a session the machine owns, and it carries its own dismissal. */
+.external-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   flex: 0 0 auto;
-  padding: 0 0 7px;
+  margin: 0 0 7px;
+  padding: 7px 9px;
+  border: 1px solid var(--amber);
+  border-radius: 7px;
   overflow-wrap: anywhere;
   color: var(--amber);
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+}
+
+.external-hint__ok {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--amber);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--amber);
+  font: inherit;
   font-size: var(--fs-small);
   letter-spacing: var(--track-small);
 }
@@ -155,11 +163,6 @@
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
-}
-
-.button--open {
-  border-color: var(--ok);
-  color: var(--ok);
 }
 
 .button--send {

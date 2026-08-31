@@ -1,32 +1,32 @@
 import { isExternalEntry } from '../lib/external-session.js';
 import { sessionIdOf } from '../lib/session-items.js';
 
-// What the compose bar promises before the operator commits. The same input carries three verbs —
-// send into a live session, continue a machine-owned session in place, or open a new one — and the
-// middle one is the one that has to be said out loud: this tap used to open a brand new session,
-// and it now appends to the machine's own transcript instead. The hint states that, once.
-export function renderComposeControls({ elements, entry, state }) {
+// What the compose bar promises before the operator commits. One verb — SEND — because a button
+// that renamed itself between OPEN and SEND read as two different buttons on a phone while saying
+// less about what would happen than the placeholder already says. The placeholder carries the mode:
+// which session this lands in, or which project a new one would start in.
+export function renderComposeControls({ elements, entry, state, project, hint }) {
   const sendable =
     entry?.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
   const external = isExternalEntry(entry);
-  elements.composeSend.textContent = sendable || external ? 'SEND' : 'OPEN';
-  elements.composeSend.classList.toggle('button--send', sendable);
+  elements.composeSend.textContent = 'SEND';
+  // Amber for a send that lands on the machine's own session, the same warning colour as the hint.
   elements.composeSend.classList.toggle('button--continue', external);
-  elements.composeSend.classList.toggle('button--open', !sendable && !external);
+  elements.composeSend.classList.toggle('button--send', !external);
   elements.composeSend.disabled =
     state.opening || state.resuming || Boolean(sendable && entry?.busy);
-  elements.composeInput.placeholder = composePlaceholder(entry, sendable, external);
-  elements.composeHint.textContent = external
-    ? `continues this ${entry.label} session on the machine · nothing is written until you send`
-    : '';
-  elements.composeHint.hidden = !external;
+  elements.composeInput.placeholder = composePlaceholder(sendable, external, project);
+  hint.update(
+    external
+      ? `this continues the ${entry.label} session on the machine · nothing is written until you send`
+      : '',
+  );
   elements.interruptKey.disabled =
     state.opening || state.interrupting || !sendable || !sessionIdOf(entry);
 }
 
-function composePlaceholder(entry, sendable, external) {
+function composePlaceholder(sendable, external, project) {
   if (sendable) return 'Write something…';
   if (external) return 'Continue this machine session…';
-  if (entry) return 'Continue in a new session…';
-  return 'Describe a task to start a session…';
+  return `New session in ${project || 'Scratch'}…`;
 }

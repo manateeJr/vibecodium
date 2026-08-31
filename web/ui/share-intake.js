@@ -68,21 +68,21 @@ export function createShareIntake({
       return;
     }
     // Keep the note and paths in the composer's draft state. The visible textarea is only a view
-    // of that state: replacing it while writing a prompt must not make OPEN forget the share.
+    // of that state: replacing it while writing a prompt must not make SEND forget the share, and
+    // the draft rides the NEXT send whether that starts a new session or continues an existing one.
     if (note !== '') stageNote(note);
     if (staged.length > 0) attachPaths(staged);
-    say(`${describe(staged.length, note)} · ${scope(value?.project)} · OPEN to start`);
-    // No second picker: the scope selector is already on screen, so the landing highlights it and
-    // scrolls it into view. A share that guessed the project wrong is then one tap from right.
-    elements.projectSelector.dataset.share = 'yes';
-    elements.projectSelector.scrollIntoView?.({ block: 'nearest' });
+    say(`${describe(staged.length, note)} · ${scope(value?.project)} · SEND to start`);
+    // No second picker: the landing marks the header's project affordance, which opens the picker
+    // in HISTORY. A share that guessed the project wrong is then one tap from right.
+    elements.activeProject.dataset.share = 'yes';
   };
 
   // A share can name a project the machine does not have registered. Saying so is the point: the
   // picker is right there and the operator can retarget before they press OPEN.
   const scope = (project) => {
     const name = String(project ?? '').trim();
-    if (name === '') return 'pick a project above';
+    if (name === '') return 'pick a project first';
     projectManager.selectProject(name);
     return projectManager.selectedProject()?.name === name
       ? `project ${name}`

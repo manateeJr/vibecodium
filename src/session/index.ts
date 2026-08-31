@@ -43,6 +43,7 @@ import {
   sessionSendArgs,
   sessionStopArgs,
 } from './session-helpers.js';
+import { registerRecentSessions } from './recent-sessions.js';
 import type { SessionTable } from './session-table.js';
 import { startPersistentSession } from './persistent-session-start.js';
 import { createPtySubscription, type PtySubscriptionHub } from './pty-subscriptions.js';
@@ -136,6 +137,7 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
     context.registerCommand(COMMAND_NAMES.sessionList, (command: unknown) => this.list(command));
+    registerRecentSessions(context, this.sessionRecords);
     context.registerCommand(COMMAND_NAMES.sessionFork, (command: unknown) => this.fork(command));
     context.registerCommand(
       COMMAND_NAMES.sessionEnsureLive,

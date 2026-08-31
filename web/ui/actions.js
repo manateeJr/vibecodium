@@ -263,7 +263,6 @@ export function createActions({
       resetInput();
       selectStream(result.stream_id);
       setStatus('LIVE', 'live');
-      notify('continuing the machine session · same session, same transcript');
       void reloadSessions();
     } catch (error) {
       appendError(`session continue failed: ${errorMessage(error)}`, entry);
