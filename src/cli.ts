@@ -26,6 +26,20 @@ export async function main(
     await startControlPlane();
     return;
   }
+  if (command === 'soak') {
+    const soakScript = path.join(
+      path.dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      'scripts',
+      'soak.mjs',
+    );
+    const result = spawnSync(process.execPath, [soakScript, ...args.slice(1)], {
+      stdio: 'inherit',
+    });
+    process.exitCode = result.status ?? 1;
+    return;
+  }
   const client = dependencies.client ?? createClientFromEnv();
   const spawnProcess = dependencies.spawn ?? spawnSync;
 
@@ -327,6 +341,8 @@ function usage(): void {
       '  session stop <id>                 stop a session',
       '  workspace list | workspace status <path>',
       '  workflow run <template>',
+      '  soak [--provider fake] [--minutes N]',
+      '                                    run the replayable end-to-end soak scenario (default 30 min, real omp)',
       '  approve <token|stream_id>         approve a pending action',
       '',
     ].join('\n'),
