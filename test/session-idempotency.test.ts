@@ -217,7 +217,12 @@ test('session.send deduplicates keyed persistent turns and leaves unkeyed sends 
     await new Promise((resolve) => setImmediate(resolve));
     assert.deepEqual(
       substrate.writes.map((write) => write.text),
-      ['same prompt', 'different prompt', 'without key', 'without key'],
+      [
+        '\x1b[200~same prompt\x1b[201~',
+        '\x1b[200~different prompt\x1b[201~',
+        '\x1b[200~without key\x1b[201~',
+        '\x1b[200~without key\x1b[201~',
+      ],
     );
   } finally {
     subsystem.stopAll();
