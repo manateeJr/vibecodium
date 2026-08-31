@@ -18,7 +18,11 @@ import {
   PersistentSessionWorker,
   type PersistentSessionStartResult,
 } from '../server/session-worker.js';
-import { SessionIdleReaper, type SessionReapCandidate } from './idle-reaper.js';
+import {
+  SessionIdleReaper,
+  type SessionReapCandidate,
+  type SessionReapReason,
+} from './idle-reaper.js';
 import { sessionEnsureLiveArgs, sessionSendKeysArgs } from './session-helpers.js';
 import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type { SessionTable } from './session-table.js';
@@ -38,6 +42,8 @@ export interface PersistentSessionManagerOptions {
   readonly now?: () => Date;
   readonly idleTimeoutMs?: number;
   readonly reaperIntervalMs?: number;
+  readonly memoryPressureMinMb?: number;
+  readonly memoryAvailableMb?: () => number | Promise<number | undefined>;
 }
 type PersistentWorkerConfig = Omit<
   ConstructorParameters<typeof PersistentSessionWorker>[0],
@@ -78,10 +84,16 @@ export class PersistentSessionManager {
     this.reaper = new SessionIdleReaper({
       substrate: this.substrate,
       candidates: () => this.reapCandidates(),
-      onReaped: (candidate) => this.finishReap(candidate),
+      onReaped: (candidate, reason) => this.finishReap(candidate, reason),
       now: () => this.now().getTime(),
       ...(options.idleTimeoutMs === undefined ? {} : { timeoutMs: options.idleTimeoutMs }),
       ...(options.reaperIntervalMs === undefined ? {} : { intervalMs: options.reaperIntervalMs }),
+      ...(options.memoryPressureMinMb === undefined
+        ? {}
+        : { memoryPressureMinMb: options.memoryPressureMinMb }),
+      ...(options.memoryAvailableMb === undefined
+        ? {}
+        : { memoryAvailableMb: options.memoryAvailableMb }),
     });
   }
 
@@ -410,10 +422,14 @@ export class PersistentSessionManager {
       substrateName: worker.substrateName,
       idle: worker.isIdle,
       lastActivityAt: worker.lastActivityAt,
+      runningTurn: worker.isBusy,
     }));
   }
 
-  private async finishReap(candidate: SessionReapCandidate): Promise<void> {
+  private async finishReap(
+    candidate: SessionReapCandidate,
+    reason: SessionReapReason = 'reaped',
+  ): Promise<void> {
     const worker = this.workers.get(candidate.sessionId);
     if (!worker) return;
     this.workers.delete(candidate.sessionId);
@@ -431,7 +447,7 @@ export class PersistentSessionManager {
       });
     }
     await worker.shutdown();
-    this.onStateChange(candidate.sessionId, 'resumable', 'reaped');
+    this.onStateChange(candidate.sessionId, 'resumable', reason);
   }
 }
 
