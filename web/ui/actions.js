@@ -34,7 +34,7 @@ export function createActions({
     setStatus(online ? 'RECONNECTING' : 'OFFLINE', online ? 'wait' : 'bad');
   };
 
-  const queueSend = (entry, prompt) => {
+  const queueSend = (entry, prompt, idempotencyKey) => {
     const line = pushLine(
       entry,
       'wait',
@@ -42,7 +42,7 @@ export function createActions({
       false,
       { queued: true },
     );
-    queuedSends.push({ entry, prompt, line });
+    queuedSends.push({ entry, prompt, idempotencyKey, line });
     if (getSelectedStreamId() === entry.stream_id) setUnavailableStatus();
   };
 
@@ -60,7 +60,11 @@ export function createActions({
           try {
             const sessionId = sessionIdOf(pending.entry);
             if (!sessionId) throw new Error('session id unavailable');
-            await client.sendMessage({ session_id: sessionId, prompt: pending.prompt });
+            await client.sendMessage({
+              session_id: sessionId,
+              prompt: pending.prompt,
+              idempotency_key: pending.idempotencyKey,
+            });
             delivered = true;
             break;
           } catch (error) {
@@ -137,18 +141,18 @@ export function createActions({
 
   // Resolves to `sent` only when the turn actually reached the harness. A transport failure is
   // accepted into the local queue and resolves to `queued`, so the caller can clear its draft.
-  const sendTurn = async (entry, prompt) => {
+  const sendTurn = async (entry, prompt, idempotencyKey) => {
     entry.busy = true;
     renderSessions();
     try {
       const sessionId = sessionIdOf(entry);
       if (!sessionId) throw new Error('session id unavailable');
-      await client.sendMessage({ session_id: sessionId, prompt });
+      await client.sendMessage({ session_id: sessionId, prompt, idempotency_key: idempotencyKey });
       return 'sent';
     } catch (error) {
       entry.busy = false;
       if (isTransportFailure(error)) {
-        queueSend(entry, prompt);
+        queueSend(entry, prompt, idempotencyKey);
         return 'queued';
       }
       appendError(`session send failed: ${errorMessage(error)}`, entry);
@@ -208,7 +212,8 @@ export function createActions({
     const entry = sessions.get(getSelectedStreamId());
     if (entry && isSendable(entry)) {
       if (entry.busy) return;
-      const result = await sendTurn(entry, prompt);
+      const idempotencyKey = globalThis.crypto.randomUUID();
+      const result = await sendTurn(entry, prompt, idempotencyKey);
       if (result === 'sent' || result === 'queued') resetInput();
       return;
     }
@@ -242,7 +247,7 @@ export function createActions({
       notify(`model ${model} · applies to the next session`);
       return;
     }
-    const result = await sendTurn(entry, `/model ${model}`);
+    const result = await sendTurn(entry, `/model ${model}`, globalThis.crypto.randomUUID());
     if (result === 'sent') notify(`model switch sent · /model ${model}`);
     else if (result === 'queued') notify(`model switch queued · sending on reconnect`);
   };

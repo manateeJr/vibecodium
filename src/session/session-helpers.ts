@@ -127,7 +127,13 @@ export function sessionSendArgs(command: unknown): SessionSendArgs {
   if (!value || typeof value.session_id !== 'string' || !value.session_id.trim())
     throw new Error('session_id is required');
   if (typeof value.prompt !== 'string') throw new Error('prompt is required');
-  return { session_id: value.session_id, prompt: value.prompt };
+  if (value.idempotency_key !== undefined && typeof value.idempotency_key !== 'string')
+    throw new Error('idempotency_key must be a string');
+  return {
+    session_id: value.session_id,
+    prompt: value.prompt,
+    ...(value.idempotency_key === undefined ? {} : { idempotency_key: value.idempotency_key }),
+  };
 }
 
 export function sessionEnsureLiveArgs(command: unknown): SessionEnsureLiveArgs {

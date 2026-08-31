@@ -54,6 +54,7 @@ import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import { applySessionSubstrateState } from './session-state.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
+import { SessionSendIdempotency } from './send-idempotency.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
 export const DEFAULT_SESSION_STORAGE_ROOT = sessionStorageRootFromEnvironment();
@@ -87,6 +88,7 @@ export class SessionSubsystem implements Subsystem {
   private readonly machineSessions: MachineSessionResolver | undefined;
   private readonly sessionStorageRoot: string;
   private readonly admission: AdmissionBudget;
+  private readonly sendIdempotency = new SessionSendIdempotency(() => this.now().getTime());
   private context: SubsystemContext | undefined;
   public subscribePty!: PtySubscriptionHub['subscribe'];
   private reconciliationPromise: Promise<void> | undefined;
@@ -307,7 +309,6 @@ export class SessionSubsystem implements Subsystem {
   public pin(command: unknown): SessionPinResult {
     return pinSession(this.sessionRecords, this.sessionTable, command);
   }
-
   public async fork(command: unknown): Promise<SessionForkResult> {
     return forkSession(command, {
       context: requireContext(this.context),
@@ -368,40 +369,40 @@ export class SessionSubsystem implements Subsystem {
   }
   public send(command: unknown): SessionSendResult | Promise<SessionSendResult> {
     const args = sessionSendArgs(command);
-    if (
-      this.persistentManager?.has(args.session_id) ||
-      this.sessionTable?.get(args.session_id)?.state === 'resumable'
-    ) {
-      const turn = this.persistentManager?.send(args.session_id, args.prompt);
-      if (turn === undefined) throw new Error('persistent substrate is not configured');
-      if (typeof turn === 'number') {
-        return { stream_id: `session:${args.session_id}`, turn };
+    return this.sendIdempotency.run(args.session_id, args.idempotency_key, () => {
+      if (
+        this.persistentManager?.has(args.session_id) ||
+        this.sessionTable?.get(args.session_id)?.state === 'resumable'
+      ) {
+        const turn = this.persistentManager?.send(args.session_id, args.prompt);
+        if (turn === undefined) throw new Error('persistent substrate is not configured');
+        if (typeof turn === 'number') return { stream_id: `session:${args.session_id}`, turn };
+        return turn.then((value) => ({ stream_id: `session:${args.session_id}`, turn: value }));
       }
-      return turn.then((value) => ({ stream_id: `session:${args.session_id}`, turn: value }));
-    }
-    const state = this.sessions.get(args.session_id);
-    if (!state || state.terminal) throw new Error('session not found');
-    if (state.busy) throw new Error('session is busy');
-    const turn = ++state.turn;
-    requireContext(this.context).append(state.stream_id, 'session_input', {
-      session_id: state.session_id,
-      turn,
-      text: args.prompt,
-    });
-    state.busy = true;
-    const message: TurnWorkerMessage = {
-      type: 'turn',
-      stream_id: state.stream_id,
-      prompt: args.prompt,
-    };
-    try {
-      state.worker.send(message, (error) => {
-        if (error) this.failSession(state, errorMessage(error));
+      const state = this.sessions.get(args.session_id);
+      if (!state || state.terminal) throw new Error('session not found');
+      if (state.busy) throw new Error('session is busy');
+      const turn = ++state.turn;
+      requireContext(this.context).append(state.stream_id, 'session_input', {
+        session_id: state.session_id,
+        turn,
+        text: args.prompt,
       });
-    } catch (error: unknown) {
-      this.failSession(state, errorMessage(error));
-    }
-    return { stream_id: state.stream_id, turn };
+      state.busy = true;
+      const message: TurnWorkerMessage = {
+        type: 'turn',
+        stream_id: state.stream_id,
+        prompt: args.prompt,
+      };
+      try {
+        state.worker.send(message, (error) => {
+          if (error) this.failSession(state, errorMessage(error));
+        });
+      } catch (error: unknown) {
+        this.failSession(state, errorMessage(error));
+      }
+      return { stream_id: state.stream_id, turn };
+    });
   }
   public async stop(command: unknown): Promise<SessionStopResult> {
     const args = sessionStopArgs(command);

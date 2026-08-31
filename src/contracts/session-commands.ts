@@ -47,6 +47,7 @@ export interface SessionStopResult {
 export interface SessionSendArgs {
   readonly session_id: string;
   readonly prompt: string;
+  readonly idempotency_key?: string;
 }
 
 export interface SessionSendResult {
