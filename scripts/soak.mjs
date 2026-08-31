@@ -52,7 +52,7 @@ const environment = new Map([
 ]);
 mkdirSync(projectDir, { recursive: true });
 mkdirSync(storageRoot, { recursive: true });
-mkdirSync(sharedDir, { recursive: true });
+mkdirSync(socketDir, { recursive: true, mode: 0o700 });
 process.env.VIBECODIUM_SHARED_DIR = sharedDir;
 process.env.VIBECODIUM_SESSION_STORAGE_ROOT = storageRoot;
 process.env.ABDUCO_SOCKET_DIR = socketDir;
