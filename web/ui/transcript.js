@@ -35,12 +35,16 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest, onS
       const line = document.createElement('li');
       line.className = `stream-line stream-line--${item.cls}`;
       if (item.cls === 'divider') line.classList.add('stream-line--divider');
+      if (item.streamKind === 'thinking') line.classList.add('stream-line--thinking-block');
+      if (item.streamKind === 'tool') line.classList.add('stream-line--tool');
       const number = document.createElement('span');
       number.className = 'stream-line__seq';
       number.textContent = item.cls === 'divider' ? '' : `#${++sequence}`;
       const text = document.createElement('div');
       text.className = 'stream-line__text';
-      renderContent(text, item);
+      if (item.streamKind === 'thinking') renderThinking(text, item);
+      else if (item.streamKind === 'tool') renderTool(text, item);
+      else renderContent(text, item);
       if (item.steering === true && onSteerNow && working && index > lastReplyIndex) {
         appendSteeringAction(text, onSteerNow);
       }
@@ -48,15 +52,16 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest, onS
       streamLines.append(line);
     }
     if (working) {
+      const activity = currentActivity(items);
       const line = document.createElement('li');
       line.className = 'stream-line stream-line--thinking';
-      line.setAttribute('aria-label', 'Agent working');
+      line.setAttribute('aria-label', activity);
       const cursor = document.createElement('span');
       cursor.className = 'thinking-cursor';
       cursor.textContent = '▋';
       const text = document.createElement('div');
       text.className = 'stream-line__text';
-      text.textContent = 'agent working…';
+      text.textContent = activity;
       line.append(cursor, text);
       streamLines.append(line);
     }
@@ -71,6 +76,63 @@ export function createTranscriptView({ streamLines, streamEmpty, jumpLatest, onS
   };
 
   return { render };
+}
+
+function renderThinking(target, item) {
+  const details = document.createElement('details');
+  details.className = 'thinking-block';
+  const summary = document.createElement('summary');
+  const elapsed = Number.isFinite(item.thinkingElapsedSeconds) ? item.thinkingElapsedSeconds : 0;
+  summary.textContent = `thinking · ${elapsed}s`;
+  const body = document.createElement('div');
+  body.className = 'thinking-block__body';
+  body.textContent = item.text;
+  details.append(summary, body);
+  target.append(details);
+}
+
+function renderTool(target, item) {
+  const tool = item.tool && typeof item.tool === 'object' ? item.tool : {};
+  const status = tool.status === 'ok' || tool.status === 'err' ? tool.status : 'run';
+  const glyph = status === 'ok' ? '✓' : status === 'err' ? '✗' : '⏳';
+  const statusNode = document.createElement('span');
+  statusNode.className = 'tool-line__status';
+  statusNode.dataset.status = status;
+  statusNode.setAttribute('aria-label', status === 'run' ? 'running' : status);
+  statusNode.textContent = glyph;
+  const label = document.createElement('span');
+  label.className = 'tool-line__label';
+  const name = typeof tool.name === 'string' && tool.name ? tool.name : 'tool';
+  const summary = typeof tool.summary === 'string' ? tool.summary : '';
+  label.textContent = summary ? `${name} · ${summary}` : name;
+  target.classList.add('tool-line');
+  target.append(statusNode, label);
+  if (typeof tool.ms === 'number' && Number.isFinite(tool.ms)) {
+    const duration = document.createElement('span');
+    duration.className = 'tool-line__duration';
+    duration.textContent = ` · ${formatDuration(tool.ms)}`;
+    target.append(duration);
+  }
+}
+
+function formatDuration(value) {
+  const milliseconds = Math.max(0, Math.round(value));
+  if (milliseconds < 1_000) return `${milliseconds}ms`;
+  const seconds = milliseconds / 1_000;
+  return `${seconds < 10 ? seconds.toFixed(1) : seconds.toFixed(0)}s`;
+}
+
+function currentActivity(items) {
+  const latest = items.findLast(
+    (item) => item.streamKind === 'thinking' || item.streamKind === 'tool',
+  );
+  if (latest?.streamKind === 'thinking') return 'thinking…';
+  if (latest?.streamKind === 'tool' && latest.tool?.status === 'run') {
+    const name =
+      typeof latest.tool.name === 'string' && latest.tool.name ? latest.tool.name : 'tool';
+    return `running ${name}…`;
+  }
+  return 'agent working…';
 }
 
 function renderContent(target, item) {

@@ -38,6 +38,13 @@ export interface SessionOutputPayload {
   readonly session_id: string;
   readonly index: number;
   readonly text: string;
+  readonly kind?: 'text' | 'thinking' | 'tool';
+  readonly tool?: {
+    readonly name: string;
+    readonly summary: string;
+    readonly status: 'run' | 'ok' | 'err';
+    readonly ms?: number;
+  };
 }
 
 export interface SessionInputPayload {

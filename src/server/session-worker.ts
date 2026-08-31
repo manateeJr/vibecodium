@@ -349,6 +349,7 @@ async function runTurn(
       return;
     }
     for await (const chunk of state.provider.stream(session)) {
+      if (!chunk.text.trim()) continue;
       await send({
         type: 'event',
         stream_id: state.stream_id,

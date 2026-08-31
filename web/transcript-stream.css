@@ -1,0 +1,81 @@
+.stream-line--thinking-block {
+  padding: 5px 0;
+  border-bottom-color: color-mix(in srgb, var(--line) 55%, transparent);
+}
+
+.thinking-block {
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  font-style: italic;
+}
+
+.thinking-block summary {
+  min-height: 30px;
+  padding: 5px 0;
+  cursor: pointer;
+  color: var(--ink-dim);
+  font-style: normal;
+  list-style-position: inside;
+}
+
+.thinking-block summary::marker {
+  color: var(--ink-dim);
+}
+
+.thinking-block__body {
+  padding: 4px 10px 8px 20px;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+}
+
+.stream-line--tool {
+  padding: 4px 0;
+  border-bottom-color: color-mix(in srgb, var(--line) 55%, transparent);
+}
+
+.stream-line--tool .stream-line__text {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
+  color: var(--ink-dim);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+}
+
+.tool-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-line__status {
+  flex: 0 0 auto;
+  width: 1.2em;
+  color: var(--amber);
+  font-style: normal;
+  text-align: center;
+}
+
+.tool-line__status[data-status='ok'] {
+  color: var(--ok);
+}
+
+.tool-line__status[data-status='err'] {
+  color: var(--bad);
+}
+
+.tool-line__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-line__duration {
+  flex: 0 0 auto;
+  color: var(--ink-dim);
+}
+
+.stream-line--thinking:not(.stream-line--thinking-block) .stream-line__text {
+  color: var(--ink-dim);
+}

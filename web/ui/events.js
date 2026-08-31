@@ -29,6 +29,8 @@ export function applySessionEvent(entry, event, pushLine) {
     if (typeof payload.provider === 'string' && payload.provider.trim())
       entry.label = payload.provider;
     entry.status = 'running';
+    entry.activity = undefined;
+    entry.lastBoundaryAt = eventTimeMs(event.ts);
     pushLine(entry, 'you', `${clock} you · ${payload.prompt ?? ''}`);
     pushLine(
       entry,
@@ -41,6 +43,8 @@ export function applySessionEvent(entry, event, pushLine) {
     // Steering messages are marked on the wire; the transcript renders them distinctly and offers
     // "Steer now" while they are still queued behind the turn in flight.
     const steering = payload.steering === true;
+    entry.activity = undefined;
+    entry.lastBoundaryAt = eventTimeMs(event.ts);
     pushLine(
       entry,
       steering ? 'steering' : 'you',
@@ -51,10 +55,49 @@ export function applySessionEvent(entry, event, pushLine) {
     return;
   }
   if (event.type === 'session_output') {
+    const kind = sessionOutputKind(payload.kind);
+    if (kind === 'thinking') {
+      const eventTime = eventTimeMs(event.ts);
+      const boundary =
+        typeof entry.thinkingBoundaryAt === 'number'
+          ? entry.thinkingBoundaryAt
+          : (entry.lastBoundaryAt ?? eventTime);
+      if (boundary !== undefined) entry.thinkingBoundaryAt = boundary;
+      const elapsedSeconds =
+        eventTime === undefined || boundary === undefined
+          ? 0
+          : Math.max(0, Math.round((eventTime - boundary) / 1000));
+      entry.activity = { kind: 'thinking' };
+      entry.busy = true;
+      pushLine(entry, 'thinking', String(payload.text ?? ''), false, {
+        streamKind: 'thinking',
+        thinkingElapsedSeconds: elapsedSeconds,
+      });
+      return;
+    }
+    if (kind === 'tool') {
+      const tool = sessionTool(payload.tool);
+      finishThinking(entry);
+      if (tool.status !== 'run') entry.lastBoundaryAt = eventTimeMs(event.ts);
+      removeToolLine(entry, payload.index, tool);
+      entry.activity = { kind: 'tool', name: tool.name, status: tool.status };
+      entry.busy = true;
+      pushLine(entry, 'agent', '', false, {
+        streamKind: 'tool',
+        outputIndex: payload.index,
+        tool,
+      });
+      return;
+    }
+    finishThinking(entry);
+    entry.lastBoundaryAt = eventTimeMs(event.ts);
+    entry.activity = { kind: 'text' };
     pushLine(entry, 'agent', `${clock} agent · ${payload.text ?? ''}`, true);
     return;
   }
   if (event.type === 'turn_complete') {
+    finishThinking(entry);
+    entry.lastBoundaryAt = eventTimeMs(event.ts);
     pushLine(entry, 'divider', `— turn ${payload.turn ?? '?'} —`);
     return;
   }
@@ -64,10 +107,48 @@ export function applySessionEvent(entry, event, pushLine) {
       ? `${payload.stage ?? 'verify'}: ${payload.error ?? 'failed'}`
       : 'session ended';
     entry.status = failed ? 'failed' : 'done';
+    entry.activity = undefined;
     pushLine(entry, failed ? 'bad' : 'meta', `${clock} ${text}`);
     return;
   }
   pushEventLine(entry, event, EVENT_TONES[event.type] ?? 'meta', pushLine);
+}
+
+function sessionOutputKind(value) {
+  return value === 'thinking' || value === 'tool' ? value : 'text';
+}
+
+function sessionTool(value) {
+  const tool = value && typeof value === 'object' ? value : {};
+  const status = tool.status === 'ok' || tool.status === 'err' ? tool.status : 'run';
+  return {
+    name: typeof tool.name === 'string' && tool.name ? tool.name : 'tool',
+    summary: typeof tool.summary === 'string' ? tool.summary : '',
+    status,
+    ...(typeof tool.ms === 'number' && Number.isFinite(tool.ms) ? { ms: tool.ms } : {}),
+  };
+}
+
+function removeToolLine(entry, outputIndex, tool) {
+  if (tool.status === 'run') return;
+  const lineIndex = entry.lines.findLastIndex(
+    (line) =>
+      line.streamKind === 'tool' &&
+      line.tool?.status === 'run' &&
+      line.tool.name === tool.name &&
+      line.tool.summary === tool.summary &&
+      (!Number.isInteger(outputIndex) || line.outputIndex === outputIndex),
+  );
+  if (lineIndex >= 0) entry.lines.splice(lineIndex, 1);
+}
+
+function finishThinking(entry) {
+  entry.thinkingBoundaryAt = undefined;
+}
+
+function eventTimeMs(timestamp) {
+  const value = Date.parse(timestamp);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function pushEventLine(entry, event, tone, pushLine) {
