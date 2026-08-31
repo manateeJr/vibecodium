@@ -5,6 +5,11 @@ import { StringDecoder } from 'node:string_decoder';
 import type { EventKind } from '../contracts/events.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
 import type { HarnessPlugin, HarnessTranscriptRecord } from '../contracts/substrate-contract.js';
+import {
+  parseOmpTranscriptLine,
+  type OmpAssistantRecord,
+  type OmpToolResultRecord,
+} from './omp-record-parser.js';
 
 export interface SessionTranscriptActivity {
   readonly record: HarnessTranscriptRecord;
@@ -47,6 +52,15 @@ export class SessionTranscriptTailer {
   private outputIndex: number;
   private idle = false;
   private lastActivity = 0;
+  private readonly pendingTools = new Map<
+    string,
+    {
+      readonly index: number;
+      readonly name: string;
+      readonly summary: string;
+      readonly startedAt?: number;
+    }
+  >();
 
   public constructor(options: SessionTranscriptTailerOptions) {
     this.activeTranscriptPath = options.transcriptPath;
@@ -172,11 +186,15 @@ export class SessionTranscriptTailer {
   }
 
   private processLine(line: string): void {
-    const record = this.plugin.parseTranscriptLine(line);
+    const parsed = this.plugin.name === 'omp' ? parseOmpTranscriptLine(line) : null;
+    const record = parsed ?? this.plugin.parseTranscriptLine(line);
     if (!record) return;
     const at = this.now();
     this.lastActivity = at;
-    if (record.kind === 'user' || record.kind === 'steering') {
+    if (parsed?.kind === 'tool_result') {
+      this.processToolResult(parsed);
+      this.idle = false;
+    } else if (record.kind === 'user' || record.kind === 'steering') {
       if (record.kind === 'user') this.turn += 1;
       this.idle = false;
       this.appendEvent('session_input', {
@@ -186,12 +204,10 @@ export class SessionTranscriptTailer {
         ...(record.kind === 'steering' ? { steering: true } : {}),
       });
     } else if (record.kind === 'assistant') {
-      this.appendEvent('session_output', {
-        session_id: this.sessionId,
-        index: this.outputIndex,
-        text: record.text ?? '',
-      });
-      this.outputIndex += 1;
+      if (parsed?.kind === 'assistant') this.appendAssistant(parsed);
+      else if (record.text?.trim()) {
+        this.appendOutput(record.text, 'text');
+      }
       this.idle = this.plugin.idleDetector(record);
       if (this.idle) {
         this.appendEvent('turn_complete', {
@@ -203,7 +219,73 @@ export class SessionTranscriptTailer {
     this.onActivity?.({ record, idle: this.idle, turn: this.turn, at });
   }
 
+  private appendAssistant(record: OmpAssistantRecord): void {
+    for (const text of record.thinking) {
+      if (text.trim()) this.appendOutput(text, 'thinking');
+    }
+    for (const call of record.toolCalls) {
+      const index = this.appendOutput('', 'tool', {
+        name: call.name,
+        summary: call.summary,
+        status: 'run',
+      });
+      this.pendingTools.set(call.id, {
+        index,
+        name: call.name,
+        summary: call.summary,
+        ...(record.timeMs === undefined ? {} : { startedAt: record.timeMs }),
+      });
+    }
+    if (record.text?.trim()) this.appendOutput(record.text, 'text');
+  }
+
+  private processToolResult(record: OmpToolResultRecord): void {
+    const pending = this.pendingTools.get(record.toolResult.id);
+    if (!pending) return;
+    this.pendingTools.delete(record.toolResult.id);
+    const measuredMs =
+      record.toolResult.durationMs ?? durationMs(pending.startedAt, record.toolResult.timeMs);
+    const ms = measuredMs === undefined ? undefined : Math.round(measuredMs);
+    this.appendEvent('session_output', {
+      session_id: this.sessionId,
+      index: pending.index,
+      text: '',
+      kind: 'tool',
+      tool: {
+        name: pending.name,
+        summary: pending.summary,
+        status: record.toolResult.ok ? 'ok' : 'err',
+        ...(ms === undefined ? {} : { ms }),
+      },
+    });
+  }
+
+  private appendOutput(
+    text: string,
+    kind: 'text' | 'thinking' | 'tool',
+    tool?: { readonly name: string; readonly summary: string; readonly status: 'run' },
+  ): number {
+    const index = this.outputIndex;
+    this.outputIndex += 1;
+    this.appendEvent('session_output', {
+      session_id: this.sessionId,
+      index,
+      text,
+      kind,
+      ...(tool === undefined ? {} : { tool }),
+    });
+    return index;
+  }
+
   private appendEvent(type: EventKind, payload: Record<string, unknown>): void {
     this.append(this.streamId, type as never, payload as never);
   }
+}
+
+function durationMs(
+  startedAt: number | undefined,
+  endedAt: number | undefined,
+): number | undefined {
+  if (startedAt === undefined || endedAt === undefined || endedAt < startedAt) return undefined;
+  return Math.round(endedAt - startedAt);
 }

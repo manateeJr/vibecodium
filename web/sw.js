@@ -18,6 +18,7 @@ const SHELL_ASSETS = Object.freeze([
   '/panels.css',
   '/drawers.css',
   '/surface.css',
+  '/transcript-stream.css',
   '/lib/base64.js',
   '/lib/command.js',
   '/lib/external-session.js',
