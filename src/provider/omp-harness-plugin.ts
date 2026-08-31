@@ -7,6 +7,9 @@ import type {
 
 export class OmpHarnessPlugin implements HarnessPlugin {
   public readonly name = 'omp';
+  // Grounded with omp v17.3.5 in a throwaway interactive plane: Escape cancels the active turn.
+  // ETX (Ctrl-C) clears the composer instead, so it is not a turn-abort key.
+  public readonly abortKey = 'escape' as const;
   public readonly injectionRecipe = {
     clearKeys: ['ctrl_u'],
     submitKeys: ['enter'],

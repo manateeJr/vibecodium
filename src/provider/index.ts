@@ -4,6 +4,7 @@ export {
   NotImplementedProvider,
   OmpProvider,
   ProviderNotImplementedError,
+  harnessAbortKey,
   mapProviderOutputEvent,
   providerByName,
 } from './provider.js';

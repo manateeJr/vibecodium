@@ -22,9 +22,8 @@ export function renderComposeControls({ elements, entry, state, project, hint })
       : '',
   );
   elements.interruptKey.disabled =
-    state.opening || state.interrupting || !sendable || !sessionIdOf(entry);
+    state.opening || state.interrupting || !sendable || !sessionIdOf(entry) || !entry?.abort_key;
 }
-
 function composePlaceholder(sendable, external, project) {
   if (sendable) return 'Write something…';
   if (external) return 'Continue this machine session…';

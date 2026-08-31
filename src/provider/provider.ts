@@ -9,6 +9,7 @@ import type {
   ProviderSessionRef,
   ProviderSpawnRequest,
 } from '../contracts/provider-contract.js';
+import type { SubstrateKey } from '../contracts/substrate-contract.js';
 import { CodexProvider } from './codex-provider.js';
 import { OmpProvider } from './omp-provider.js';
 export { CodexProvider, OmpProvider };
@@ -99,4 +100,15 @@ export function providerByName(name: string): ProviderSessionRef {
   if (name === 'codex') return new CodexProvider();
   if (name === 'claude') return new NotImplementedProvider(name);
   throw new Error(`unknown provider: ${name}`);
+}
+/**
+ * Returns the key the provider's interactive harness uses to abort its active turn.
+ * Providers without a persistent harness (for example Codex `exec`) are unsupported.
+ */
+export function harnessAbortKey(provider: string): SubstrateKey | undefined {
+  try {
+    return providerByName(provider).harnessPlugin?.abortKey;
+  } catch {
+    return undefined;
+  }
 }

@@ -90,7 +90,8 @@ export function createActions({
   };
 
   // Native control keys: the harness owns queue and steer semantics, so the phone only presses
-  // the same keys a person at the PC would. `pendingKey` drives the button's disabled state.
+  // the same keys a person at the PC would. An interrupt stays pending until the event stream
+  // reports the turn boundary, so the button cannot queue duplicate aborts.
   const sendKeys = async (entry, keys, pendingKey) => {
     if (!entry || !isSendable(entry)) {
       notify('select a live session first');
@@ -105,13 +106,15 @@ export function createActions({
       state[pendingKey] = true;
       refreshControls();
     }
+    let holdPending = false;
     try {
       const result = await client.sessionSendKeys({ session_id: sessionId, keys });
+      holdPending = pendingKey === 'interrupting';
       notify(`${result.sent} control key${result.sent === 1 ? '' : 's'} sent`);
     } catch (error) {
       appendError(`control key send failed: ${errorMessage(error)}`, entry);
     } finally {
-      if (pendingKey) {
+      if (pendingKey && !holdPending) {
         state[pendingKey] = false;
         refreshControls();
       }

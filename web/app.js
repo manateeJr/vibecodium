@@ -61,7 +61,8 @@ const sessions = new Map();
 const { transcript, sessionView, home, chip } = createSessionSurface({
   connection,
   elements,
-  // Ratified: "Steer now" escalates natively with escape; the separate stop control interrupts.
+  // Steer now escalates natively with escape; the separate STOP control uses the selected
+  // harness's declared turn-abort key.
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
   onRename: (entry, label) => void actions.renameSession(entry, label),
   onStop: () => void actions.stopSession(),
@@ -201,7 +202,10 @@ const feed = createEventFeed({
   ensureEntry,
   streamLog,
   setStatus,
-  onSessionEvent: (entry) => {
+  onSessionEvent: (entry, event) => {
+    if (event.type === 'turn_complete' && entry.stream_id === selectedStreamId) {
+      actionState.interrupting = false;
+    }
     streamLog.render();
     refreshControls();
     if (entry.stream_id === selectedStreamId) void gitStatus.update(entry);
@@ -259,7 +263,9 @@ elements.composeForm.addEventListener('submit', (event) => {
   void actions.submitCompose();
 });
 elements.interruptKey.addEventListener('click', () => {
-  void actions.sendKeys(sessions.get(selectedStreamId), ['interrupt'], 'interrupting');
+  const entry = sessions.get(selectedStreamId);
+  if (!entry?.abort_key) return;
+  void actions.sendKeys(entry, [entry.abort_key], 'interrupting');
 });
 // The header's project name is the affordance the composer placeholder points at: tapping it opens
 // HISTORY on the project picker, which is where the scope selectors now live.

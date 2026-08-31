@@ -3,7 +3,11 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { ChildProcess } from 'node:child_process';
 import test from 'node:test';
-import type { ProviderChunk, ProviderSession } from '../src/contracts/provider-contract.js';
+import type {
+  ProviderChunk,
+  ProviderSession,
+  ProviderSessionRef,
+} from '../src/contracts/provider-contract.js';
 import {
   CodexProvider,
   EchoProvider,
@@ -121,9 +125,13 @@ test('stop marks a CLI session and terminates its child', async () => {
   assert.deepEqual(child.killSignals, ['SIGTERM']);
 });
 
-test('registry exposes real adapters, preserves echo, and leaves Claude unimplemented', async () => {
-  assert.ok(providerByName('omp') instanceof OmpProvider);
-  assert.ok(providerByName('codex') instanceof CodexProvider);
+test('registry exposes real adapters and grounds turn-abort support', async () => {
+  const omp = providerByName('omp');
+  assert.ok(omp instanceof OmpProvider);
+  assert.equal(omp.harnessPlugin?.abortKey, 'escape');
+  const codex = providerByName('codex');
+  assert.ok(codex instanceof CodexProvider);
+  assert.equal((codex as ProviderSessionRef).harnessPlugin, undefined);
   assert.ok(providerByName('claude') instanceof NotImplementedProvider);
 
   const echo = providerByName('fake');
