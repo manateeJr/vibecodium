@@ -30,7 +30,7 @@ export function applySessionEvent(entry, event, pushLine) {
   // session_context is a meter, not a turn: the harness restates the session's context-window
   // usage after every assistant record. Folding it onto the entry is what feeds the composer's
   // chip; letting it fall through to pushEventLine would stamp a `ctx` line into the conversation
-  // on every single turn — the same noise session_state is dropped for further down.
+  // on every single turn.
   if (event.type === 'session_context') {
     entry.context = contextUsage(payload);
     return;
@@ -122,11 +122,6 @@ export function applySessionEvent(entry, event, pushLine) {
     pushLine(entry, failed ? 'bad' : 'meta', `${clock} ${text}`);
     return;
   }
-  // session_state is control-plane bookkeeping (reap/reconcile/resume/shutdown). It rides the
-  // session's own event stream so the summary projector can fold it, but it is not a conversational
-  // turn: rendering every idle-reaper sweep would bury the transcript under {"state":"reconciled"}
-  // noise. Liveness still reaches the phone through session.recent, so this simply drops the line.
-  if (event.type === 'session_state') return;
   pushEventLine(entry, event, EVENT_TONES[event.type] ?? 'meta', pushLine);
 }
 

@@ -14,8 +14,7 @@ export function renderComposeControls({ elements, entry, state, project, hint })
   // Amber for a send that lands on the machine's own session, the same warning colour as the hint.
   elements.composeSend.classList.toggle('button--continue', external);
   elements.composeSend.classList.toggle('button--send', !external);
-  elements.composeSend.disabled =
-    state.opening || state.resuming || Boolean(sendable && entry?.busy);
+  elements.composeSend.disabled = state.opening || state.resuming;
   elements.composeInput.placeholder = composePlaceholder(sendable, external, project);
   hint.update(
     external

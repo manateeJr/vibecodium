@@ -1,4 +1,5 @@
 import { postCommand } from '../lib/command.js';
+import { IDLE_WORK_STATE } from '../lib/session-state.js';
 import { isExternalEntry } from '../lib/external-session.js';
 import { sessionIdOf } from '../lib/session-items.js';
 import { eventClock } from '../lib/time.js';
@@ -211,7 +212,6 @@ export function createActions({
     }
     const entry = sessions.get(getSelectedStreamId());
     if (entry && isSendable(entry)) {
-      if (entry.busy) return;
       const idempotencyKey = globalThis.crypto.randomUUID();
       const result = await sendTurn(entry, prompt, idempotencyKey);
       if (result === 'sent' || result === 'queued') resetInput();
@@ -281,11 +281,13 @@ export function createActions({
 
   const stopSession = async () => {
     const entry = sessions.get(getSelectedStreamId());
-    if (!entry || entry.kind !== 'session' || entry.status !== 'running') return;
+    if (!entry || entry.kind !== 'session' || !isSendable(entry)) return;
     const sessionId = entry.session_id || entry.stream_id.slice('session:'.length);
+    resetLocalWork(entry);
     state.stopping = true;
     setStatus('STOPPING', 'wait');
     refreshControls();
+    renderStream();
     try {
       const result = await client.stopSession({ session_id: sessionId });
       entry.status = 'done';
@@ -376,6 +378,15 @@ export function createActions({
 
 function isSendable(entry) {
   return entry.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
+}
+function resetLocalWork(entry) {
+  const work = entry.work ?? IDLE_WORK_STATE;
+  entry.work = {
+    lastUserSeq: work.lastUserSeq,
+    lastReplySeq: Math.max(work.lastReplySeq, work.lastUserSeq),
+    working: false,
+  };
+  entry.busy = false;
 }
 
 function browserOnline() {

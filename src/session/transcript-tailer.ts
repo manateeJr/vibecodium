@@ -197,6 +197,7 @@ export class SessionTranscriptTailer {
     const record = parsed ?? this.plugin.parseTranscriptLine(line);
     if (!record) return;
     const at = this.now();
+    const wasIdle = this.idle;
     this.lastActivity = at;
     if (parsed?.kind === 'session_exit') {
       this.idle = true;
@@ -236,12 +237,12 @@ export class SessionTranscriptTailer {
         }
       }
       this.idle = this.plugin.idleDetector(record);
-      if (this.idle) {
-        this.appendEvent('turn_complete', {
-          session_id: this.sessionId,
-          turn: this.turn,
-        });
-      }
+    }
+    if (!wasIdle && this.idle) {
+      this.appendEvent('turn_complete', {
+        session_id: this.sessionId,
+        turn: this.turn,
+      });
     }
     this.onActivity?.({ record, idle: this.idle, turn: this.turn, at });
   }

@@ -140,6 +140,6 @@ test('the chip ships under SEND and the shell cache is bumped to serve it', () =
   assert.match(html.slice(chipAt, html.indexOf('>', chipAt)), /\bhidden\b/);
 
   const serviceWorker = fs.readFileSync(new URL('sw.js', webRoot), 'utf8');
-  assert.match(serviceWorker, /vibecodium-shell-v20/, 'the shell cache name is bumped');
+  assert.match(serviceWorker, /vibecodium-shell-v21/, 'the shell cache name is bumped');
   assert.match(serviceWorker, /'\/ui\/context-chip\.js'/, 'the chip module is precached');
 });
