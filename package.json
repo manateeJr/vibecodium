@@ -14,6 +14,7 @@
     "format:check": "prettier --check .",
     "test": "npm run build && node --test dist/test/*.test.js",
     "gate": "node scripts/gate.mjs",
+    "soak": "npm run build && node scripts/soak.mjs",
     "setup:substrate": "node scripts/setup-substrate.mjs",
     "start": "npm run build && node dist/src/cli.js start",
     "dev": "npm run build && node dist/src/cli.js dev"

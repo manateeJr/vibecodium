@@ -86,3 +86,29 @@ Input`. (Shortcuts sends a `Form` body as `multipart/form-data`.)
 Then: share a file from any app → **Share to Vibecodium** → the PWA opens with
 the file staged. If the token has expired or the upload failed, the composer
 says so instead of opening a session with nothing attached.
+
+## Replayable soak harness
+
+Run the end-to-end session soak from a worktree before wiring it into a deploy
+gate:
+
+```sh
+npm run soak -- --provider fake
+npm run soak -- --provider omp --minutes 30
+```
+
+`omp` is the default provider and runs for the requested duration (30 minutes
+by default); pacing is spread across the phases. `fake` is a deterministic
+two-minute run for fast CI-style checks. The harness uses throwaway SQLite,
+session storage, shared files, and abduco sockets, so it does not touch the
+operator's live control plane. It opens an operator session, runs multi-turn
+conversation and share-intake/file-upload checks, exercises rename plus
+`session.recent`, and (for OMP) verifies terminal typing, raw `send_keys`,
+mid-turn steering, control-plane restart/reconcile, idle reap, and cold resume.
+
+The final phase checks event kinds and ordering, pairs every turn with exactly
+one `turn_complete` (including resumed transcripts), compares a full event
+replay with the live stream, and requires no live sessions. A failure exits
+nonzero and prints a temporary artifact directory containing `events.json`,
+`abduco-l.txt`, and transcript tails. The fake provider reports substrate-only
+phases as skipped because it has no persistent terminal.
