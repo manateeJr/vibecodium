@@ -2,6 +2,8 @@
 
 ## CLI usage
 
+Deployment provisions the `vibecodium` command at `~/.local/bin/vibecodium`.
+
 Start the control plane with `vibecodium start` (or `vibecodium dev`). The
 control plane defaults to `http://127.0.0.1:4310`.
 

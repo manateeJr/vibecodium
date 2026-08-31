@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { createClient, type VibecodiumClient } from '../src/client/index.js';
 import { main, type AttachSpawner } from '../src/cli.js';
+import { filterProjectChoices } from '../src/cli-list.js';
 
 type Request = { readonly name: string; readonly args: unknown };
 type SpawnCall = {
@@ -184,6 +185,12 @@ test('list --project passes and applies the project filter', async () => {
   const result = await runListForTest(['--project', 'beta', '--all', '--json'], sessions);
   assert.deepEqual((JSON.parse(result.output) as { sessions: unknown[] }).sessions, [sessions[1]]);
   assert.deepEqual(result.requestArgs, { limit: 1_000, project: 'beta' });
+});
+
+test('project picker filters choices by case-insensitive name', () => {
+  const projects = [{ name: 'Alpha' }, { name: 'Beta Tools' }, { name: 'Gamma' }] as const;
+  assert.deepEqual(filterProjectChoices(projects, '  beta '), [projects[1]]);
+  assert.deepEqual(filterProjectChoices(projects, ''), projects);
 });
 
 test('list --query matches session metadata and renders attach hints', async () => {
