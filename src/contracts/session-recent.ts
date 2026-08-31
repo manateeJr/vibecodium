@@ -1,4 +1,4 @@
-import type { SessionOrigin, SessionSummary } from './session-commands.js';
+import type { SessionSource, SessionOrigin, SessionSummary } from './session-commands.js';
 
 /**
  * The cold-start home: the operator's last few sessions, each with the tail of
@@ -14,7 +14,9 @@ export const RECENT_PREVIEW_LINES = 3;
 export const RECENT_PREVIEW_WIDTH = 90;
 
 export interface SessionRecentArgs {
+  readonly project?: string;
   readonly limit?: number;
+  readonly include_ended?: boolean;
 }
 
 export interface RecentSession {
@@ -23,6 +25,9 @@ export interface RecentSession {
   readonly provider: string;
   readonly state: SessionSummary['status'];
   readonly origin: SessionOrigin;
+  readonly project?: string;
+  readonly pinned: boolean;
+  readonly source: SessionSource | null;
   readonly cwd: string;
   readonly updated_at: string;
   readonly abort_key?: SessionSummary['abort_key'];

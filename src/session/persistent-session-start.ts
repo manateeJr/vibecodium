@@ -33,6 +33,7 @@ export async function startPersistentSession(
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
     origin: options.args.origin ?? 'agent',
+    ...(options.args.source === undefined ? {} : { source: options.args.source }),
     ...(abortKey === undefined ? {} : { abort_key: abortKey }),
   });
   try {

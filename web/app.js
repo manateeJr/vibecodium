@@ -5,9 +5,11 @@ import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
 import {
   loadExternalHintSeen,
   loadShowAgentSessions,
+  loadShowAllSessions,
   loadToken,
   saveExternalHintSeen,
   saveShowAgentSessions,
+  saveShowAllSessions,
   saveToken,
 } from '/lib/storage.js';
 import { createActions } from '/ui/actions.js';
@@ -53,10 +55,13 @@ const actionState = {
 };
 let machineLoading = false;
 let sessionsLoading = false;
+let recentLoading = false;
 let remoteSessions = [];
+let recentSessions = [];
 let machineSessions = [];
 let registeredProjects = [];
 let showAgents = loadShowAgentSessions();
+let showAllSessions = loadShowAllSessions();
 const sessions = new Map();
 const { transcript, sessionView, home, chip } = createSessionSurface({
   connection,
@@ -66,9 +71,11 @@ const { transcript, sessionView, home, chip } = createSessionSurface({
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
   onRename: (entry, label) => void actions.renameSession(entry, label),
   onStop: () => void actions.stopSession(),
+  onPin: (entry, pinned) => void pinSession(entry, pinned),
   onSelectRecent: (session) => selectRecent(session),
   onError: (message) => streamLog.error(message),
   errorMessage,
+  getShowAllSessions: () => showAllSessions,
 });
 const restartAction = createRestartAction({
   elements,
@@ -84,7 +91,6 @@ const streamLog = createStreamLog({
 const gitStatus = createGitStatus({
   client,
   target: elements.gitStatus,
-  isCurrent: (entry) => entry.stream_id === selectedStreamId,
 });
 const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
@@ -93,26 +99,32 @@ const history = createHistoryDrawer({
   scrollContainer: elements.historyScroll,
   searchInput: elements.historySearch,
   projectFilter: elements.historyProjectFilter,
+  pinnedList: elements.pinnedHistory,
   liveList: elements.liveHistory,
+  endedList: elements.endedHistory,
   machineList: elements.machineHistory,
   newButton: elements.newSession,
   newFlow: elements.newSessionFlow,
   newStart: elements.newSessionStart,
   presetRow: elements.sessionPresets,
   getShowAgents: () => showAgents,
+  getShowAllSessions: () => showAllSessions,
   onLiveSelect: (item) => {
     selectSessionItem(item);
     history.close();
   },
-  // Tapping a machine session only reads it, so HISTORY cannot mutate anything the machine owns.
-  // Continuing it is the operator's first send.
+  onRecentSelect: (item) => {
+    selectRecent(item);
+    history.close();
+  },
+  onPin: (item, pinned) => void pinSession(item, pinned),
   onMachineSelect: (summary) => {
     selectSessionItem(externalItem(summary, registeredProjects));
     history.close();
   },
   onNew: () => selectNew(),
   onPreset: (preset) => selectPreset(preset),
-  onOpen: loadMachineSessions,
+  onOpen: () => Promise.all([loadMachineSessions(), loadRecentSessions()]),
 });
 const projectManager = createProjectManager({
   client,
@@ -123,7 +135,10 @@ const projectManager = createProjectManager({
     registeredProjects = [...nextProjects];
     history.setProjects(nextProjects);
   },
-  onProjectChange: () => updateScope(),
+  onProjectChange: (project) => {
+    history.setSelectedProject(project?.name ?? '');
+    updateScope();
+  },
 });
 const hostPanel = createHostPanel({
   client,
@@ -139,7 +154,9 @@ const settings = createSettingsDrawer({
   tokenState: elements.tokenState,
   harness: elements.harness,
   showAgents: elements.showAgents,
+  showAllSessions: elements.showAllSessions,
   onToggleAgents: (next) => setShowAgents(next),
+  onToggleShowAllSessions: (next) => setShowAllSessions(next),
   onTokenInput: (value) => commitToken(value),
   onTokenCommit: (value) => commitToken(value),
   onOpen: () => {
@@ -279,6 +296,7 @@ setStatus(
   globalThis.navigator.onLine ? 'idle' : 'bad',
 );
 settings.setShowAgents(showAgents);
+settings.setShowAllSessions(showAllSessions);
 showHome();
 updateScope();
 void boot();
@@ -348,6 +366,24 @@ async function loadSessions() {
     renderSessions();
   }
 }
+async function loadRecentSessions() {
+  if (recentLoading) return;
+  recentLoading = true;
+  const project = projectManager.selectedProject();
+  try {
+    const args = { limit: SESSION_LIMIT, include_ended: true };
+    if (project?.name) args.project = project.name;
+    const result = await client.sessionRecent(args);
+    recentSessions = [...result.sessions];
+    history.renderRecent(recentSessions);
+  } catch (error) {
+    recentSessions = [];
+    history.renderRecent([]);
+    streamLog.error(`${SESSION_NOTE}: ${errorMessage(error)}`);
+  } finally {
+    recentLoading = false;
+  }
+}
 
 function updateScope() {
   const project = projectManager.selectedProject();
@@ -360,6 +396,7 @@ function updateScope() {
   refreshControls();
   void loadSessions();
   void loadMachineSessions();
+  void loadRecentSessions();
 }
 
 // Presets are the project's adopted skills first, then its detected quick actions. They are the
@@ -390,6 +427,32 @@ function setShowAgents(next) {
   showAgents = next;
   saveShowAgentSessions(next);
   renderSessions();
+}
+function setShowAllSessions(next) {
+  showAllSessions = next;
+  saveShowAllSessions(next);
+  renderSessions();
+  history.renderRecent(recentSessions);
+  history.renderMachine(machineSessions);
+  void home.refresh();
+}
+
+async function pinSession(item, pinned) {
+  const session_id = item?.session_id || sessionIdOf(item);
+  if (!session_id) {
+    streamLog.error('this session cannot be pinned');
+    return;
+  }
+  try {
+    await client.sessionPin({ session_id, pinned });
+    item.pinned = pinned;
+    const entry = sessions.get(item.stream_id || `session:${session_id}`);
+    if (entry) entry.pinned = pinned;
+    void loadRecentSessions();
+    void loadSessions();
+  } catch (error) {
+    streamLog.error(`session pin failed: ${errorMessage(error)}`);
+  }
 }
 
 function setStatus(label, tone) {

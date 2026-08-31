@@ -39,7 +39,7 @@ export function createActions({
       // `origin` is what separates the operator's own sessions from the ones agents open; the
       // composer is the operator by definition. `model` only rides along when a preset is chosen,
       // so the harness keeps its own default otherwise.
-      const openArgs = { provider, prompt, origin: 'operator' };
+      const openArgs = { provider, prompt, origin: 'operator', source: 'pocket' };
       if (cwd) openArgs.cwd = cwd;
       if (projectName) openArgs.project = projectName;
       const model = getModel();
@@ -51,6 +51,7 @@ export function createActions({
       entry.cwd = cwd || '';
       entry.project = projectName || '';
       entry.origin = 'operator';
+      entry.source = 'pocket';
       entry.busy = true;
       resetInput();
       selectStream(result.stream_id);

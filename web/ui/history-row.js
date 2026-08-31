@@ -11,6 +11,8 @@ export function historyRow({
   status = 'done',
   preview = [],
   sub = false,
+  pinned = false,
+  onPin,
   onSelect,
 }) {
   const button = document.createElement('button');
@@ -28,6 +30,12 @@ export function historyRow({
     tag.textContent = 'sub';
     heading.append(tag);
   }
+  if (status !== 'running' && status !== 'ready' && status !== 'live' && status !== 'external') {
+    const badge = document.createElement('span');
+    badge.className = 'history-item__status';
+    badge.textContent = status.toUpperCase();
+    heading.append(badge);
+  }
 
   const scope = document.createElement('span');
   scope.className = 'history-item__project';
@@ -38,13 +46,23 @@ export function historyRow({
   detail.textContent = meta;
 
   button.append(heading, scope, detail);
-  // The preview is what makes a row worth tapping on a cold start: three lines of the transcript
-  // say which session this is far better than its name or its provider do.
   for (const line of preview) {
     const previewLine = document.createElement('span');
     previewLine.className = 'history-item__preview';
     previewLine.textContent = line;
     button.append(previewLine);
+  }
+  if (onPin) {
+    const pin = document.createElement('button');
+    pin.className = 'history-item__pin';
+    pin.type = 'button';
+    pin.textContent = pinned ? 'UNPIN' : 'PIN';
+    pin.setAttribute('aria-label', pinned ? 'Unpin session' : 'Pin session');
+    pin.addEventListener('click', (event) => {
+      event.stopPropagation();
+      onPin(!pinned);
+    });
+    button.append(pin);
   }
   button.addEventListener('click', () => onSelect());
   return button;

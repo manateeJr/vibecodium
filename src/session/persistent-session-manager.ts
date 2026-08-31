@@ -439,6 +439,12 @@ export class PersistentSessionManager {
       state,
       label: previous?.label ?? summary?.label ?? '',
       origin: previous?.origin ?? summary?.origin ?? 'agent',
+      ...(previous?.pinned === true || summary?.pinned === true ? { pinned: true } : {}),
+      ...(previous?.source !== undefined
+        ? { source: previous.source }
+        : summary?.source === undefined
+          ? {}
+          : { source: summary.source }),
       updatedAt: previous?.updatedAt ?? this.now().toISOString(),
     };
   }

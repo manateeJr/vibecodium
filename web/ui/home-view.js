@@ -12,23 +12,31 @@ import { historyRow } from './history-row.js';
 const RECENT_COMMAND = 'session.recent';
 const RECENT_LIMIT = 5;
 
-export function createHomeView({ list, connection, onSelect, onError, errorMessage }) {
+export function createHomeView({
+  list,
+  connection,
+  getShowAllSessions = () => false,
+  onSelect,
+  onError,
+  errorMessage,
+}) {
   let loading = false;
 
   const render = (sessions) => {
     list.replaceChildren();
-    if (sessions.length === 0) {
+    const visible = sessions.filter((session) => getShowAllSessions() || session.source === 'pocket');
+    if (visible.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'drawer-empty';
       empty.textContent = 'No sessions yet · describe a task below to start one.';
       list.append(empty);
       return;
     }
-    for (const session of sessions) {
+    for (const session of visible) {
       list.append(
         historyRow({
           title: session.label || `session · ${session.provider}`,
-          project: session.cwd || '(default cwd)',
+          project: session.project || session.cwd || '(default cwd)',
           meta: `${session.state} · ${relativeTime(session.updated_at)}`,
           status: session.state,
           preview: Array.isArray(session.preview) ? session.preview : [],

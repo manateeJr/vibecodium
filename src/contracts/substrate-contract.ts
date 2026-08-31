@@ -1,4 +1,4 @@
-import type { SessionOrigin } from './session-commands.js';
+import type { SessionOrigin, SessionSource } from './session-commands.js';
 
 export type SubstrateSessionState = 'live' | 'resumable' | 'closed';
 
@@ -89,5 +89,7 @@ export interface SubstrateSessionRecord {
   readonly state: SubstrateSessionState;
   readonly label?: string;
   readonly origin?: SessionOrigin;
+  readonly pinned?: boolean;
+  readonly source?: SessionSource | null;
   readonly updatedAt: string;
 }

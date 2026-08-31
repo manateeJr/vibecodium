@@ -1,4 +1,5 @@
 import type { SubstrateKey, SubstrateSessionState } from './substrate-contract.js';
+export type SessionSource = 'pocket' | 'cli' | 'api';
 export type SessionOrigin = 'operator' | 'agent';
 
 export interface SessionOpenArgs {
@@ -8,6 +9,7 @@ export interface SessionOpenArgs {
   readonly project?: string;
   readonly model?: string;
   readonly origin?: SessionOrigin;
+  readonly source?: SessionSource;
 }
 
 export interface SessionOpenResult {
@@ -70,6 +72,17 @@ export interface SessionSummary {
   readonly started_at?: string;
   readonly updated_at?: string;
   readonly abort_key?: SubstrateKey;
+  readonly source?: SessionSource;
+  readonly pinned?: boolean;
+}
+
+export interface SessionPinArgs {
+  readonly session_id: string;
+  readonly pinned: boolean;
+}
+
+export interface SessionPinResult {
+  readonly pinned: boolean;
 }
 
 export interface SessionListResult {

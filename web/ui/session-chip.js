@@ -16,6 +16,7 @@ export function createSessionChip({
   menu,
   onRename,
   onStop,
+  onPin = () => undefined,
   onToggleMirror,
   isMirrorVisible,
 }) {
@@ -38,6 +39,15 @@ export function createSessionChip({
         label: 'RENAME',
         enabled: Boolean(entry) && !entry.external,
         run: () => startRename(),
+      },
+      {
+        id: 'pin',
+        label: entry?.pinned ? 'UNPIN' : 'PIN',
+        enabled: Boolean(entry) && !entry.external,
+        run: () => {
+          close();
+          onPin(entry, !entry.pinned);
+        },
       },
       {
         id: 'stop',

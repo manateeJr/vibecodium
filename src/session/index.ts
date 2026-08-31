@@ -9,6 +9,7 @@ import {
   type SessionListResult,
   type SessionOpenArgs,
   type SessionOpenResult,
+  type SessionPinResult,
   type SessionResumeResult,
   type SessionSendResult,
   type SessionStopResult,
@@ -32,18 +33,19 @@ import type {
 import { projectSessionEvent, type SessionSummaryRecord } from './session-summary-projector.js';
 import { AdmissionBudget, admissionConfigFromEnv } from './admission.js';
 import { PersistentSessionManager } from './persistent-session-manager.js';
+import { registerRecentSessions } from './recent-sessions.js';
 import {
   errorMessage,
   forkSession,
   listSessions,
   sessionAttachInfo,
   sessionOpenArgs,
+  sessionPinArgs,
   sessionRenameArgs,
   sessionResumeArgs,
   sessionSendArgs,
   sessionStopArgs,
 } from './session-helpers.js';
-import { registerRecentSessions } from './recent-sessions.js';
 import type { SessionTable } from './session-table.js';
 import { createPtySubscription, type PtySubscriptionHub } from './pty-subscriptions.js';
 import { requireContext, requireSessionTable } from './session-context.js';
@@ -134,6 +136,7 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionRename, (command: unknown) =>
       this.rename(command),
     );
+    context.registerCommand(COMMAND_NAMES.sessionPin, (command: unknown) => this.pin(command));
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
     context.registerCommand(COMMAND_NAMES.sessionList, (command: unknown) => this.list(command));
@@ -294,6 +297,22 @@ export class SessionSubsystem implements Subsystem {
     }
     record.summary = { ...record.summary, label: args.label, updated_at: updatedAt };
     return { label: args.label };
+  }
+  public pin(command: unknown): SessionPinResult {
+    const args = sessionPinArgs(command);
+    const record = this.sessionRecords.get(args.session_id);
+    if (!record) throw new Error('session not found');
+    if (this.sessionTable?.get(args.session_id) !== undefined) {
+      this.sessionTable.setPinned(args.session_id, args.pinned);
+    }
+    if (args.pinned) {
+      record.summary = { ...record.summary, pinned: true };
+    } else {
+      const summary = { ...record.summary };
+      delete summary.pinned;
+      record.summary = summary;
+    }
+    return { pinned: args.pinned };
   }
 
   public async fork(command: unknown): Promise<SessionForkResult> {

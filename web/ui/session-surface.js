@@ -16,9 +16,11 @@ export function createSessionSurface({
   onSteerNow,
   onRename,
   onStop,
+  onPin,
   onSelectRecent,
   onError,
   errorMessage,
+  getShowAllSessions = () => false,
 }) {
   const transcript = createTranscriptView({
     streamLines: elements.streamLines,
@@ -41,6 +43,7 @@ export function createSessionSurface({
   const home = createHomeView({
     list: elements.homeRecent,
     connection,
+    getShowAllSessions,
     onSelect: onSelectRecent,
     onError,
     errorMessage,
@@ -52,6 +55,7 @@ export function createSessionSurface({
     menu: elements.sessionMenu,
     onRename,
     onStop,
+    onPin,
     onToggleMirror: () => sessionView.toggleMirror(),
     isMirrorVisible: () => sessionView.mirrorVisible(),
   });

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { SessionOrigin } from '../contracts/session-commands.js';
+import type { SessionOrigin, SessionSource } from '../contracts/session-commands.js';
 import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type {
   SubstrateSessionRecord,
@@ -21,6 +21,8 @@ type SessionRow = {
   state: SubstrateSessionState;
   label: string;
   origin: SessionOrigin;
+  pinned: number;
+  source: SessionSource | null;
   updated_at: string;
 };
 
@@ -35,6 +37,8 @@ const sessionTableSchema = `
     state TEXT NOT NULL CHECK (state IN ('live', 'resumable', 'closed')),
     label TEXT NOT NULL DEFAULT '',
     origin TEXT NOT NULL DEFAULT 'agent' CHECK (origin IN ('operator', 'agent')),
+    pinned INTEGER NOT NULL DEFAULT 0,
+    source TEXT,
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS session_records_state ON session_records (state);
@@ -48,6 +52,7 @@ export class SessionTable {
   private readonly readRecords;
   private readonly updateRecordState;
   private readonly updateRecordLabel;
+  private readonly updateRecordPinned;
   private closed = false;
 
   public constructor(options: SessionTableOptions = {}) {
@@ -63,8 +68,8 @@ export class SessionTable {
     this.upsertRecord = this.database.prepare(`
       INSERT INTO session_records (
         session_id, provider, harness_ref, substrate_name,
-        transcript_path, storage_dir, state, label, origin, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        transcript_path, storage_dir, state, label, origin, pinned, source, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
         provider = excluded.provider,
         harness_ref = excluded.harness_ref,
@@ -74,17 +79,19 @@ export class SessionTable {
         state = excluded.state,
         label = excluded.label,
         origin = excluded.origin,
+        pinned = excluded.pinned,
+        source = excluded.source,
         updated_at = excluded.updated_at
     `);
     this.readRecord = this.database.prepare(`
       SELECT session_id, provider, harness_ref, substrate_name,
-             transcript_path, storage_dir, state, label, origin, updated_at
+             transcript_path, storage_dir, state, label, origin, pinned, source, updated_at
       FROM session_records
       WHERE session_id = ?
     `);
     this.readRecords = this.database.prepare(`
       SELECT session_id, provider, harness_ref, substrate_name,
-             transcript_path, storage_dir, state, label, origin, updated_at
+             transcript_path, storage_dir, state, label, origin, pinned, source, updated_at
       FROM session_records
       ORDER BY updated_at DESC, session_id ASC
     `);
@@ -93,6 +100,9 @@ export class SessionTable {
     );
     this.updateRecordLabel = this.database.prepare(
       'UPDATE session_records SET label = ?, updated_at = ? WHERE session_id = ?',
+    );
+    this.updateRecordPinned = this.database.prepare(
+      'UPDATE session_records SET pinned = ? WHERE session_id = ?',
     );
   }
 
@@ -113,6 +123,8 @@ export class SessionTable {
       persisted.state,
       persisted.label ?? '',
       persisted.origin ?? 'agent',
+      persisted.pinned === true ? 1 : 0,
+      persisted.source ?? null,
       persisted.updatedAt,
     );
     return persisted;
@@ -156,6 +168,15 @@ export class SessionTable {
     if (record === undefined) throw new Error(`session record disappeared: ${sessionId}`);
     return record;
   }
+  public setPinned(sessionId: string, pinned: boolean): SubstrateSessionRecord {
+    validateSessionId(sessionId);
+    if (typeof pinned !== 'boolean') throw new Error('pinned must be a boolean');
+    const result = this.updateRecordPinned.run(pinned ? 1 : 0, sessionId);
+    if (result.changes === 0) throw new Error(`session record not found: ${sessionId}`);
+    const record = this.get(sessionId);
+    if (record === undefined) throw new Error(`session record disappeared: ${sessionId}`);
+    return record;
+  }
 
   public repairHarnessRefs(updatedAt = new Date().toISOString()): number {
     let repaired = 0;
@@ -192,6 +213,8 @@ function recordFromRow(row: SessionRow): SubstrateSessionRecord {
     state: row.state,
     label: row.label,
     origin: row.origin,
+    ...(row.pinned === 0 ? {} : { pinned: true }),
+    ...(row.source === null ? {} : { source: row.source }),
     updatedAt: row.updated_at,
   };
 }
@@ -207,6 +230,12 @@ function migrateSessionTable(database: Database.Database): void {
   }
   if (!columns.has('origin')) {
     database.exec("ALTER TABLE session_records ADD COLUMN origin TEXT NOT NULL DEFAULT 'agent'");
+  }
+  if (!columns.has('pinned')) {
+    database.exec('ALTER TABLE session_records ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!columns.has('source')) {
+    database.exec('ALTER TABLE session_records ADD COLUMN source TEXT');
   }
 }
 
@@ -226,9 +255,18 @@ function validateRecord(record: SubstrateSessionRecord): void {
     throw new Error('label must be a string');
   }
   if (record.origin !== undefined) validateOrigin(record.origin);
+  if (record.pinned !== undefined && typeof record.pinned !== 'boolean') {
+    throw new Error('pinned must be a boolean');
+  }
+  if (record.source !== undefined && record.source !== null) validateSource(record.source);
   validateState(record.state);
 }
 
+function validateSource(source: SessionSource): void {
+  if (source !== 'pocket' && source !== 'cli' && source !== 'api') {
+    throw new Error(`invalid source: ${source}`);
+  }
+}
 function validateOrigin(origin: SessionOrigin): void {
   if (origin !== 'operator' && origin !== 'agent') throw new Error(`invalid origin: ${origin}`);
 }
