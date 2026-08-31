@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { fork as nodeFork } from 'node:child_process';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { migrateSessionStorage, sessionStorageRootFromEnvironment } from './session-storage.js';
 import {
   COMMAND_NAMES,
   type SessionForkResult,
@@ -52,7 +52,7 @@ import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
-const DEFAULT_SESSION_STORAGE_ROOT = path.join(os.tmpdir(), 'vibecodium-sessions');
+export const DEFAULT_SESSION_STORAGE_ROOT = sessionStorageRootFromEnvironment();
 export interface SessionSubsystemOptions {
   readonly workerPath?: string;
   readonly fork?: SessionFork;
@@ -96,7 +96,7 @@ export class SessionSubsystem implements Subsystem {
       options.workerPath ?? fileURLToPath(new URL('../server/session-worker.js', import.meta.url));
     this.forkProcess = options.fork ?? nodeFork;
     this.idFactory = options.idFactory ?? randomUUID;
-    this.sessionStorageRoot = options.sessionStorageRoot ?? DEFAULT_SESSION_STORAGE_ROOT;
+    this.sessionStorageRoot = options.sessionStorageRoot ?? sessionStorageRootFromEnvironment();
     this.admission = options.admission ?? new AdmissionBudget(admissionConfigFromEnv());
     this.substrate = options.substrate;
     this.sessionTable = options.sessionTable;
@@ -157,7 +157,7 @@ export class SessionSubsystem implements Subsystem {
     void this.reconcile().catch(() => undefined);
   }
   public reconcile(): Promise<void> {
-    if (!this.substrate || !this.sessionTable) return Promise.resolve();
+    if (!this.sessionTable) return Promise.resolve();
     if (this.reconciliationStarted) return this.reconciliationPromise ?? Promise.resolve();
     this.reconciliationStarted = true;
     this.reconciliationPromise = this.reconcileRecords();
@@ -201,7 +201,12 @@ export class SessionSubsystem implements Subsystem {
   private async reconcileRecords(): Promise<void> {
     const substrate = this.substrate;
     const table = this.sessionTable;
-    if (!substrate || !table) return;
+    if (!table) return;
+    await migrateSessionStorage(table, {
+      storageRoot: this.sessionStorageRoot,
+      now: this.now,
+    });
+    if (!substrate) return;
     table.repairHarnessRefs(this.now().toISOString());
     for (const record of table.list()) {
       if (record.state === 'closed') continue;
@@ -303,7 +308,6 @@ export class SessionSubsystem implements Subsystem {
       now: this.now,
     });
   }
-
   private startSession(
     args: SessionOpenArgs,
     resumeRef?: string,
@@ -343,7 +347,7 @@ export class SessionSubsystem implements Subsystem {
       workerPath: this.workerPath,
       forkProcess: this.forkProcess,
       sessionStorageRoot: this.sessionStorageRoot,
-      defaultSessionStorageRoot: DEFAULT_SESSION_STORAGE_ROOT,
+      defaultSessionStorageRoot: sessionStorageRootFromEnvironment(),
       sessions: this.sessions,
       onSessionStarted: (session_id) => this.markSessionLive(session_id),
       onWorkerMessage: (state, message) => this.handleWorkerMessage(state, message),

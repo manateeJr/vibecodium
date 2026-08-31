@@ -7,6 +7,9 @@ Deployment provisions the `vibecodium` command at `~/.local/bin/vibecodium`.
 Start the control plane with `vibecodium start` (or `vibecodium dev`). The
 control plane defaults to `http://127.0.0.1:4310`.
 
+Session transcripts are stored under `~/.vibecodium/sessions` by default. Set
+`VIBECODIUM_SESSION_STORAGE_ROOT` to override that directory.
+
 ### Attach to a session
 
 `vibecodium attach` lists known sessions and their current state. To take over

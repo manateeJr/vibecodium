@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sessionStorageRootFromEnvironment } from '../session/session-storage.js';
 import type { EventKind, EventPayload } from '../contracts/events.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
 import type {
@@ -431,7 +431,7 @@ export function startSessionWorker(): void {
       const storageDir =
         message.storageDir ??
         (message.resumeRef === undefined
-          ? path.join(os.tmpdir(), 'vibecodium-sessions', message.session_id)
+          ? path.join(sessionStorageRootFromEnvironment(), message.session_id)
           : undefined);
       state = {
         session_id: message.session_id,
