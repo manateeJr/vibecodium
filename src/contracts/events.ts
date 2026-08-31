@@ -118,6 +118,7 @@ export type SessionStateReason =
   | 'shutdown'
   | 'resumed'
   | 'harness-exit'
+  | 'liveness-sweep'
   | `resume-failed: ${string}`;
 
 export interface SessionStatePayload {
