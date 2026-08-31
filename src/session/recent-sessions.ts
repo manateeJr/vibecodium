@@ -5,7 +5,6 @@ import {
   RECENT_PREVIEW_WIDTH,
   RECENT_SESSION_LIMIT,
   SESSION_RECENT_COMMAND,
-  type RecentSession,
   type SessionRecentResult,
 } from '../contracts/session-recent.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
@@ -51,25 +50,35 @@ export function recentSessions(
   previews: SessionPreviews,
   command: unknown,
 ): SessionRecentResult {
-  const limit = recentLimit(command);
-  const sessions: RecentSession[] = [...records.values()]
-    // The home is the operator's own work: sessions an agent or a subagent opened are noise there,
-    // and the History drawer is where the rest of them stay reachable.
-    .filter((record) => record.summary.origin === 'operator')
-    .sort(byRecency)
-    .slice(0, limit)
-    .map(({ summary }) => ({
+  const args = recentArgs(command);
+  const candidates = [...records.values()]
+    // The home is the operator's own work. History opts into ended sessions and can show agent
+    // sessions as well; the client still applies its AGENTS preference.
+    .filter((record) => args.include_ended || record.summary.origin === 'operator')
+    .filter((record) => args.project === undefined || record.summary.project === args.project)
+    .filter(
+      (record) =>
+        record.summary.pinned === true || args.include_ended || !isTerminal(record.summary.status),
+    )
+    .sort(byRecency);
+  const pinned = candidates.filter((record) => record.summary.pinned === true);
+  const recent = candidates.filter((record) => record.summary.pinned !== true).slice(0, args.limit);
+  return {
+    sessions: [...pinned, ...recent].map(({ summary }) => ({
       session_id: summary.session_id,
       label: summary.label,
       provider: summary.provider,
       state: summary.status,
       origin: summary.origin,
+      ...(summary.project === undefined ? {} : { project: summary.project }),
+      pinned: summary.pinned === true,
+      source: summary.source ?? null,
       cwd: summary.cwd ?? '',
       updated_at: summary.updated_at ?? summary.started_at ?? '',
       ...(summary.abort_key === undefined ? {} : { abort_key: summary.abort_key }),
       preview: [...previews.preview(summary.session_id)],
-    }));
-  return { sessions };
+    })),
+  };
 }
 
 /** Registers the preview read model and the command that reads it. */
@@ -84,14 +93,34 @@ export function registerRecentSessions(
   );
 }
 
-function recentLimit(command: unknown): number {
+function recentArgs(command: unknown): {
+  readonly project?: string;
+  readonly limit: number;
+  readonly include_ended: boolean;
+} {
   const value = command === undefined ? {} : asRecord(command);
   if (!value) throw new Error('session.recent command must be an object');
+  const project = value.project;
+  if (project !== undefined && (typeof project !== 'string' || !project.trim())) {
+    throw new Error('project must be a non-empty string');
+  }
   const limit = value.limit;
-  if (limit === undefined) return RECENT_SESSION_LIMIT;
-  if (!Number.isInteger(limit) || (limit as number) < 0)
+  if (limit !== undefined && (!Number.isInteger(limit) || (limit as number) < 0)) {
     throw new Error('limit must be a non-negative integer');
-  return limit as number;
+  }
+  const includeEnded = value.include_ended;
+  if (includeEnded !== undefined && typeof includeEnded !== 'boolean') {
+    throw new Error('include_ended must be a boolean');
+  }
+  return {
+    ...(project === undefined ? {} : { project }),
+    limit: (limit as number | undefined) ?? RECENT_SESSION_LIMIT,
+    include_ended: includeEnded === true,
+  };
+}
+
+function isTerminal(status: SessionSummary['status']): boolean {
+  return status === 'done' || status === 'failed' || status === 'stopped';
 }
 
 function byRecency(left: RecentSessionRecord, right: RecentSessionRecord): number {

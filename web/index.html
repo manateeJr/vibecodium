@@ -226,9 +226,17 @@
               WRITE THE FIRST MESSAGE
             </button>
           </section>
+          <section class="drawer-section" aria-labelledby="pinned-history-title">
+            <h3 id="pinned-history-title">PINNED</h3>
+            <div id="pinned-history" class="history-list"></div>
+          </section>
           <section class="drawer-section" aria-labelledby="live-history-title">
             <h3 id="live-history-title">LIVE VIBECODIUM</h3>
             <div id="live-history" class="history-list"></div>
+          </section>
+          <section class="drawer-section" aria-labelledby="ended-history-title">
+            <h3 id="ended-history-title">ENDED</h3>
+            <div id="ended-history" class="history-list"></div>
           </section>
           <section class="drawer-section" aria-labelledby="machine-history-title">
             <h3 id="machine-history-title">MACHINE SESSIONS</h3>
@@ -267,6 +275,10 @@
         <label class="drawer-toggle" for="show-agents">
           <input id="show-agents" type="checkbox" />
           SHOW AGENT SESSIONS
+        </label>
+        <label class="drawer-toggle" for="show-all-sessions">
+          <input id="show-all-sessions" type="checkbox" />
+          SHOW ALL SESSIONS
         </label>
         <p class="token-note">
           Sessions an agent opened, alongside your own, in History and the machine list.

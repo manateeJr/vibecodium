@@ -1,5 +1,5 @@
 import type { SubstrateKey, SubstrateSessionState } from './substrate-contract.js';
-import type { SessionOrigin } from './session-commands.js';
+import type { SessionOrigin, SessionSource } from './session-commands.js';
 
 export type EventKind =
   | 'session_started'
@@ -26,6 +26,7 @@ export interface SessionStartedPayload {
   readonly cwd?: string;
   readonly project?: string;
   readonly origin?: SessionOrigin;
+  readonly source?: SessionSource;
   readonly abort_key?: SubstrateKey;
 }
 

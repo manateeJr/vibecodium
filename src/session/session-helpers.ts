@@ -6,8 +6,9 @@ import type {
   SessionEnsureLiveArgs,
   SessionForkResult,
   SessionListResult,
-  SessionRenameArgs,
   SessionOpenArgs,
+  SessionPinArgs,
+  SessionRenameArgs,
   SessionResumeArgs,
   SessionSendArgs,
   SessionSendKeysArgs,
@@ -66,14 +67,29 @@ export function sessionOpenArgs(command: unknown): SessionOpenArgs {
     throw new Error('model must be a non-empty string');
   if (value.origin !== undefined && value.origin !== 'operator' && value.origin !== 'agent')
     throw new Error('origin must be operator or agent');
+  if (
+    value.source !== undefined &&
+    value.source !== 'pocket' &&
+    value.source !== 'cli' &&
+    value.source !== 'api'
+  )
+    throw new Error('source must be pocket, cli, or api');
   return {
     provider: value.provider,
     prompt: value.prompt,
     origin: value.origin === undefined ? 'agent' : value.origin,
+    source: value.source === undefined ? 'api' : value.source,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),
     ...(value.project === undefined ? {} : { project: value.project }),
     ...(value.model === undefined ? {} : { model: value.model }),
   };
+}
+export function sessionPinArgs(command: unknown): SessionPinArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim())
+    throw new Error('session_id is required');
+  if (typeof value.pinned !== 'boolean') throw new Error('pinned must be a boolean');
+  return { session_id: value.session_id, pinned: value.pinned };
 }
 
 export function sessionRenameArgs(command: unknown): SessionRenameArgs {
@@ -291,6 +307,7 @@ export async function forkSession(
       state: 'resumable',
       label: summary.label,
       origin: summary.origin,
+      ...(summary.source === undefined ? {} : { source: summary.source }),
       updatedAt: now,
     };
     options.sessionTable.upsert(record);
@@ -303,6 +320,7 @@ export async function forkSession(
     origin: summary.origin,
     ...(summary.cwd === undefined ? {} : { cwd: summary.cwd }),
     ...(summary.project === undefined ? {} : { project: summary.project }),
+    ...(summary.source === undefined ? {} : { source: summary.source }),
   });
   options.context.append(stream_id, 'session_forked', {
     session_id: new_session_id,

@@ -25,13 +25,14 @@ export function applyItem(entry, item) {
   entry.project = item.project || '';
   entry.sessionLabel = item.label || '';
   entry.origin = item.origin || '';
+  if (item.source !== undefined) entry.source = item.source;
+  if (item.pinned !== undefined) entry.pinned = item.pinned;
   entry.provider = item.provider || entry.provider || '';
   entry.abort_key = item.abort_key || entry.abort_key || '';
   entry.lastActivityAt = item.time || Date.now();
   return entry;
 }
 
-// A row on the cold-start home. session.recent answers with the session itself, not a stream, so
 export function itemFromRecent(session) {
   return {
     stream_id: `session:${session.session_id}`,
@@ -40,9 +41,11 @@ export function itemFromRecent(session) {
     abort_key: session.abort_key || '',
     status: session.state,
     cwd: session.cwd,
-    project: '',
+    project: session.project || '',
     label: session.label,
     origin: session.origin,
+    source: session.source ?? null,
+    pinned: session.pinned === true,
     time: Date.parse(session.updated_at) || Date.now(),
   };
 }
@@ -56,5 +59,7 @@ export function overlayRemote(entries, summaries) {
     entry.abort_key = summary.abort_key || entry.abort_key || '';
     entry.sessionLabel = summary.label || '';
     entry.origin = summary.origin || '';
+    if (summary.source !== undefined) entry.source = summary.source;
+    if (summary.pinned !== undefined) entry.pinned = summary.pinned;
   }
 }

@@ -154,7 +154,13 @@ async function openAndAttach(
   cwd: string,
   spawnProcess: AttachSpawner,
 ): Promise<void> {
-  const result = await client.openSession({ provider: 'omp', prompt: '', cwd, origin: 'operator' });
+  const result = await client.openSession({
+    provider: 'omp',
+    prompt: '',
+    cwd,
+    origin: 'operator',
+    source: 'cli',
+  });
   await attachSession(client, result.session_id, spawnProcess);
 }
 
@@ -220,7 +226,7 @@ async function runSessionCommand(client: VibecodiumClient, args: string[]): Prom
       usage();
       return;
     }
-    printJson(await client.openSession(parsed));
+    printJson(await client.openSession({ ...parsed, source: 'cli' }));
     return;
   }
   if (subcommand === 'resume' && args.length >= 4) {

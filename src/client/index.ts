@@ -53,6 +53,8 @@ const COMMAND_NAMES = {
   sessionRename: 'session.rename',
   sessionSend: 'session.send',
   sessionList: 'session.list',
+  sessionRecent: 'session.recent',
+  sessionPin: 'session.pin',
   sessionFork: 'session.fork',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
@@ -183,6 +185,10 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<SessionListResult>(baseUrl, COMMAND_NAMES.sessionList, args, options.token);
   const sessionRename = (args: SessionRenameArgs): Promise<SessionRenameResult> =>
     post<SessionRenameResult>(baseUrl, COMMAND_NAMES.sessionRename, args, options.token);
+  const sessionRecent = (args: Commands.SessionRecentArgs): Promise<Commands.SessionRecentResult> =>
+    post<Commands.SessionRecentResult>(baseUrl, COMMAND_NAMES.sessionRecent, args, options.token);
+  const sessionPin = (args: Commands.SessionPinArgs): Promise<Commands.SessionPinResult> =>
+    post<Commands.SessionPinResult>(baseUrl, COMMAND_NAMES.sessionPin, args, options.token);
   const forkSession = (args: SessionForkArgs): Promise<SessionForkResult> =>
     post<SessionForkResult>(baseUrl, COMMAND_NAMES.sessionFork, args, options.token);
   const sessionEnsureLive = (args: SessionEnsureLiveArgs): Promise<SessionEnsureLiveResult> =>
@@ -350,6 +356,8 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     stopSession,
     sendMessage,
     listSessions,
+    sessionRecent,
+    sessionPin,
     sessionRename,
     forkSession,
     sessionEnsureLive,

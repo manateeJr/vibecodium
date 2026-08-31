@@ -1,5 +1,5 @@
 import type { EventEnvelope } from '../contracts/events.js';
-import type { SessionSummary } from '../contracts/session-commands.js';
+import type { SessionSource, SessionSummary } from '../contracts/session-commands.js';
 import { harnessAbortKey } from '../provider/provider.js';
 import { asRecord } from './session-helpers.js';
 import type { SessionTable } from './session-table.js';
@@ -52,6 +52,7 @@ export function projectSessionEvent(
       payload?.abort_key === 'interrupt'
         ? payload.abort_key
         : harnessAbortKey(provider);
+    const source = isSessionSource(payload?.source) ? payload.source : persisted?.source;
     options.records.set(session_id, {
       startedSeq: event.seq,
       summary: {
@@ -67,6 +68,8 @@ export function projectSessionEvent(
         ...(typeof payload?.project === 'string' ? { project: payload.project } : {}),
         ...(typeof payload?.cwd === 'string' ? { cwd: payload.cwd } : {}),
         ...(abortKey === undefined ? {} : { abort_key: abortKey }),
+        ...(source === undefined || source === null ? {} : { source }),
+        ...(persisted?.pinned === true ? { pinned: true } : {}),
       },
     });
     return;
@@ -93,4 +96,7 @@ export function projectSessionEvent(
     updated_at: event.ts,
     ...(status === undefined ? {} : { status }),
   };
+}
+function isSessionSource(value: unknown): value is SessionSource {
+  return value === 'pocket' || value === 'cli' || value === 'api';
 }

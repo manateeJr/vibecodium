@@ -15,20 +15,26 @@ export function createHistoryDrawer({
   scrollContainer,
   searchInput,
   projectFilter,
+  pinnedList,
   liveList,
+  endedList,
   machineList,
   newButton,
   newFlow,
   newStart,
   presetRow,
   onLiveSelect,
+  onRecentSelect = onLiveSelect,
   onMachineSelect,
+  onPin = () => undefined,
   onNew,
   onPreset,
   onOpen,
   getShowAgents = () => false,
+  getShowAllSessions = () => false,
 }) {
   let liveItems = [];
+  let recentItems = [];
   let machineEntries = [];
   let registeredProjects = [];
   let presets = [];
@@ -76,29 +82,50 @@ export function createHistoryDrawer({
     lastScrollTop = scrollTop;
   });
 
+  const visible = (entry, showAgents) =>
+    (showAgents || entry.origin !== 'agent') &&
+    (getShowAllSessions() || entry.source === 'pocket') &&
+    matchesEntry(entry, query, selectedProject, registeredProjects);
+
+  const renderRows = (target, items, onSelect) => {
+    if (items.length === 0) {
+      target.append(emptyItem(query || selectedProject ? 'No matching sessions.' : 'No sessions.'));
+      return;
+    }
+    for (const item of items) {
+      target.append(sessionRecentRow(item, onSelect, onPin, registeredProjects));
+    }
+  };
+
   const render = () => {
+    pinnedList.replaceChildren();
     liveList.replaceChildren();
+    endedList.replaceChildren();
     machineList.replaceChildren();
     const showAgents = getShowAgents();
     const live = liveItems
-      .filter(
-        (item) =>
-          (showAgents || item.origin !== 'agent') &&
-          matchesEntry(item, query, selectedProject, registeredProjects),
-      )
+      .filter((item) => isLive(item.status) && visible(item, showAgents))
       .sort(compareActivity);
+    const recent = recentItems.filter((item) => visible(item, showAgents)).sort(compareActivity);
+    const pinned = recent.filter((item) => item.pinned === true);
+    const ended = recent.filter(
+      (item) => item.pinned !== true && !isLive(item.state ?? item.status),
+    );
     const machine = machineEntries
       .filter(
         (entry) =>
+          getShowAllSessions() &&
           (showAgents || entry.kind !== 'subagent') &&
           matchesEntry(entry, query, selectedProject, registeredProjects),
       )
       .sort(compareActivity);
+    renderRows(pinnedList, pinned, onRecentSelect);
     if (live.length === 0)
       liveList.append(
         emptyItem(query || selectedProject ? 'No matching sessions.' : 'No sessions.'),
       );
-    else renderLiveGroups(liveList, live, onLiveSelect, registeredProjects);
+    else renderLiveGroups(liveList, live, onLiveSelect, registeredProjects, onPin);
+    renderRows(endedList, ended, onRecentSelect);
     if (machine.length === 0)
       machineList.append(
         emptyItem(
@@ -110,8 +137,6 @@ export function createHistoryDrawer({
         machineList.append(machineRow(entry, onMachineSelect, registeredProjects));
   };
 
-  // The project's adopted skills and quick actions: curated first messages for the session `+ NEW`
-  // is about to start, which is the only place they still make sense.
   const renderPresets = () => {
     presetRow.replaceChildren();
     presetRow.hidden = presets.length === 0;
@@ -156,6 +181,10 @@ export function createHistoryDrawer({
       liveItems = [...items];
       render();
     },
+    renderRecent(items) {
+      recentItems = [...items];
+      render();
+    },
     renderMachine(entries) {
       machineEntries = [...entries];
       render();
@@ -165,11 +194,15 @@ export function createHistoryDrawer({
       renderProjectFilter();
       render();
     },
+    setSelectedProject(name) {
+      selectedProject = name || '';
+      renderProjectFilter();
+      render();
+    },
     setPresets(next) {
       presets = [...next];
       renderPresets();
     },
-    // The header's project affordance lands here: one tap from the main column to the picker.
     openNewFlow() {
       open();
       setNewFlow(true);
@@ -178,7 +211,7 @@ export function createHistoryDrawer({
   };
 }
 
-function renderLiveGroups(target, items, onSelect, projects) {
+function renderLiveGroups(target, items, onSelect, projects, onPin) {
   const groups = new Map();
   for (const item of items) {
     const project = projectForEntry(item, projects);
@@ -194,15 +227,31 @@ function renderLiveGroups(target, items, onSelect, projects) {
     heading.textContent = project;
     const list = document.createElement('div');
     list.className = 'history-group__list';
-    for (const item of grouped) list.append(liveRow(item, onSelect, projects));
+    for (const item of grouped) list.append(liveRow(item, onSelect, projects, onPin));
     section.append(heading, list);
     target.append(section);
   }
 }
 
-// D8: the session's own name when it has one, `kind · provider` otherwise. Sessions an agent opened
-// stay listed — the Settings toggle decides that — but they read as somebody else's work.
-function liveRow(item, onSelect, projects) {
+function sessionRecentRow(item, onSelect, onPin, projects) {
+  return historyRow({
+    title: item.label || `session · ${item.provider}`,
+    project: projectForEntry(item, projects),
+    meta: `${item.state} · ${relativeTime(item.updated_at)}`,
+    status: item.state,
+    preview: Array.isArray(item.preview) ? item.preview : [],
+    sub: item.origin === 'agent',
+    pinned: item.pinned === true,
+    onPin: (pinned) => onPin(item, pinned),
+    onSelect: () => onSelect(item),
+  });
+}
+
+function isLive(status) {
+  return status === 'running' || status === 'ready' || status === 'live' || status === 'external';
+}
+
+function liveRow(item, onSelect, projects, onPin) {
   const kind = item.external ? 'machine' : 'session';
   return historyRow({
     title: item.label || `${kind} · ${item.provider}`,
@@ -210,6 +259,8 @@ function liveRow(item, onSelect, projects) {
     meta: `${item.status} · ${item.cwd || item.stream_id}`,
     status: item.status,
     sub: item.origin === 'agent',
+    pinned: item.pinned === true,
+    onPin: item.session_id ? (pinned) => onPin(item, pinned) : undefined,
     onSelect: () => onSelect(item),
   });
 }
@@ -267,9 +318,11 @@ export function createSettingsDrawer({
   tokenState,
   harness,
   showAgents,
+  showAllSessions,
   onTokenInput,
   onTokenCommit,
   onToggleAgents,
+  onToggleShowAllSessions,
   onOpen,
 }) {
   harness.value = loadDefaultHarness();
@@ -291,6 +344,9 @@ export function createSettingsDrawer({
   // Set and forget: which sessions are worth listing is a preference, not a control that belongs
   // above the composer, which is what the AGENTS ON/OFF pill in the session bar had become.
   showAgents.addEventListener('change', () => onToggleAgents(showAgents.checked));
+  showAllSessions.addEventListener('change', () =>
+    onToggleShowAllSessions(showAllSessions.checked),
+  );
 
   const close = () => {
     drawer.hidden = true;
@@ -301,6 +357,9 @@ export function createSettingsDrawer({
     close,
     setShowAgents(visible) {
       showAgents.checked = visible;
+    },
+    setShowAllSessions(visible) {
+      showAllSessions.checked = visible;
     },
   };
 }

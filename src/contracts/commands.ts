@@ -16,6 +16,8 @@ import type {
   SessionListResult,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionPinArgs,
+  SessionPinResult,
   SessionRenameArgs,
   SessionRenameResult,
   SessionResumeArgs,
@@ -42,10 +44,12 @@ export type {
   SessionListArgs,
   SessionListResult,
   SessionOrigin,
-  SessionRenameArgs,
-  SessionRenameResult,
   SessionOpenArgs,
   SessionOpenResult,
+  SessionPinArgs,
+  SessionPinResult,
+  SessionRenameArgs,
+  SessionRenameResult,
   SessionResumeArgs,
   SessionResumeResult,
   SessionSendArgs,
@@ -55,6 +59,7 @@ export type {
   SessionStopArgs,
   SessionStopResult,
   SessionSummary,
+  SessionSource,
 } from './session-commands.js';
 export type * from './machine-commands.js';
 export { MACHINE_READ_COMMAND, FILES_SHARED_STAGED_COMMAND, SESSION_RECENT_COMMAND };
@@ -69,6 +74,7 @@ export const COMMAND_NAMES = {
   sessionList: 'session.list',
   sessionRecent: SESSION_RECENT_COMMAND,
   sessionFork: 'session.fork',
+  sessionPin: 'session.pin',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
@@ -90,7 +96,7 @@ export const COMMAND_NAMES = {
   filesDownload: 'files.download',
   filesUpload: 'files.upload',
   filesSharedDir: 'files.shared_dir',
-  filesSharedStaged: FILES_SHARED_STAGED_COMMAND,
+  filesSharedStaged: 'files.shared_staged',
   skillList: 'skill.list',
   skillDraft: 'skill.draft',
   skillSave: 'skill.save',
@@ -105,6 +111,7 @@ export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
 export const SESSION_SEND_COMMAND = COMMAND_NAMES.sessionSend;
 export const SESSION_LIST_COMMAND = COMMAND_NAMES.sessionList;
 export const SESSION_FORK_COMMAND = COMMAND_NAMES.sessionFork;
+export const SESSION_PIN_COMMAND = COMMAND_NAMES.sessionPin;
 export const WORKSPACE_LIST_COMMAND = COMMAND_NAMES.workspaceList;
 export const WORKFLOW_RUN_COMMAND = COMMAND_NAMES.workflowRun;
 export const WORKFLOW_APPROVE_COMMAND = COMMAND_NAMES.workflowApprove;
@@ -345,6 +352,7 @@ export interface CommandArgsMap {
   'session.list': SessionListArgs;
   'session.recent': SessionRecent.SessionRecentArgs;
   'session.fork': SessionForkArgs;
+  'session.pin': SessionPinArgs;
   'voice.transcribe': VoiceTranscribeArgs;
   'host.stats': HostStatsArgs;
   'host.set_session_cap': HostSetSessionCapArgs;
@@ -384,6 +392,7 @@ export interface CommandResultMap {
   'session.list': SessionListResult;
   'session.recent': SessionRecent.SessionRecentResult;
   'session.fork': SessionForkResult;
+  'session.pin': SessionPinResult;
   'voice.transcribe': VoiceTranscribeResult;
   'host.stats': HostStatsResult;
   'host.set_session_cap': HostSetSessionCapResult;

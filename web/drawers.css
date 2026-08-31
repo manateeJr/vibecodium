@@ -69,6 +69,33 @@
   color: var(--ink);
   text-align: left;
 }
+.history-item {
+  position: relative;
+}
+
+.history-item__status {
+  margin-left: 6px;
+  color: var(--ink-dim);
+  font-size: 10px;
+  letter-spacing: var(--track-small);
+}
+
+.history-item__pin {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-dim);
+  font-size: 10px;
+}
+
+.history-item__pin:hover {
+  border-color: var(--focus);
+  color: var(--ink-hi);
+}
 
 .history-item:hover {
   border-color: var(--focus);

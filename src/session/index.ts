@@ -9,6 +9,7 @@ import {
   type SessionListResult,
   type SessionOpenArgs,
   type SessionOpenResult,
+  type SessionPinResult,
   type SessionResumeResult,
   type SessionSendResult,
   type SessionStopResult,
@@ -32,6 +33,8 @@ import type {
 import { projectSessionEvent, type SessionSummaryRecord } from './session-summary-projector.js';
 import { AdmissionBudget, admissionConfigFromEnv } from './admission.js';
 import { PersistentSessionManager } from './persistent-session-manager.js';
+import { registerRecentSessions } from './recent-sessions.js';
+import { pinSession } from './session-pinning.js';
 import {
   errorMessage,
   forkSession,
@@ -43,13 +46,13 @@ import {
   sessionSendArgs,
   sessionStopArgs,
 } from './session-helpers.js';
-import { registerRecentSessions } from './recent-sessions.js';
 import type { SessionTable } from './session-table.js';
 import { createPtySubscription, type PtySubscriptionHub } from './pty-subscriptions.js';
 import { requireContext, requireSessionTable } from './session-context.js';
 import { startPersistentSession } from './persistent-session-start.js';
 import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
+import { applySessionSubstrateState } from './session-state.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
@@ -134,6 +137,7 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionRename, (command: unknown) =>
       this.rename(command),
     );
+    context.registerCommand(COMMAND_NAMES.sessionPin, (command: unknown) => this.pin(command));
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
     context.registerCommand(COMMAND_NAMES.sessionList, (command: unknown) => this.list(command));
@@ -166,7 +170,12 @@ export class SessionSubsystem implements Subsystem {
   public saveSessionRecord(record: SubstrateSessionRecord): SubstrateSessionRecord {
     const table = requireSessionTable(this.sessionTable);
     const saved = table.upsert(record);
-    this.applySubstrateState(record.sessionId, record.state, record.updatedAt);
+    applySessionSubstrateState(
+      this.sessionRecords,
+      record.sessionId,
+      record.state,
+      record.updatedAt,
+    );
     return saved;
   }
   public updateSessionState(
@@ -179,7 +188,7 @@ export class SessionSubsystem implements Subsystem {
       updatedAt === undefined
         ? table.updateState(session_id, state)
         : table.updateState(session_id, state, updatedAt);
-    this.applySubstrateState(session_id, state, record.updatedAt);
+    applySessionSubstrateState(this.sessionRecords, session_id, state, record.updatedAt);
     return record;
   }
   public emitSessionState(
@@ -294,6 +303,9 @@ export class SessionSubsystem implements Subsystem {
     }
     record.summary = { ...record.summary, label: args.label, updated_at: updatedAt };
     return { label: args.label };
+  }
+  public pin(command: unknown): SessionPinResult {
+    return pinSession(this.sessionRecords, this.sessionTable, command);
   }
 
   public async fork(command: unknown): Promise<SessionForkResult> {
@@ -478,20 +490,7 @@ export class SessionSubsystem implements Subsystem {
       : 'stopped';
   }
   private markSessionLive(session_id: string): void {
-    this.applySubstrateState(session_id, 'live', this.now().toISOString());
-  }
-  private applySubstrateState(
-    session_id: string,
-    state: SubstrateSessionState,
-    updatedAt: string,
-  ): void {
-    const record = this.sessionRecords.get(session_id);
-    if (!record) return;
-    record.summary = {
-      ...record.summary,
-      status: state === 'live' ? 'live' : 'stopped',
-      updated_at: updatedAt,
-    };
+    applySessionSubstrateState(this.sessionRecords, session_id, 'live', this.now().toISOString());
   }
 }
 export function createSessionSubsystem(options: SessionSubsystemOptions = {}): SessionSubsystem {

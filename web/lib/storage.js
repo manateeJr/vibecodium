@@ -72,6 +72,15 @@ export function loadShowAgentSessions() {
 export function saveShowAgentSessions(visible) {
   write(AGENT_SESSIONS_KEY, visible ? 'yes' : '');
 }
+const SHOW_ALL_SESSIONS_KEY = 'vibecodium.show-all-sessions';
+
+export function loadShowAllSessions() {
+  return read(SHOW_ALL_SESSIONS_KEY) === 'yes';
+}
+
+export function saveShowAllSessions(visible) {
+  write(SHOW_ALL_SESSIONS_KEY, visible ? 'yes' : '');
+}
 
 // The one-time safety cue shown before this phone first continues a machine-owned session (D3).
 const EXTERNAL_HINT_KEY = 'vibecodium.external-hint-seen';

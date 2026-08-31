@@ -1,6 +1,7 @@
 import { createClient } from '/client.js';
 import { externalEntry, externalItem } from '/lib/external-session.js';
 import { applyItem, blankEntry, itemFromRecent, overlayRemote } from '/lib/session-entries.js';
+import { createHistoryController } from '/lib/history-controller.js';
 import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
 import {
   loadExternalHintSeen,
@@ -43,7 +44,6 @@ clientOptions.webSocket = createConnectionMonitor(
   () => actions.flushQueuedSends(),
 );
 const client = createClient(clientOptions);
-// Read lazily everywhere it is used, so a token saved in Settings reaches the next request.
 const connection = () => ({ baseUrl: globalThis.location.origin, token: clientToken });
 let selectedStreamId = '';
 const actionState = {
@@ -58,18 +58,19 @@ let remoteSessions = [];
 let machineSessions = [];
 let registeredProjects = [];
 let showAgents = loadShowAgentSessions();
+let historyController;
 const sessions = new Map();
 const { transcript, sessionView, home, chip } = createSessionSurface({
   connection,
   elements,
-  // Steer now escalates natively with escape; the separate STOP control uses the selected
-  // harness's declared turn-abort key.
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
   onRename: (entry, label) => void actions.renameSession(entry, label),
   onStop: () => void actions.stopSession(),
+  onPin: (entry, pinned) => void historyController?.pinSession(entry, pinned),
   onSelectRecent: (session) => selectRecent(session),
   onError: (message) => streamLog.error(message),
   errorMessage,
+  getShowAllSessions: () => historyController?.showAllSessions ?? false,
 });
 const restartAction = createRestartAction({
   elements,
@@ -85,7 +86,6 @@ const streamLog = createStreamLog({
 const gitStatus = createGitStatus({
   client,
   target: elements.gitStatus,
-  isCurrent: (entry) => entry.stream_id === selectedStreamId,
 });
 const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
@@ -94,26 +94,32 @@ const history = createHistoryDrawer({
   scrollContainer: elements.historyScroll,
   searchInput: elements.historySearch,
   projectFilter: elements.historyProjectFilter,
+  pinnedList: elements.pinnedHistory,
   liveList: elements.liveHistory,
+  endedList: elements.endedHistory,
   machineList: elements.machineHistory,
   newButton: elements.newSession,
   newFlow: elements.newSessionFlow,
   newStart: elements.newSessionStart,
   presetRow: elements.sessionPresets,
   getShowAgents: () => showAgents,
+  getShowAllSessions: () => historyController?.showAllSessions ?? false,
   onLiveSelect: (item) => {
     selectSessionItem(item);
     history.close();
   },
-  // Tapping a machine session only reads it, so HISTORY cannot mutate anything the machine owns.
-  // Continuing it is the operator's first send.
+  onRecentSelect: (item) => {
+    selectRecent(item);
+    history.close();
+  },
+  onPin: (item, pinned) => void historyController?.pinSession(item, pinned),
   onMachineSelect: (summary) => {
     selectSessionItem(externalItem(summary, registeredProjects));
     history.close();
   },
   onNew: () => selectNew(),
   onPreset: (preset) => selectPreset(preset),
-  onOpen: loadMachineSessions,
+  onOpen: () => Promise.all([loadMachineSessions(), historyController?.loadRecentSessions()]),
 });
 const projectManager = createProjectManager({
   client,
@@ -124,7 +130,22 @@ const projectManager = createProjectManager({
     registeredProjects = [...nextProjects];
     history.setProjects(nextProjects);
   },
-  onProjectChange: () => updateScope(),
+  onProjectChange: (project) => {
+    history.setSelectedProject(project?.name ?? '');
+    updateScope();
+  },
+});
+historyController = createHistoryController({
+  client,
+  history,
+  home,
+  projectManager,
+  sessions,
+  streamLog,
+  sessionIdOf,
+  errorMessage,
+  renderSessions,
+  loadSessions,
 });
 const hostPanel = createHostPanel({
   client,
@@ -140,7 +161,9 @@ const settings = createSettingsDrawer({
   tokenState: elements.tokenState,
   harness: elements.harness,
   showAgents: elements.showAgents,
+  showAllSessions: elements.showAllSessions,
   onToggleAgents: (next) => setShowAgents(next),
+  onToggleShowAllSessions: (next) => historyController.setShowAllSessions(next),
   onTokenInput: (value) => commitToken(value),
   onTokenCommit: (value) => commitToken(value),
   onOpen: () => {
@@ -178,8 +201,6 @@ const actions = createActions({
   getActiveProject: () => projectManager.selectedProject(),
   getModel: () => modelPicker.selected(),
   connection,
-  // Only reached once a send actually landed, which is also when the one-time hint has done its
-  // job: it clears itself there rather than waiting to be dismissed by hand.
   resetInput: () => {
     composer.reset();
     externalHint.dismissAfterSend();
@@ -268,8 +289,6 @@ elements.interruptKey.addEventListener('click', () => {
   if (!entry?.abort_key) return;
   void actions.sendKeys(entry, [entry.abort_key], 'interrupting');
 });
-// The header's project name is the affordance the composer placeholder points at: tapping it opens
-// HISTORY on the project picker, which is where the scope selectors now live.
 elements.activeProject.addEventListener('click', () => {
   settings.close();
   files.close();
@@ -280,6 +299,7 @@ setStatus(
   globalThis.navigator.onLine ? 'idle' : 'bad',
 );
 settings.setShowAgents(showAgents);
+settings.setShowAllSessions(historyController.showAllSessions);
 showHome();
 updateScope();
 void boot();
@@ -291,28 +311,21 @@ wireConnectivity({
 });
 wireServiceWorkerUpdates({ button: elements.updateReload });
 client.subscribe(0, feed.ingest, '*');
-
-// Projects come first: external sessions, adopted skills and a share's project guess are all
-// keyed off the project list.
 async function boot() {
   await projectManager.load();
   refreshPresets();
   await Promise.all([skills.refresh(), loadMachineSessions(), shareIntake.run()]);
 }
-
 function commitToken(value) {
   if (!saveToken(value)) setStatus('TOKEN UNSAVED', 'wait');
   refreshClient(value);
 }
-
 function refreshClient(value = elements.token.value.trim()) {
   if (value === clientToken) return;
   clientToken = value;
   if (value) clientOptions.token = value;
   else delete clientOptions.token;
 }
-
-// The machine's own sessions feed both the history drawer and the per-project session bar.
 async function loadMachineSessions() {
   if (machineLoading) return;
   machineLoading = true;
@@ -352,8 +365,6 @@ async function loadSessions() {
 
 function updateScope() {
   const project = projectManager.selectedProject();
-  // D7: the project name stays visible in the main header line; its path is detail, so it rides
-  // the picker inside the `+ NEW` flow rather than the message column.
   elements.activeProject.textContent = project?.name || 'Scratch';
   elements.scopePath.textContent = project?.path || '(default cwd)';
   refreshPresets();
@@ -361,10 +372,9 @@ function updateScope() {
   refreshControls();
   void loadSessions();
   void loadMachineSessions();
+  void historyController.loadRecentSessions();
 }
 
-// Presets are the project's adopted skills first, then its detected quick actions. They are the
-// curated first message for the session `+ NEW` is about to start, so they live in that flow.
 function refreshPresets() {
   const project = projectManager.selectedProject();
   history.setPresets([
@@ -423,8 +433,6 @@ function ensureEntry(streamId, label = '') {
   return sessions.get(streamId);
 }
 
-// No active session: the main column shows the cold-start home — the operator's last sessions with
-// three lines of transcript each — over the composer, instead of an empty transcript.
 function showHome() {
   selectedStreamId = '';
   gitStatus.hide();
@@ -451,9 +459,6 @@ function selectSessionItem(item) {
   selectStream(entry.stream_id);
 }
 
-// External sessions are read-only here: the machine owns them until the operator writes into them.
-// Read-only is not the same as blank, though — the transcript the machine already wrote is fetched
-// once, so the operator can see what they are about to continue.
 function adoptExternalItem(item) {
   const entry = externalEntry(item);
   sessions.set(entry.stream_id, entry);
@@ -466,8 +471,6 @@ function adoptSessionItem(item) {
   return entry ? applyItem(entry, item) : null;
 }
 
-// Selecting a session never changes the project: the scope belongs to the owner, not to whatever
-// they last tapped. Restarting is the one place the context moves, and the button says so first.
 function selectStream(streamId) {
   const entry = sessions.get(streamId);
   if (!entry) return;
