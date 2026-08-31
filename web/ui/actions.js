@@ -26,6 +26,75 @@ export function createActions({
   notify,
   reloadSessions,
 }) {
+  const queuedSends = [];
+  let flushingQueuedSends = false;
+
+  const setUnavailableStatus = () => {
+    const online = browserOnline();
+    setStatus(online ? 'RECONNECTING' : 'OFFLINE', online ? 'wait' : 'bad');
+  };
+
+  const queueSend = (entry, prompt) => {
+    const line = pushLine(
+      entry,
+      'wait',
+      `${eventClock(new Date().toISOString())} queued - sending on reconnect · ${prompt}`,
+      false,
+      { queued: true },
+    );
+    queuedSends.push({ entry, prompt, line });
+    if (getSelectedStreamId() === entry.stream_id) setUnavailableStatus();
+  };
+
+  const flushQueuedSends = async () => {
+    if (flushingQueuedSends || !queuedSends.length) return;
+    flushingQueuedSends = true;
+    try {
+      while (queuedSends.length) {
+        const pending = queuedSends[0];
+        pending.entry.busy = true;
+        renderSessions();
+        let delivered = false;
+        let lastError;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            const sessionId = sessionIdOf(pending.entry);
+            if (!sessionId) throw new Error('session id unavailable');
+            await client.sendMessage({ session_id: sessionId, prompt: pending.prompt });
+            delivered = true;
+            break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        queuedSends.shift();
+        if (delivered) {
+          pending.line.cls = 'meta';
+          pending.line.text = pending.line.text.replace(
+            'queued - sending on reconnect',
+            'sent on reconnect',
+          );
+        } else {
+          pending.entry.busy = false;
+          pending.line.cls = 'bad';
+          pending.line.text = `${eventClock(new Date().toISOString())} queued send failed after retry · ${errorMessage(
+            lastError,
+          )}`;
+          appendError(`queued send failed after retry: ${errorMessage(lastError)}`, pending.entry);
+          if (isTransportFailure(lastError)) setUnavailableStatus();
+          else setStatus('ERROR', 'bad');
+          refreshControls();
+          renderStream();
+          break;
+        }
+        refreshControls();
+        renderStream();
+      }
+    } finally {
+      flushingQueuedSends = false;
+    }
+  };
+
   const openSessionWith = async (prompt, cwd, projectName) => {
     const provider = elements.harness.value.trim();
     if (!provider || !prompt) {
@@ -65,24 +134,25 @@ export function createActions({
     }
   };
 
-  // Resolves to true only when the turn actually reached the harness, so the caller knows whether
-  // it may clear what the owner typed.
+  // Resolves to `sent` only when the turn actually reached the harness. A transport failure is
+  // accepted into the local queue and resolves to `queued`, so the caller can clear its draft.
   const sendTurn = async (entry, prompt) => {
-    entry.lastActivityAt = Date.now();
     entry.busy = true;
-    setStatus('SENDING', 'wait');
     renderSessions();
     try {
       const sessionId = sessionIdOf(entry);
       if (!sessionId) throw new Error('session id unavailable');
       await client.sendMessage({ session_id: sessionId, prompt });
-      if (getSelectedStreamId() === entry.stream_id) setStatus('LIVE', 'live');
-      return true;
+      return 'sent';
     } catch (error) {
       entry.busy = false;
+      if (isTransportFailure(error)) {
+        queueSend(entry, prompt);
+        return 'queued';
+      }
       appendError(`session send failed: ${errorMessage(error)}`, entry);
       if (getSelectedStreamId() === entry.stream_id) setStatus('ERROR', 'bad');
-      return false;
+      return 'failed';
     } finally {
       refreshControls();
       renderStream();
@@ -112,8 +182,13 @@ export function createActions({
       holdPending = pendingKey === 'interrupting';
       notify(`${result.sent} control key${result.sent === 1 ? '' : 's'} sent`);
     } catch (error) {
-      appendError(`control key send failed: ${errorMessage(error)}`, entry);
-    } finally {
+      const message =
+        pendingKey === 'interrupting'
+          ? `STOP failed · ${errorMessage(error)}`
+          : `control key failed · ${errorMessage(error)}`;
+      notify(message, 'bad');
+      if (isTransportFailure(error)) setUnavailableStatus();
+      else setStatus('ERROR', 'bad');
       if (pendingKey && !holdPending) {
         state[pendingKey] = false;
         refreshControls();
@@ -132,7 +207,8 @@ export function createActions({
     const entry = sessions.get(getSelectedStreamId());
     if (entry && isSendable(entry)) {
       if (entry.busy) return;
-      if (await sendTurn(entry, prompt)) resetInput();
+      const result = await sendTurn(entry, prompt);
+      if (result === 'sent' || result === 'queued') resetInput();
       return;
     }
     if (entry && isExternalEntry(entry)) {
@@ -165,7 +241,9 @@ export function createActions({
       notify(`model ${model} · applies to the next session`);
       return;
     }
-    if (await sendTurn(entry, `/model ${model}`)) notify(`model switch sent · /model ${model}`);
+    const result = await sendTurn(entry, `/model ${model}`);
+    if (result === 'sent') notify(`model switch sent · /model ${model}`);
+    else if (result === 'queued') notify(`model switch queued · sending on reconnect`);
   };
 
   // session.rename is newer than the bundled SDK, so it goes over the raw command wire. An older
@@ -215,8 +293,10 @@ export function createActions({
       );
       setStatus(getSelectedStreamId() ? 'LIVE' : 'READY', getSelectedStreamId() ? 'live' : 'idle');
     } catch (error) {
-      appendError(`session stop failed: ${errorMessage(error)}`, entry);
-      setStatus('ERROR', 'bad');
+      const message = `STOP failed · ${errorMessage(error)}`;
+      notify(message, 'bad');
+      if (isTransportFailure(error)) setUnavailableStatus();
+      else setStatus('ERROR', 'bad');
     } finally {
       state.stopping = false;
       renderSessions();
@@ -284,9 +364,33 @@ export function createActions({
     sendKeys,
     switchModel,
     renameSession,
+    flushQueuedSends,
   };
 }
 
 function isSendable(entry) {
   return entry.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
+}
+
+function browserOnline() {
+  return globalThis.navigator?.onLine !== false;
+}
+
+function isTransportFailure(error) {
+  if (error instanceof TypeError) return true;
+  const message = String(error instanceof Error ? error.message : error).toLowerCase();
+  return (
+    message.includes('failed to fetch') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('unreachable') ||
+    message.includes('connection refused') ||
+    message.includes('connection reset') ||
+    message.includes('err_connection') ||
+    message.includes('econnrefused') ||
+    message.includes('service unavailable') ||
+    message.includes('bad gateway') ||
+    message.includes('gateway timeout') ||
+    /\bhttp\s+5\d{2}\b/.test(message)
+  );
 }

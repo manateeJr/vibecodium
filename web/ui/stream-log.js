@@ -31,8 +31,10 @@ export function createStreamLog({ transcript, selectedEntry, restartAction }) {
 
   const push = (entry, cls, text, markdown = false, metadata) => {
     entry.lastActivityAt = Date.now();
-    entry.lines.push({ cls, text, markdown, ...(metadata ?? {}) });
+    const line = { cls, text, markdown, ...(metadata ?? {}) };
+    entry.lines.push(line);
     if (entry === selectedEntry()) render();
+    return line;
   };
 
   const error = (message, entry = selectedEntry()) => {
