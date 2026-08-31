@@ -232,6 +232,7 @@ test('session.resume continues an external ref with durable lineage and hydrated
       prompt: 'Reply with exactly CONT_OK',
       cwd: '/workspace/external',
       origin: 'agent',
+      abort_key: 'escape',
     });
     const lines = readFileSync(source, 'utf8')
       .trim()

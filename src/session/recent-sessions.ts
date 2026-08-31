@@ -66,6 +66,7 @@ export function recentSessions(
       origin: summary.origin,
       cwd: summary.cwd ?? '',
       updated_at: summary.updated_at ?? summary.started_at ?? '',
+      ...(summary.abort_key === undefined ? {} : { abort_key: summary.abort_key }),
       preview: [...previews.preview(summary.session_id)],
     }));
   return { sessions };

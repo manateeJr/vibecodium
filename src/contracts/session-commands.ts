@@ -69,6 +69,7 @@ export interface SessionSummary {
   readonly prompt?: string;
   readonly started_at?: string;
   readonly updated_at?: string;
+  readonly abort_key?: SubstrateKey;
 }
 
 export interface SessionListResult {

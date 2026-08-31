@@ -25,6 +25,7 @@ export interface RecentSession {
   readonly origin: SessionOrigin;
   readonly cwd: string;
   readonly updated_at: string;
+  readonly abort_key?: SessionSummary['abort_key'];
   /** Oldest first, at most RECENT_PREVIEW_LINES entries. */
   readonly preview: readonly string[];
 }

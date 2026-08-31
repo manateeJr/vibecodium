@@ -25,17 +25,19 @@ export function applyItem(entry, item) {
   entry.project = item.project || '';
   entry.sessionLabel = item.label || '';
   entry.origin = item.origin || '';
+  entry.provider = item.provider || entry.provider || '';
+  entry.abort_key = item.abort_key || entry.abort_key || '';
   entry.lastActivityAt = item.time || Date.now();
   return entry;
 }
 
 // A row on the cold-start home. session.recent answers with the session itself, not a stream, so
-// the stream id is derived the same way the control plane derives it.
 export function itemFromRecent(session) {
   return {
     stream_id: `session:${session.session_id}`,
     session_id: session.session_id,
     provider: session.provider,
+    abort_key: session.abort_key || '',
     status: session.state,
     cwd: session.cwd,
     project: '',
@@ -44,13 +46,14 @@ export function itemFromRecent(session) {
     time: Date.parse(session.updated_at) || Date.now(),
   };
 }
-
 // Event replay can create a local entry before session.list resolves. Keep the local overlay's
 // durable metadata in sync, or it hides labels and origins from the server summary after a reload.
 export function overlayRemote(entries, summaries) {
   for (const summary of summaries) {
     const entry = entries.get(summary.stream_id);
     if (!entry) continue;
+    entry.provider = summary.provider || entry.provider || '';
+    entry.abort_key = summary.abort_key || entry.abort_key || '';
     entry.sessionLabel = summary.label || '';
     entry.origin = summary.origin || '';
   }

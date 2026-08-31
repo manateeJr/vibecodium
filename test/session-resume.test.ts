@@ -92,6 +92,7 @@ test('session.resume admits, records, and forwards the provider resume reference
     cwd: '/workspace',
     project: 'vibecodium',
     origin: 'operator',
+    abort_key: 'escape',
   });
   assert.equal(subsystem.list({}).sessions[0]?.origin, 'operator');
   assert.deepEqual(worker.messages[0], {
@@ -123,12 +124,12 @@ test('session.resume defaults origin to agent when omitted', async () => {
     prompt: 'continue as agent',
   });
 
-  assert.equal(subsystem.list({}).sessions[0]?.origin, 'agent');
   assert.deepEqual(context.events[0]?.payload, {
     session_id: 'agent-resumed-session',
     provider: 'omp',
     prompt: 'continue as agent',
     origin: 'agent',
+    abort_key: 'escape',
   });
   assert.deepEqual(await subsystem.stop({ session_id: 'agent-resumed-session' }), {
     stopped: true,

@@ -30,7 +30,7 @@ export function createEventFeed({
     applySessionEvent(entry, event, streamLog.push);
     const eventTime = Date.parse(event.ts);
     entry.lastActivityAt = Number.isFinite(eventTime) ? eventTime : Date.now();
-    onSessionEvent(entry);
+    onSessionEvent(entry, event);
     setStatus('LIVE', 'live');
   };
 

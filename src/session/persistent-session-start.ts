@@ -1,6 +1,7 @@
 import type { SessionOpenArgs, SessionOpenResult } from '../contracts/commands.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
 import { SessionThrottledError, type AdmissionBudget } from './admission.js';
+import { harnessAbortKey } from '../provider/provider.js';
 import type { PersistentSessionManager } from './persistent-session-manager.js';
 
 export interface PersistentSessionStartOptions {
@@ -24,6 +25,7 @@ export async function startPersistentSession(
   const session_id = options.idFactory();
   if (!session_id.trim()) throw new Error('session id is required');
   const stream_id = `session:${session_id}`;
+  const abortKey = harnessAbortKey(options.args.provider);
   options.context.append(stream_id, 'session_started', {
     session_id,
     provider: options.args.provider,
@@ -31,6 +33,7 @@ export async function startPersistentSession(
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
     origin: options.args.origin ?? 'agent',
+    ...(abortKey === undefined ? {} : { abort_key: abortKey }),
   });
   try {
     await options.manager.start(
