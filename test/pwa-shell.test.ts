@@ -101,6 +101,7 @@ test('serves the installable pocket PWA shell and static assets', async () => {
     assert.match(index, /id="pty-terminal"/);
     assert.match(index, /id="pty-mirror-empty"/);
     assert.match(index, /id="interrupt-key"/);
+    assert.match(index, />\s*STOP\s*</);
     assert.match(index, /href="\/surface\.css"/);
     // xterm.js is a vendored static asset loaded as a classic script, never an npm dependency.
     assert.match(index, /script src="\/vendor\/xterm\/xterm\.js"/);

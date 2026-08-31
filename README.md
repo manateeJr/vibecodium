@@ -10,6 +10,15 @@ control plane defaults to `http://127.0.0.1:4310`.
 Session transcripts are stored under `~/.vibecodium/sessions` by default. Set
 `VIBECODIUM_SESSION_STORAGE_ROOT` to override that directory.
 
+Each substrate-backed session is launched in its own transient user systemd
+scope (`vibecodium-session-<substrate-name>.scope`) so it survives a control
+plane restart. To cap one session's memory, set
+`VIBECODIUM_SESSION_MEMORY_MAX` before starting the control plane, for example
+`VIBECODIUM_SESSION_MEMORY_MAX=2G`. The value accepts common systemd byte-size
+forms such as `512M`, `2G`, or `80%`; unset or malformed values apply no
+ceiling. If `systemd-run` is unavailable, Vibecodium falls back to direct
+abduco spawning and logs a warning.
+
 ### Attach to a session
 
 `vibecodium attach` lists known sessions and their current state. To take over

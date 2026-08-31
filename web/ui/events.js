@@ -19,6 +19,8 @@ const EVENT_TONES = Object.freeze({
 export function applySessionEvent(entry, event, pushLine) {
   const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
   if (typeof payload.session_id === 'string') entry.session_id = payload.session_id;
+  if (typeof payload.provider === 'string') entry.provider = payload.provider;
+  if (typeof payload.abort_key === 'string') entry.abort_key = payload.abort_key;
   if (typeof payload.cwd === 'string') entry.cwd = payload.cwd;
   if (typeof payload.project === 'string') entry.project = payload.project;
   // Every event folds into the work state, so "working" never depends on which branch runs below.

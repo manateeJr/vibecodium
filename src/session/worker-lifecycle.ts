@@ -5,6 +5,7 @@ import type { SubsystemContext } from '../contracts/subsystem.js';
 import type { StartWorkerMessage, WorkerOutputMessage } from '../server/session-worker.js';
 import { SessionThrottledError } from './admission.js';
 import type { AdmissionBudget } from './admission.js';
+import { harnessAbortKey } from '../provider/provider.js';
 import { errorMessage } from './session-helpers.js';
 
 export type SessionFork = (
@@ -61,6 +62,7 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
   const session_id = options.idFactory();
   if (!session_id.trim()) throw new Error('session id is required');
   const stream_id = `session:${session_id}`;
+  const abortKey = harnessAbortKey(options.args.provider);
   const storageDir =
     options.resumeRef === undefined ? path.join(options.sessionStorageRoot, session_id) : undefined;
   if (storageDir !== undefined) options.sessionStorageDirs.set(session_id, storageDir);
@@ -71,6 +73,7 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
     origin: options.args.origin ?? 'agent',
+    ...(abortKey === undefined ? {} : { abort_key: abortKey }),
   });
   let worker: ChildProcess;
   try {

@@ -72,6 +72,8 @@ export interface HarnessPlugin {
   readonly name: string;
   launchArgv(context: HarnessSessionContext): readonly string[];
   readonly injectionRecipe: HarnessInjectionRecipe;
+  /** Key the harness uses to cancel the active turn without closing the session. */
+  readonly abortKey?: SubstrateKey;
   idleDetector(record: HarnessTranscriptRecord): boolean;
   parseTranscriptLine(line: string): HarnessTranscriptRecord | null;
 }

@@ -306,7 +306,30 @@ function printJson(value: unknown): void {
 }
 function usage(): void {
   process.stderr.write(
-    'usage: vibecodium start|dev | list [--project <p>] [--query <q>] [--all] [--json] | machine list | session open --provider <p> --prompt <text> [--cwd <dir>] | session resume <omp|codex> <ref> <prompt...> | session send <id> <prompt...> | session stop <id> | workspace list | workspace status <path> | workflow run <template> | approve <token|stream_id>\n',
+    [
+      'usage: vibecodium <command>',
+      '',
+      '  start | dev                       run the control plane (dev: local checkout)',
+      '  list [--project <p>] [--query <q>] [--all] [--json]',
+      '                                    find sessions (interactive project + keyword picker)',
+      '  attach                            list attachable sessions',
+      '  attach <session-id>               ensure-live, then attach this terminal to the session TUI (detach: Ctrl+\\)',
+      '  attach --new [cwd]                open a fresh omp session and attach',
+      '  open <cwd>                        open a fresh omp session in <cwd> and attach',
+      '  project list                      registered projects',
+      '  project detect <path>             detect project settings for a path',
+      '  project save <json>               save a project (JSON args)',
+      '  project remove <name>             remove a project',
+      '  machine list                      discovered on-machine agent sessions (omp/codex stores)',
+      '  session open --provider <p> --prompt <text> [--cwd <dir>]',
+      '  session resume <omp|codex> <ref> <prompt...>',
+      '  session send <id> <prompt...>     send into a session (steers a running turn)',
+      '  session stop <id>                 stop a session',
+      '  workspace list | workspace status <path>',
+      '  workflow run <template>',
+      '  approve <token|stream_id>         approve a pending action',
+      '',
+    ].join('\n'),
   );
   process.exitCode = 2;
 }

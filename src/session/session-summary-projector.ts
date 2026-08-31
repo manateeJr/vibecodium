@@ -1,5 +1,6 @@
 import type { EventEnvelope } from '../contracts/events.js';
 import type { SessionSummary } from '../contracts/session-commands.js';
+import { harnessAbortKey } from '../provider/provider.js';
 import { asRecord } from './session-helpers.js';
 import type { SessionTable } from './session-table.js';
 
@@ -44,6 +45,13 @@ export function projectSessionEvent(
       payload?.origin === 'operator' || payload?.origin === 'agent'
         ? payload.origin
         : (persisted?.origin ?? 'agent');
+    const abortKey =
+      payload?.abort_key === 'ctrl_u' ||
+      payload?.abort_key === 'enter' ||
+      payload?.abort_key === 'escape' ||
+      payload?.abort_key === 'interrupt'
+        ? payload.abort_key
+        : harnessAbortKey(provider);
     options.records.set(session_id, {
       startedSeq: event.seq,
       summary: {
@@ -58,6 +66,7 @@ export function projectSessionEvent(
         updated_at: event.ts,
         ...(typeof payload?.project === 'string' ? { project: payload.project } : {}),
         ...(typeof payload?.cwd === 'string' ? { cwd: payload.cwd } : {}),
+        ...(abortKey === undefined ? {} : { abort_key: abortKey }),
       },
     });
     return;

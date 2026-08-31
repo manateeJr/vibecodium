@@ -45,6 +45,66 @@ const KEY_BYTES: Record<SubstrateKey, Uint8Array> = {
 const DEFAULT_REATTACH_MIN_DELAY_MS = 25;
 const DEFAULT_REATTACH_MAX_DELAY_MS = 1000;
 const DEFAULT_OPERATION_TIMEOUT_MS = 5000;
+const SYSTEMD_RUN_COMMAND = 'systemd-run';
+const MEMORY_MAX_PATTERN = /^(?:infinity|\d+(?:\.\d+)?(?:[KMGTPE](?:i?B?)?|%)?)$/i;
+
+let systemdRunAvailability: boolean | undefined;
+let fallbackWarningEmitted = false;
+
+export interface SubstrateLaunchCommand {
+  readonly executable: string;
+  readonly args: readonly string[];
+}
+
+function normalizeMemoryMax(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized !== undefined && MEMORY_MAX_PATTERN.test(normalized) ? normalized : undefined;
+}
+
+export function buildSubstrateLaunch(
+  systemdRunAvailable: boolean,
+  abducoPath: string,
+  sessionName: string,
+  argv: readonly string[],
+  memoryMax?: string,
+): SubstrateLaunchCommand {
+  const abducoArgs = ['-n', sessionName, ...argv];
+  if (!systemdRunAvailable) return { executable: abducoPath, args: abducoArgs };
+  const scopedArgs = [
+    '--user',
+    '--scope',
+    '--collect',
+    '--quiet',
+    `--unit=vibecodium-session-${sessionName}.scope`,
+  ];
+  const normalizedMemoryMax = normalizeMemoryMax(memoryMax);
+  if (normalizedMemoryMax !== undefined) scopedArgs.push('-p', `MemoryMax=${normalizedMemoryMax}`);
+  return {
+    executable: SYSTEMD_RUN_COMMAND,
+    args: [...scopedArgs, '--', abducoPath, ...abducoArgs],
+  };
+}
+
+export function detectSystemdRun(): boolean {
+  if (systemdRunAvailability !== undefined) return systemdRunAvailability;
+  try {
+    const result = spawnSync(SYSTEMD_RUN_COMMAND, ['--version'], { stdio: 'ignore' });
+    systemdRunAvailability = !result.error && result.status === 0;
+  } catch {
+    systemdRunAvailability = false;
+  }
+  return systemdRunAvailability;
+}
+
+function warnSystemdRunFallback(): void {
+  if (fallbackWarningEmitted) return;
+  fallbackWarningEmitted = true;
+  console.warn(
+    '[substrate] systemd-run is unavailable; falling back to direct abduco spawning. ' +
+      'Sessions stay in the service cgroup and will not survive a service restart; ' +
+      'install systemd-run to enable per-session transient scopes.',
+  );
+}
 
 function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -108,7 +168,16 @@ export class AbducoSubstrateClient implements SubstrateClient {
     for (const [key, value] of Object.entries(options.env ?? {})) environment[key] = value;
     if (this.socketOptions.socketDir !== undefined)
       environment.ABDUCO_SOCKET_DIR = this.socketOptions.socketDir;
-    const result = spawnSync(this.binaryPath, ['-n', name, ...argv], {
+    const useSystemdRun = detectSystemdRun();
+    if (!useSystemdRun) warnSystemdRunFallback();
+    const launch = buildSubstrateLaunch(
+      useSystemdRun,
+      this.binaryPath,
+      name,
+      argv,
+      environment.VIBECODIUM_SESSION_MEMORY_MAX,
+    );
+    const result = spawnSync(launch.executable, launch.args, {
       cwd: options.cwd,
       env: environment,
       stdio: 'ignore',
