@@ -102,6 +102,8 @@ export function assertEventInvariants(
 ): SoakInvariantReport {
   if (events.length === 0) throw new Error('event store is empty');
   const pendingTurns = new Map<number, number>();
+  const steeringTurns = new Map<number, number>();
+  const completedTurns = new Map<number, number>();
   let inputCount = 0;
   let completeCount = 0;
   const kinds = Object.fromEntries(EVENT_KINDS.map((kind) => [kind, 0])) as Record<
@@ -133,7 +135,9 @@ export function assertEventInvariants(
       const turn = positiveInteger(payload.turn, `session_input turn at seq ${event.seq}`);
       if (typeof payload.text !== 'string')
         throw new Error(`session_input text missing at seq ${event.seq}`);
-      if (payload.steering !== true) {
+      if (payload.steering === true) {
+        steeringTurns.set(turn, (steeringTurns.get(turn) ?? 0) + 1);
+      } else {
         pendingTurns.set(turn, (pendingTurns.get(turn) ?? 0) + 1);
         inputCount += 1;
       }
@@ -141,16 +145,21 @@ export function assertEventInvariants(
       requireSessionId(payload, event.seq);
       const turn = positiveInteger(payload.turn, `turn_complete turn at seq ${event.seq}`);
       const pending = pendingTurns.get(turn) ?? 0;
-      if (pending === 0 && turn === 1 && initialPrompt && !implicitInitialTurn) {
+      const steering = steeringTurns.get(turn) ?? 0;
+      const completed = completedTurns.get(turn) ?? 0;
+      if (pending > 0) {
+        if (pending === 1) pendingTurns.delete(turn);
+        else pendingTurns.set(turn, pending - 1);
+      } else if (turn === 1 && initialPrompt && !implicitInitialTurn) {
         implicitInitialTurn = true;
         inputCount += 1;
-      } else if (pending === 0) {
-        throw new Error(`turn ${turn} completed without a pending input`);
-      } else if (pending === 1) {
-        pendingTurns.delete(turn);
+      } else if (steering > 0 && completed > 0) {
+        if (steering === 1) steeringTurns.delete(turn);
+        else steeringTurns.set(turn, steering - 1);
       } else {
-        pendingTurns.set(turn, pending - 1);
+        throw new Error(`turn ${turn} completed without a pending input`);
       }
+      completedTurns.set(turn, completed + 1);
       completeCount += 1;
     } else if (event.type === 'session_output') {
       requireSessionId(payload, event.seq);
@@ -168,7 +177,7 @@ export function assertEventInvariants(
     )
       throw new Error(`event session mismatch at seq ${event.seq}`);
   }
-  if (inputCount !== completeCount)
+  if (completeCount < inputCount)
     throw new Error(
       `turn completion count mismatch: inputs=${inputCount} completes=${completeCount}`,
     );

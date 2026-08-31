@@ -52,16 +52,17 @@ test('event invariants pair turns, allow steering, and preserve duplicate turn n
     event('session_input', { session_id: sessionId, turn: 2, text: 'steer', steering: true }),
     event('session_output', { session_id: sessionId, index: 0, text: 'reply' }),
     event('turn_complete', { session_id: sessionId, turn: 2 }),
+    event('turn_complete', { session_id: sessionId, turn: 2 }),
     event('session_input', { session_id: sessionId, turn: 1, text: 'cold resume' }),
     event('turn_complete', { session_id: sessionId, turn: 1 }),
     event('session_complete', { session_id: sessionId, provider: 'fake' }),
   ];
   const report = assertEventInvariants(events, streamId);
-  assert.equal(report.eventCount, 9);
+  assert.equal(report.eventCount, 10);
   assert.equal(report.turnCount, 3);
-  assert.equal(report.replayCount, 9);
+  assert.equal(report.replayCount, 10);
   assert.equal(report.kinds.session_input, 3);
-  assert.equal(report.kinds.turn_complete, 3);
+  assert.equal(report.kinds.turn_complete, 4);
 });
 
 test('event replay and stuck-session checks reject drift', () => {
