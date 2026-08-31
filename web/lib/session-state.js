@@ -5,6 +5,7 @@
 const USER_TYPES = new Set(['session_started', 'session_input']);
 const REPLY_TYPES = new Set(['session_output', 'turn_complete']);
 const TERMINAL_TYPES = new Set(['session_complete', 'verify_failed']);
+const IDLE_SESSION_STATES = new Set(['resumable', 'closed']);
 
 export const IDLE_WORK_STATE = Object.freeze({
   lastUserSeq: -1,
@@ -19,6 +20,12 @@ export const IDLE_WORK_STATE = Object.freeze({
 export function applyWorkEvent(state, event) {
   const type = event?.type;
   const seq = Number.isFinite(event?.seq) ? event.seq : 0;
+  if (type === 'session_state') {
+    const sessionState = event?.payload?.state;
+    if (!IDLE_SESSION_STATES.has(sessionState)) return state;
+    const lastReplySeq = Math.max(state.lastReplySeq, state.lastUserSeq, seq);
+    return { lastUserSeq: state.lastUserSeq, lastReplySeq, working: false };
+  }
   if (TERMINAL_TYPES.has(type)) {
     return { lastUserSeq: state.lastUserSeq, lastReplySeq: state.lastReplySeq, working: false };
   }

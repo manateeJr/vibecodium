@@ -220,7 +220,53 @@ test('tailer persists thinking, tool status updates, text, and suppresses whites
         .every((event) => event.payload.text.trim().length > 0),
       true,
     );
-    assert.equal(context.events.filter((event) => event.type === 'turn_complete').length, 2);
+    assert.equal(context.events.filter((event) => event.type === 'turn_complete').length, 1);
+  } finally {
+    await tailer.stop();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('tailer emits turn_complete when session exit transitions an unfinished turn idle', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-idle-transition-'));
+  const transcriptPath = path.join(root, 'session.jsonl');
+  writeFileSync(transcriptPath, '');
+  const context = new TestContext();
+  const tailer = new SessionTranscriptTailer({
+    transcriptPath,
+    sessionId: 'idle-transition-session',
+    streamId: 'session:idle-transition-session',
+    plugin,
+    append: context.append.bind(context),
+  });
+  const user = JSON.stringify({
+    type: 'message',
+    timestamp: '2026-08-31T00:00:00.000Z',
+    message: { role: 'user', content: [{ type: 'text', text: 'start' }] },
+  });
+  const unfinished = assistant(
+    '2026-08-31T00:00:01.000Z',
+    [{ type: 'thinking', thinking: 'still working' }],
+    'toolUse',
+  );
+  const exit = JSON.stringify({
+    type: 'custom',
+    customType: 'session_exit',
+    data: { reason: 'dispose', kind: 'normal', recordedAt: '2026-08-31T00:00:02.000Z' },
+  });
+  try {
+    await tailer.start();
+    appendFileSync(transcriptPath, `${user}\n${unfinished}\n${exit}\n`);
+    await tailer.readAvailable();
+    assert.deepEqual(
+      context.events.map((event) => event.type),
+      ['session_input', 'session_output', 'turn_complete'],
+    );
+    assert.deepEqual(context.events.at(-1)?.payload, {
+      session_id: 'idle-transition-session',
+      turn: 1,
+    });
+    assert.equal(tailer.isIdle, true);
   } finally {
     await tailer.stop();
     rmSync(root, { recursive: true, force: true });
