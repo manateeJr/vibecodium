@@ -22,8 +22,8 @@ export async function transcriptSnapshot(
   }
 }
 /**
- * A socket can remain connectable after the hosted harness exits. The
- * abduco listing's `live` marker is the authoritative child-liveness check.
+ * A socket can remain connectable after the hosted harness exits. Require both
+ * the abduco listing's live marker and its hosted-command PID to be alive.
  */
 export async function isSubstrateSessionLive(
   substrate: SubstrateClient,
@@ -31,13 +31,24 @@ export async function isSubstrateSessionLive(
 ): Promise<boolean> {
   try {
     const sessions = await substrate.listSessions();
-    return sessions.some((session) => session.name === substrateName && session.live);
+    const session = sessions.find((candidate) => candidate.name === substrateName);
+    return session !== undefined && session.live && hostedChildIsLive(session.pid);
   } catch {
     try {
       return await substrate.isLive(substrateName);
     } catch {
       return false;
     }
+  }
+}
+
+function hostedChildIsLive(pid: number | undefined): boolean {
+  if (pid === undefined) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -90,7 +101,8 @@ async function childLiveness(
   try {
     const sessions = await substrate.listSessions();
     const session = sessions.find((candidate) => candidate.name === substrateName);
-    if (session !== undefined) return { known: true, live: session.live };
+    if (session !== undefined)
+      return { known: true, live: session.live && hostedChildIsLive(session.pid) };
   } catch {
     // Fall back to the substrate's liveness check for test and alternate clients.
   }
