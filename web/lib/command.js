@@ -35,3 +35,8 @@ export async function postCommand(name, args, { baseUrl, token, signal } = {}) {
 export function isAbortError(error) {
   return Boolean(error) && error.name === 'AbortError';
 }
+
+// Normalize any thrown value to a display string.
+export function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}

@@ -1,4 +1,5 @@
 import { createClient } from '/client.js';
+import { errorMessage } from '/lib/command.js';
 import { externalEntry, externalItem } from '/lib/external-session.js';
 import { applyItem, blankEntry, itemFromRecent, overlayRemote } from '/lib/session-entries.js';
 import { createHistoryController } from '/lib/history-controller.js';
@@ -495,8 +496,4 @@ function sessionItems() {
     local: [...sessions.values()],
     limit: SESSION_LIMIT,
   });
-}
-
-function errorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
 }
