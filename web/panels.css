@@ -1,52 +1,5 @@
 /* Files browser, skill library, and skill parameter panels on the phosphor shell. */
 
-.session-pill__tag {
-  flex: 0 0 auto;
-  padding: 0 4px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  color: var(--replay);
-  font-size: 10px;
-  letter-spacing: var(--track-small);
-}
-
-.session-pill[data-external='yes'] {
-  border-style: dashed;
-}
-
-.session-pill__rename {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 0 8px;
-  border: 0;
-  border-left: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  color: var(--ink-dim);
-  font: inherit;
-}
-
-.session-pill__rename:hover {
-  color: var(--ink-hi);
-}
-
-.session-pill__rename-field {
-  width: 150px;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-hi);
-  font: inherit;
-  font-size: var(--fs-small);
-}
-
-.session-pill--agents[data-active='yes'] {
-  color: var(--replay);
-}
-
 .drawer--files {
   display: flex;
   flex-direction: column;

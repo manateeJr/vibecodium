@@ -1,26 +1,5 @@
-.view-tabs {
-  display: flex;
-  gap: 6px;
-  padding-top: 9px;
-}
-
-.view-tab {
-  min-height: 32px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg-2);
-  color: var(--ink-dim);
-  font: inherit;
-  font-size: var(--fs-small);
-  letter-spacing: var(--track-small);
-}
-
-.view-tab[aria-selected='true'] {
-  border-color: var(--focus);
-  color: var(--ink-hi);
-}
-
+/* The three panels the main column can show. The persistent TRANSCRIPT / LIVE MIRROR tab strip is
+ * gone: the transcript is full-bleed by default and the mirror is a toggle in the chip menu. */
 .session-view {
   min-height: 0;
   flex: 1 1 auto;
@@ -153,11 +132,4 @@
 .control-key:disabled {
   cursor: not-allowed;
   opacity: 0.4;
-}
-
-@media (max-width: 350px) {
-  .view-tab {
-    padding-right: 7px;
-    padding-left: 7px;
-  }
 }

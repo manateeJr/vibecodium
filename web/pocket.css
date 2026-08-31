@@ -72,7 +72,7 @@ summary:focus-visible {
 }
 .brand-kicker,
 .brand-name,
-.section-heading h1,
+.session-heading__project,
 .scope-path,
 .compose-note,
 .token-panel summary,
@@ -82,7 +82,7 @@ summary:focus-visible {
 }
 .brand-kicker,
 .token-panel summary,
-.section-heading h1 {
+.session-heading__project {
   font-size: var(--fs-small);
   letter-spacing: var(--track-label);
   text-transform: uppercase;
@@ -129,32 +129,43 @@ summary:focus-visible {
   flex-direction: column;
   padding: 14px 0 10px;
 }
-.section-heading {
-  display: block;
+/* One header line for the session: the project this phone is scoped to — which stays visible, D7 —
+ * and the chip that carries the active session's status and its menu. */
+.session-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   padding-bottom: 8px;
   flex: 0 0 auto;
 }
-.section-heading__title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-.session-bar {
-  display: flex;
-  gap: 6px;
-  padding-bottom: 2px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-color: var(--line) transparent;
-}
-.session-pill {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: stretch;
-  max-width: 240px;
-  min-height: 34px;
+.session-heading__project {
+  min-width: 0;
+  min-height: 0;
   padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--ink-hi);
+  font: inherit;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-heading__project:hover {
+  color: var(--ok);
+}
+/* A share arrives with a project guess, so the affordance that can retarget it is marked. */
+.session-heading__project[data-share='yes'] {
+  color: var(--replay);
+}
+.session-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  margin-left: auto;
+  padding: 0 11px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--bg-2);
@@ -164,86 +175,94 @@ summary:focus-visible {
   letter-spacing: var(--track-small);
   text-transform: uppercase;
 }
-/* Pills whose whole content is a bare label, with no inner button to carry the padding. Without
- * these two lines the label inherits the shell's `align-items: stretch` and zero padding, so it
- * sits against the top-left of its own pill — which is what AGENTS ON/OFF was doing. */
-.session-pill--new,
-.session-pill--presets,
-.session-pill--agents {
-  align-items: center;
-  justify-content: center;
-  padding: 0 11px;
-}
-.session-pill--new[data-active='yes'],
-.session-pill[data-active='yes'] {
+.session-chip[data-status='live'] {
   border-color: var(--focus);
   color: var(--ink-hi);
 }
-.session-pill--new:hover:not(:disabled),
-.session-pill--presets:hover:not(:disabled),
-.session-pill:hover {
-  border-color: var(--ink);
-  color: var(--ink-hi);
+.session-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.session-pill__select,
-.session-pill__stop {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  min-height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-}
-.session-pill__stop {
-  padding: 0 10px 0 6px;
-  border-left: 1px solid var(--line);
-  border-radius: 0 999px 999px 0;
-  color: var(--bad);
-}
-.session-pill__stop:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-.session-pill__dot {
+.session-chip__dot {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--ink-dim);
 }
-.session-pill__dot[data-status='live'] {
+.session-chip__dot[data-status='live'] {
   background: var(--amber);
 }
-.session-pill__dot[data-status='done'] {
+.session-chip__dot[data-status='done'] {
   background: var(--ok);
 }
-.session-pill__dot[data-status='failed'],
-.session-pill__dot[data-status='stopped'] {
+.session-chip__dot[data-status='ext'] {
+  background: var(--replay);
+}
+.session-chip__dot[data-status='failed'] {
   background: var(--bad);
 }
-.session-pill__text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Rename, stop, the live-mirror toggle and the cwd, one tap from the chip. Everything the deleted
+ * session bar and view-tabs strip used to keep permanently on screen. */
+.session-menu {
+  display: grid;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  padding: 7px;
+  border: 1px solid var(--focus);
+  border-radius: 7px;
+  background: var(--bg-2);
 }
-.section-heading h1 {
+.session-menu__item {
+  min-height: 38px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  letter-spacing: var(--track-small);
+  text-align: left;
+  text-transform: uppercase;
+}
+.session-menu__item:hover:not(:disabled) {
+  border-color: var(--focus);
   color: var(--ink-hi);
-  font-weight: 500;
 }
-#stream-caption {
-  min-width: 0;
-  overflow: hidden;
+.session-menu__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.session-menu__item[data-tone='bad'] {
+  color: var(--bad);
+}
+.session-menu__item[aria-pressed='true'] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+.session-menu__detail {
+  display: grid;
+  gap: 2px;
+  padding: 4px 9px 2px;
+}
+.session-menu__value {
+  overflow-wrap: anywhere;
   color: var(--ink-dim);
   font-size: var(--fs-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+.session-menu__rename {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 9px;
+  border: 1px solid var(--focus);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--ink-hi);
+  font: inherit;
+  font-size: var(--fs-input);
 }
 .stream-lines {
   min-height: 150px;

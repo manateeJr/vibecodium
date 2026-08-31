@@ -3,6 +3,8 @@ import { MACHINE_READ_COMMAND } from './machine-commands.js';
 import type * as MachineCommands from './machine-commands.js';
 import { FILES_SHARED_STAGED_COMMAND } from './files-commands.js';
 import type * as FilesCommands from './files-commands.js';
+import { SESSION_RECENT_COMMAND } from './session-recent.js';
+import type * as SessionRecent from './session-recent.js';
 import type {
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
@@ -55,8 +57,9 @@ export type {
   SessionSummary,
 } from './session-commands.js';
 export type * from './machine-commands.js';
-export { MACHINE_READ_COMMAND, FILES_SHARED_STAGED_COMMAND };
+export { MACHINE_READ_COMMAND, FILES_SHARED_STAGED_COMMAND, SESSION_RECENT_COMMAND };
 export type * from './files-commands.js';
+export type * from './session-recent.js';
 
 export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
@@ -64,6 +67,7 @@ export const COMMAND_NAMES = {
   sessionStop: 'session.stop',
   sessionSend: 'session.send',
   sessionList: 'session.list',
+  sessionRecent: SESSION_RECENT_COMMAND,
   sessionFork: 'session.fork',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
@@ -339,6 +343,7 @@ export interface CommandArgsMap {
   'project.save': ProjectSaveArgs;
   'project.remove': ProjectRemoveArgs;
   'session.list': SessionListArgs;
+  'session.recent': SessionRecent.SessionRecentArgs;
   'session.fork': SessionForkArgs;
   'voice.transcribe': VoiceTranscribeArgs;
   'host.stats': HostStatsArgs;
@@ -377,6 +382,7 @@ export interface CommandResultMap {
   'project.save': ProjectSaveResult;
   'project.remove': ProjectRemoveResult;
   'session.list': SessionListResult;
+  'session.recent': SessionRecent.SessionRecentResult;
   'session.fork': SessionForkResult;
   'voice.transcribe': VoiceTranscribeResult;
   'host.stats': HostStatsResult;

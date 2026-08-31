@@ -17,8 +17,10 @@
     <link rel="stylesheet" href="/ui.css" />
     <link rel="stylesheet" href="/layout.css" />
     <link rel="stylesheet" href="/panels.css" />
+    <link rel="stylesheet" href="/drawers.css" />
     <link rel="stylesheet" href="/surface.css" />
     <link rel="stylesheet" href="/compose.css" />
+    <link rel="stylesheet" href="/transcript-stream.css" />
     <!-- xterm.js 5.3.0 is vendored under /vendor/xterm; the mirror is read-only. -->
     <link rel="stylesheet" href="/vendor/xterm/xterm.css" />
   </head>
@@ -43,39 +45,29 @@
         </div>
       </header>
 
-      <section class="stream-panel" aria-labelledby="stream-title">
-        <div class="section-heading">
-          <div class="section-heading__title">
-            <div class="chat-heading">
-              <h1 id="stream-title">SESSION</h1>
-              <span id="git-status" class="git-status" hidden></span>
-            </div>
-            <span id="stream-caption">No active stream</span>
-          </div>
-          <div class="view-tabs" role="tablist" aria-label="Session view">
-            <button
-              id="structured-view-tab"
-              class="view-tab"
-              type="button"
-              role="tab"
-              aria-selected="true"
-              aria-controls="structured-view"
-            >
-              TRANSCRIPT
-            </button>
-            <button
-              id="mirror-view-tab"
-              class="view-tab"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="mirror-view"
-            >
-              LIVE MIRROR
-            </button>
-          </div>
+      <section class="stream-panel" aria-label="Session">
+        <div class="session-heading">
+          <button
+            id="active-project"
+            class="session-heading__project"
+            type="button"
+            aria-controls="new-session-flow"
+            title="Change the project for the next session"
+          >
+            Scratch
+          </button>
+          <span id="git-status" class="git-status" hidden></span>
+          <button id="session-chip" class="session-chip" type="button" aria-haspopup="true">
+            <span id="session-chip-dot" class="session-chip__dot" aria-hidden="true"></span>
+            <span id="session-chip-label" class="session-chip__label">NO SESSION</span>
+          </button>
         </div>
-        <section id="structured-view" class="session-view session-view--structured" role="tabpanel">
+        <div id="session-menu" class="session-menu" role="menu" hidden></div>
+        <section id="home-view" class="session-view session-view--home" aria-label="Recent" hidden>
+          <h2 class="home-view__title">RECENT</h2>
+          <div id="home-recent" class="history-list"></div>
+        </section>
+        <section id="structured-view" class="session-view session-view--structured">
           <ol id="stream-lines" class="stream-lines" role="log" aria-live="polite">
             <li id="stream-empty" class="stream-empty">Open a session to begin.</li>
           </ol>
@@ -84,7 +76,6 @@
         <section
           id="mirror-view"
           class="session-view session-view--mirror"
-          role="tabpanel"
           aria-label="Read-only live terminal mirror"
           hidden
         >
@@ -105,30 +96,6 @@
       </section>
 
       <section class="compose-panel" aria-label="Compose">
-        <div class="project-scope">
-          <div class="project-scope__row">
-            <label class="project-scope__field" for="project-selector">
-              <span class="entry-label">PROJECT</span>
-              <select id="project-selector" class="project-selector" autocomplete="off">
-                <option value="">Scratch</option>
-              </select>
-            </label>
-            <label class="project-scope__field project-scope__field--model" for="model-selector">
-              <span class="entry-label">MODEL</span>
-              <select id="model-selector" class="project-selector" autocomplete="off">
-                <option value="">default</option>
-              </select>
-            </label>
-          </div>
-          <p id="scope-path" class="scope-path">(default cwd)</p>
-        </div>
-        <div id="session-bar" class="session-bar" role="group" aria-label="Recent sessions"></div>
-        <div
-          id="session-presets"
-          class="session-presets"
-          aria-label="New session presets"
-          hidden
-        ></div>
         <section id="skill-invoke" class="skill-invoke" hidden aria-label="Skill parameters">
           <div class="skill-invoke__heading">
             <span id="skill-invoke-title" class="skill-invoke__title">SKILL</span>
@@ -148,7 +115,10 @@
             </button>
           </form>
         </section>
-        <p id="compose-hint" class="compose-hint" role="status" aria-live="polite" hidden></p>
+        <p id="external-hint" class="external-hint" role="status" aria-live="polite" hidden>
+          <span id="external-hint-text"></span>
+          <button id="external-hint-dismiss" class="external-hint__ok" type="button">GOT IT</button>
+        </p>
         <p id="share-status" class="share-status" role="status" aria-live="polite" hidden></p>
         <form id="compose-form" class="compose-bar">
           <label class="sr-only" for="compose-input">Message</label>
@@ -157,7 +127,7 @@
             name="compose-input"
             rows="1"
             autocomplete="off"
-            placeholder="Describe a task to start a session…"
+            placeholder="New session in Scratch…"
             required
           ></textarea>
           <div class="compose-actions" role="group" aria-label="Composer actions">
@@ -192,7 +162,7 @@
                 CXL
               </button>
             </div>
-            <button id="compose-send" class="button button--open" type="submit">OPEN</button>
+            <button id="compose-send" class="button button--send" type="submit">SEND</button>
           </div>
         </form>
         <div class="control-strip" role="group" aria-label="Session controls">
@@ -220,6 +190,9 @@
         </div>
         <div id="history-scroll" class="history-scroll">
           <div class="history-filters">
+            <button id="new-session" class="history-new" type="button" aria-expanded="false">
+              + NEW
+            </button>
             <label class="sr-only" for="history-search">Search conversations</label>
             <input
               id="history-search"
@@ -234,6 +207,25 @@
               <option value="Scratch">Scratch</option>
             </select>
           </div>
+          <section id="new-session-flow" class="new-session-flow" aria-label="New session" hidden>
+            <label class="new-session-flow__field" for="project-selector">
+              <span class="entry-label">PROJECT</span>
+              <select id="project-selector" class="project-selector" autocomplete="off">
+                <option value="">Scratch</option>
+              </select>
+            </label>
+            <p id="scope-path" class="scope-path">(default cwd)</p>
+            <label class="new-session-flow__field" for="model-selector">
+              <span class="entry-label">MODEL</span>
+              <select id="model-selector" class="project-selector" autocomplete="off">
+                <option value="">default</option>
+              </select>
+            </label>
+            <div id="session-presets" class="session-presets" aria-label="Quick starts"></div>
+            <button id="new-session-start" class="project-form__button" type="button">
+              WRITE THE FIRST MESSAGE
+            </button>
+          </section>
           <section class="drawer-section" aria-labelledby="live-history-title">
             <h3 id="live-history-title">LIVE VIBECODIUM</h3>
             <div id="live-history" class="history-list"></div>
@@ -272,6 +264,13 @@
           <option value="omp">omp</option>
           <option value="codex">codex</option>
         </select>
+        <label class="drawer-toggle" for="show-agents">
+          <input id="show-agents" type="checkbox" />
+          SHOW AGENT SESSIONS
+        </label>
+        <p class="token-note">
+          Sessions an agent opened, alongside your own, in History and the machine list.
+        </p>
         <label for="capability-token">CAPABILITY TOKEN</label>
         <input
           id="capability-token"

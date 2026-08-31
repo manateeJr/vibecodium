@@ -1,9 +1,12 @@
 import { createClient } from '/client.js';
 import { externalEntry, externalItem } from '/lib/external-session.js';
+import { applyItem, blankEntry, itemFromRecent, overlayRemote } from '/lib/session-entries.js';
 import { mergeSessionItems, sessionIdOf } from '/lib/session-items.js';
 import {
+  loadExternalHintSeen,
   loadShowAgentSessions,
   loadToken,
+  saveExternalHintSeen,
   saveShowAgentSessions,
   saveToken,
 } from '/lib/storage.js';
@@ -12,6 +15,7 @@ import { renderComposeControls } from '/ui/compose-controls.js';
 import { createComposer } from '/ui/composer.js';
 import { wireConnectivity } from '/ui/connectivity.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
+import { createExternalHint } from '/ui/external-hint.js';
 import { queryElements } from '/ui/elements.js';
 import { createEventFeed } from '/ui/event-feed.js';
 import { createFilesPanel } from '/ui/files.js';
@@ -21,7 +25,6 @@ import { createModelPicker } from '/ui/model-picker.js';
 import { createMachineHistory } from '/ui/machine-history.js';
 import { createProjectManager } from '/ui/project-manager.js';
 import { createRestartAction } from '/ui/restart-action.js';
-import { createSessionBar } from '/ui/session-bar.js';
 import { createShareIntake } from '/ui/share-intake.js';
 import { createSkillsPanel } from '/ui/skills.js';
 import { createSessionSurface } from '/ui/session-surface.js';
@@ -53,14 +56,18 @@ let sessionsLoading = false;
 let remoteSessions = [];
 let machineSessions = [];
 let registeredProjects = [];
-let scopePresets = [];
 let showAgents = loadShowAgentSessions();
 const sessions = new Map();
-const { transcript, sessionView } = createSessionSurface({
+const { transcript, sessionView, home, chip } = createSessionSurface({
   connection,
   elements,
   // Ratified: "Steer now" escalates natively with escape; the separate stop control interrupts.
   onSteerNow: () => actions.sendKeys(sessions.get(selectedStreamId), ['escape']),
+  onRename: (entry, label) => void actions.renameSession(entry, label),
+  onStop: () => void actions.stopSession(),
+  onSelectRecent: (session) => selectRecent(session),
+  onError: (message) => streamLog.error(message),
+  errorMessage,
 });
 const restartAction = createRestartAction({
   elements,
@@ -78,16 +85,6 @@ const gitStatus = createGitStatus({
   target: elements.gitStatus,
   isCurrent: (entry) => entry.stream_id === selectedStreamId,
 });
-const sessionBar = createSessionBar({
-  bar: elements.sessionBar,
-  presetRow: elements.sessionPresets,
-  onNew: () => selectNew(),
-  onSelect: (item) => selectSessionItem(item),
-  onStop: () => void actions.stopSession(),
-  onPreset: (preset) => selectPreset(preset),
-  onRename: (item, label) => void actions.renameSession(item, label),
-  onToggleAgents: (next) => setShowAgents(next),
-});
 const history = createHistoryDrawer({
   drawer: elements.historyDrawer,
   toggle: elements.historyToggle,
@@ -97,17 +94,23 @@ const history = createHistoryDrawer({
   projectFilter: elements.historyProjectFilter,
   liveList: elements.liveHistory,
   machineList: elements.machineHistory,
+  newButton: elements.newSession,
+  newFlow: elements.newSessionFlow,
+  newStart: elements.newSessionStart,
+  presetRow: elements.sessionPresets,
   getShowAgents: () => showAgents,
-  onLiveSelect: (streamId) => {
-    selectStream(streamId);
+  onLiveSelect: (item) => {
+    selectSessionItem(item);
     history.close();
   },
-  // Tapping a machine session only reads it: the same read-only adopt the session bar uses, so
-  // HISTORY cannot mutate anything the machine owns. Continuing it is the operator's first send.
+  // Tapping a machine session only reads it, so HISTORY cannot mutate anything the machine owns.
+  // Continuing it is the operator's first send.
   onMachineSelect: (summary) => {
     selectSessionItem(externalItem(summary, registeredProjects));
     history.close();
   },
+  onNew: () => selectNew(),
+  onPreset: (preset) => selectPreset(preset),
   onOpen: loadMachineSessions,
 });
 const projectManager = createProjectManager({
@@ -134,6 +137,8 @@ const settings = createSettingsDrawer({
   token: elements.token,
   tokenState: elements.tokenState,
   harness: elements.harness,
+  showAgents: elements.showAgents,
+  onToggleAgents: (next) => setShowAgents(next),
   onTokenInput: (value) => commitToken(value),
   onTokenCommit: (value) => commitToken(value),
   onOpen: () => {
@@ -142,6 +147,13 @@ const settings = createSettingsDrawer({
   },
 });
 const composer = createComposer({ input: elements.composeInput, form: elements.composeForm });
+const externalHint = createExternalHint({
+  hint: elements.externalHint,
+  text: elements.externalHintText,
+  dismiss: elements.externalHintDismiss,
+  loadSeen: loadExternalHintSeen,
+  saveSeen: saveExternalHintSeen,
+});
 const modelPicker = createModelPicker({
   select: elements.modelSelector,
   onChange: (model) => void actions.switchModel(model),
@@ -164,7 +176,12 @@ const actions = createActions({
   getActiveProject: () => projectManager.selectedProject(),
   getModel: () => modelPicker.selected(),
   connection,
-  resetInput: () => composer.reset(),
+  // Only reached once a send actually landed, which is also when the one-time hint has done its
+  // job: it clears itself there rather than waiting to be dismissed by hand.
+  resetInput: () => {
+    composer.reset();
+    externalHint.dismissAfterSend();
+  },
   getPrompt: () => composer.getPrompt(),
   setStatus,
   refreshControls,
@@ -244,12 +261,19 @@ elements.composeForm.addEventListener('submit', (event) => {
 elements.interruptKey.addEventListener('click', () => {
   void actions.sendKeys(sessions.get(selectedStreamId), ['interrupt'], 'interrupting');
 });
+// The header's project name is the affordance the composer placeholder points at: tapping it opens
+// HISTORY on the project picker, which is where the scope selectors now live.
+elements.activeProject.addEventListener('click', () => {
+  settings.close();
+  files.close();
+  history.openNewFlow();
+});
 setStatus(
   globalThis.navigator.onLine ? 'READY' : 'OFFLINE',
   globalThis.navigator.onLine ? 'idle' : 'bad',
 );
-refreshControls();
-streamLog.render();
+settings.setShowAgents(showAgents);
+showHome();
 updateScope();
 void boot();
 wireConnectivity({
@@ -308,14 +332,7 @@ async function loadSessions() {
     if (project?.name) args.project = project.name;
     const result = await client.listSessions(args);
     remoteSessions = [...result.sessions];
-    // Event replay can create a local entry before session.list resolves. Keep the local overlay's
-    // durable metadata in sync, or it hides labels/origins from the server summary after reload.
-    for (const summary of remoteSessions) {
-      const entry = sessions.get(summary.stream_id);
-      if (!entry) continue;
-      entry.sessionLabel = summary.label || '';
-      entry.origin = summary.origin || '';
-    }
+    overlayRemote(sessions, remoteSessions);
     if (elements.composeNote.textContent.startsWith(SESSION_NOTE)) setComposeNote('');
   } catch (error) {
     remoteSessions = [];
@@ -328,17 +345,22 @@ async function loadSessions() {
 
 function updateScope() {
   const project = projectManager.selectedProject();
+  // D7: the project name stays visible in the main header line; its path is detail, so it rides
+  // the picker inside the `+ NEW` flow rather than the message column.
+  elements.activeProject.textContent = project?.name || 'Scratch';
   elements.scopePath.textContent = project?.path || '(default cwd)';
   refreshPresets();
   skills.render();
+  refreshControls();
   void loadSessions();
   void loadMachineSessions();
 }
 
-// Presets are the project's adopted skills first, then its detected quick actions.
+// Presets are the project's adopted skills first, then its detected quick actions. They are the
+// curated first message for the session `+ NEW` is about to start, so they live in that flow.
 function refreshPresets() {
   const project = projectManager.selectedProject();
-  scopePresets = [
+  history.setPresets([
     ...skills.presets(),
     ...(project?.quickActions ?? []).map((action) => ({
       kind: 'action',
@@ -347,8 +369,7 @@ function refreshPresets() {
       prompt: action.prompt,
       title: action.prompt,
     })),
-  ];
-  renderSessions();
+  ]);
 }
 
 function selectPreset(preset) {
@@ -362,7 +383,6 @@ function selectPreset(preset) {
 function setShowAgents(next) {
   showAgents = next;
   saveShowAgentSessions(next);
-  setComposeNote(next ? 'showing agent-opened sessions' : 'showing your own sessions');
   renderSessions();
 }
 
@@ -381,6 +401,8 @@ function refreshControls() {
     elements,
     entry: sessions.get(selectedStreamId),
     state: actionState,
+    project: projectManager.selectedProject()?.name ?? '',
+    hint: externalHint,
   });
   renderSessions();
 }
@@ -388,32 +410,31 @@ function refreshControls() {
 function ensureEntry(streamId, label = '') {
   const kind = streamId.split(':', 1)[0];
   if (kind !== 'session') return null;
-  let entry = sessions.get(streamId);
-  if (!entry) {
-    entry = {
-      stream_id: streamId,
-      kind,
-      label: label || 'session',
-      status: 'running',
-      busy: false,
-      lines: [],
-      cwd: '',
-      project: '',
-      lastActivityAt: Date.now(),
-    };
-    sessions.set(streamId, entry);
-  } else if (label) entry.label = label;
-  return entry;
+  const entry = sessions.get(streamId);
+  if (!entry) sessions.set(streamId, blankEntry(streamId, kind, label));
+  else if (label) entry.label = label;
+  return sessions.get(streamId);
+}
+
+// No active session: the main column shows the cold-start home — the operator's last sessions with
+// three lines of transcript each — over the composer, instead of an empty transcript.
+function showHome() {
+  selectedStreamId = '';
+  gitStatus.hide();
+  sessionView.setHome(true);
+  sessionView.selectSession('');
+  void home.refresh();
+  streamLog.render();
+  refreshControls();
 }
 
 function selectNew() {
-  selectedStreamId = '';
-  elements.streamCaption.textContent = 'New session';
-  gitStatus.hide();
-  streamLog.render();
-  refreshControls();
+  showHome();
   elements.composeInput.focus();
-  sessionView.selectSession('');
+}
+
+function selectRecent(session) {
+  selectSessionItem(itemFromRecent(session));
 }
 
 function selectSessionItem(item) {
@@ -435,15 +456,7 @@ function adoptExternalItem(item) {
 
 function adoptSessionItem(item) {
   const entry = ensureEntry(item.stream_id, item.provider);
-  if (!entry) return null;
-  if (item.session_id) entry.session_id = item.session_id;
-  entry.status = item.status === 'live' ? 'running' : item.status === 'failed' ? 'failed' : 'done';
-  entry.cwd = item.cwd || '';
-  entry.project = item.project || '';
-  entry.sessionLabel = item.label || '';
-  entry.origin = item.origin || '';
-  entry.lastActivityAt = item.time || Date.now();
-  return entry;
+  return entry ? applyItem(entry, item) : null;
 }
 
 // Selecting a session never changes the project: the scope belongs to the owner, not to whatever
@@ -452,7 +465,7 @@ function selectStream(streamId) {
   const entry = sessions.get(streamId);
   if (!entry) return;
   selectedStreamId = streamId;
-  elements.streamCaption.textContent = entry.sessionLabel || entry.label || streamId;
+  sessionView.setHome(false);
   streamLog.render();
   refreshControls();
   void gitStatus.update(entry);
@@ -462,30 +475,15 @@ function selectStream(streamId) {
 }
 
 function renderSessions() {
-  sessionBar.update({
-    items: sessionItems(),
-    selectedId: selectedStreamId,
-    presets: scopePresets,
-    stopping: actionState.stopping,
-    showAgents,
-  });
-  history.renderLive(
-    [...sessions.values()].filter(
-      (entry) => entry.kind === 'session' && !entry.stream_id.startsWith('machine:'),
-    ),
-  );
+  history.renderLive(sessionItems());
+  chip.update({ entry: sessions.get(selectedStreamId), stopping: actionState.stopping });
 }
 
 function sessionItems() {
   return mergeSessionItems({
     remote: remoteSessions,
     local: [...sessions.values()],
-    machine: machineSessions,
-    projects: registeredProjects,
-    project: projectManager.selectedProject(),
-    selectedId: selectedStreamId,
     limit: SESSION_LIMIT,
-    showAgents,
   });
 }
 

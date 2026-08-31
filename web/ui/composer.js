@@ -1,10 +1,11 @@
-// The composer is a textarea that grows with its content and then scrolls. A phone keyboard eats
-// most of the viewport, so a fixed one-line box hides everything the owner already typed — but an
-// unbounded box would push the transcript off screen, hence the row cap.
+// The composer is a textarea that grows with its content and then scrolls in place. A phone
+// keyboard eats most of the viewport, so a fixed one-line box hides everything the owner already
+// typed — but the old unbounded growth pushed the transcript off screen entirely, so the box stops
+// at five lines and scrolls from there.
 //
 // Enter still sends and Shift+Enter now inserts a newline: the old single-line input submitted on
 // Enter, so keeping that verb is the difference between a familiar composer and a surprising one.
-const MAX_ROWS = 8;
+const MAX_ROWS = 5;
 
 export function createComposer({ input, form }) {
   let metrics;
