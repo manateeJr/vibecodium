@@ -111,6 +111,11 @@ export function applySessionEvent(entry, event, pushLine) {
     pushLine(entry, failed ? 'bad' : 'meta', `${clock} ${text}`);
     return;
   }
+  // session_state is control-plane bookkeeping (reap/reconcile/resume/shutdown). It rides the
+  // session's own event stream so the summary projector can fold it, but it is not a conversational
+  // turn: rendering every idle-reaper sweep would bury the transcript under {"state":"reconciled"}
+  // noise. Liveness still reaches the phone through session.recent, so this simply drops the line.
+  if (event.type === 'session_state') return;
   pushEventLine(entry, event, EVENT_TONES[event.type] ?? 'meta', pushLine);
 }
 
