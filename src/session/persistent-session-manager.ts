@@ -1,4 +1,5 @@
 import path from 'node:path';
+import type { SessionStateReason } from '../contracts/events.js';
 import type {
   SessionEnsureLiveResult,
   SessionOpenArgs,
@@ -19,6 +20,7 @@ import {
 } from '../server/session-worker.js';
 import { SessionIdleReaper, type SessionReapCandidate } from './idle-reaper.js';
 import { sessionEnsureLiveArgs, sessionSendKeysArgs } from './session-helpers.js';
+import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type { SessionTable } from './session-table.js';
 
 export interface PersistentSessionManagerOptions {
@@ -31,7 +33,7 @@ export interface PersistentSessionManagerOptions {
   readonly onStateChange: (
     sessionId: string,
     state: SubstrateSessionState,
-    reason: 'reaped' | 'resumed',
+    reason: SessionStateReason,
   ) => void;
   readonly now?: () => Date;
   readonly idleTimeoutMs?: number;
@@ -253,6 +255,22 @@ export class PersistentSessionManager {
       substrate: this.substrate,
       append: this.append,
       now: () => this.now().getTime(),
+      onActivity: () => this.persistWorkerTranscript(options.sessionId),
+    });
+  }
+
+  private persistWorkerTranscript(sessionId: string): void {
+    const worker = this.workers.get(sessionId);
+    const record = this.sessionTable?.get(sessionId);
+    if (!worker || !record) return;
+    const transcriptPath = worker.currentTranscriptPath;
+    const harnessRef = harnessRefFromTranscriptPath(transcriptPath) ?? worker.currentHarnessRef;
+    if (record.transcriptPath === transcriptPath && record.harnessRef === harnessRef) return;
+    this.sessionTable?.upsert({
+      ...record,
+      harnessRef,
+      transcriptPath,
+      updatedAt: this.now().toISOString(),
     });
   }
   private relaunch(
@@ -293,22 +311,61 @@ export class PersistentSessionManager {
       startAtEnd: true,
     });
     const turn = prompt === undefined ? undefined : worker.currentTurn + 1;
-    const started = await worker.start(prompt, record.harnessRef);
-    const updated = this.recordFromStart(record.provider, worker, started, 'live', record);
-    this.workers.set(record.sessionId, worker);
     try {
-      this.sessionTable?.upsert(updated);
+      const started = await worker.start(prompt, record.harnessRef);
+      const liveness = await worker.verifyRelaunchLiveness();
+      if (!liveness.live) {
+        await worker.stop().catch(() => undefined);
+        this.persistRelaunchFailure(record, worker, liveness.detail, prompt);
+        throw new Error(resumeFailureMessage(liveness.detail, prompt));
+      }
+      const updated = this.recordFromStart(record.provider, worker, started, 'live', record);
+      this.workers.set(record.sessionId, worker);
+      try {
+        this.sessionTable?.upsert(updated);
+      } catch (error) {
+        this.workers.delete(record.sessionId);
+        await worker.stop();
+        throw error;
+      }
+      this.onStateChange(record.sessionId, 'live', 'resumed');
+      return {
+        state: 'live',
+        substrateName: updated.substrateName,
+        ...(turn === undefined ? {} : { turn }),
+      };
     } catch (error) {
-      this.workers.delete(record.sessionId);
-      await worker.stop();
-      throw error;
+      if (error instanceof Error && error.message.startsWith('resume-failed:')) throw error;
+      await worker.stop().catch(() => undefined);
+      this.persistRelaunchFailure(record, worker, errorMessage(error), prompt);
+      throw new Error(resumeFailureMessage(errorMessage(error), prompt));
     }
-    this.onStateChange(record.sessionId, 'live', 'resumed');
-    return {
-      state: 'live',
-      substrateName: updated.substrateName,
-      ...(turn === undefined ? {} : { turn }),
+  }
+
+  private persistRelaunchFailure(
+    record: SubstrateSessionRecord,
+    worker: PersistentSessionWorker,
+    detail: string,
+    prompt: string | undefined,
+  ): void {
+    const transcriptPath = worker.currentTranscriptPath;
+    const harnessRef = harnessRefFromTranscriptPath(transcriptPath) ?? worker.currentHarnessRef;
+    const updated: SubstrateSessionRecord = {
+      ...record,
+      harnessRef,
+      transcriptPath,
+      state: 'resumable',
+      updatedAt: this.now().toISOString(),
     };
+    this.sessionTable?.upsert(updated);
+    const error = resumeFailureMessage(detail, prompt);
+    this.append(`session:${record.sessionId}`, 'verify_failed', {
+      session_id: record.sessionId,
+      stage: 'session',
+      error,
+      ...(prompt === undefined ? {} : { prompt }),
+    });
+    this.onStateChange(record.sessionId, 'resumable', `resume-failed: ${detail}`);
   }
 
   private pluginFor(provider: string) {
@@ -330,7 +387,7 @@ export class PersistentSessionManager {
     return {
       sessionId: worker.sessionId,
       provider,
-      harnessRef: started.harnessRef,
+      harnessRef: harnessRefFromTranscriptPath(started.transcriptPath) ?? started.harnessRef,
       substrateName: worker.substrateName,
       transcriptPath: started.transcriptPath,
       storageDir: worker.storageDir,
@@ -360,9 +417,28 @@ export class PersistentSessionManager {
     const worker = this.workers.get(candidate.sessionId);
     if (!worker) return;
     this.workers.delete(candidate.sessionId);
+    await worker.flushTranscript();
+    const record = this.sessionTable?.get(candidate.sessionId);
+    if (record) {
+      const transcriptPath = worker.currentTranscriptPath;
+      const harnessRef = harnessRefFromTranscriptPath(transcriptPath) ?? worker.currentHarnessRef;
+      this.sessionTable?.upsert({
+        ...record,
+        harnessRef,
+        transcriptPath,
+        state: 'resumable',
+        updatedAt: this.now().toISOString(),
+      });
+    }
     await worker.shutdown();
     this.onStateChange(candidate.sessionId, 'resumable', 'reaped');
   }
+}
+
+function resumeFailureMessage(detail: string, prompt: string | undefined): string {
+  return prompt === undefined
+    ? `resume-failed: ${detail}`
+    : `resume-failed: ${detail}; undelivered prompt: ${prompt}`;
 }
 
 function substrateNameFor(sessionId: string): string {

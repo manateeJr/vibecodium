@@ -52,6 +52,7 @@ export interface HarnessSessionContext {
   readonly prompt?: string;
   readonly resumeRef?: string;
   readonly storageDir?: string;
+  readonly transcriptPath?: string;
   readonly model?: string;
 }
 

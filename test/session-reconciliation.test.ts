@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import Database from 'better-sqlite3';
 import type { ChildProcess } from 'node:child_process';
 import test from 'node:test';
 import type { EventEnvelope, EventKind, EventPayload } from '../src/contracts/events.js';
@@ -145,6 +149,95 @@ test('SessionTable persists records and updates state timestamps', () => {
   assert.equal(updated.state, 'resumable');
   assert.equal(updated.updatedAt, '2026-08-30T01:00:00.000Z');
   table.close();
+});
+
+test('startup reconciliation repairs a UUID harness ref from its transcript filename', async () => {
+  const database = new Database(':memory:');
+  const table = new SessionTable({ database });
+  const sessionId = 'repair-session';
+  const transcriptPath = '/tmp/2026-08-30T20-43-53-324Z_01a0546a-146c-7000-9032-3674b9943f50.jsonl';
+  database
+    .prepare(
+      `INSERT INTO session_records (
+        session_id, provider, harness_ref, substrate_name,
+        transcript_path, storage_dir, state, label, origin, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      sessionId,
+      'omp',
+      sessionId,
+      `substrate-${sessionId}`,
+      transcriptPath,
+      '/tmp/repair-session',
+      'resumable',
+      '',
+      'agent',
+      '2026-08-30T00:00:00.000Z',
+    );
+  assert.equal(table.get(sessionId)?.harnessRef, sessionId);
+  const context = new FakeContext();
+  context.append(`session:${sessionId}`, 'session_started', {
+    session_id: sessionId,
+    provider: 'omp',
+    prompt: 'repair me',
+  });
+  const subsystem = new SessionSubsystem({
+    substrate: new FakeSubstrate([]),
+    sessionTable: table,
+  });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    assert.equal(table.get(sessionId)?.harnessRef, '01a0546a-146c-7000-9032-3674b9943f50');
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    database.close();
+  }
+});
+
+test('reaping persists the ref from the bound transcript', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-reap-ref-'));
+  const context = new FakeContext();
+  const tableDatabase = new Database(':memory:');
+  const table = new SessionTable({ database: tableDatabase });
+  const sessionId = 'reap-ref-session';
+  const storageDir = path.join(root, sessionId);
+  const transcriptPath = path.join(
+    storageDir,
+    '2026-08-30T20-43-53-324Z_01a0546a-146c-7000-9032-3674b9943f50.jsonl',
+  );
+  mkdirSync(storageDir, { recursive: true });
+  appendFileSync(
+    transcriptPath,
+    `${JSON.stringify({ message: { role: 'user', content: 'old prompt' } })}\n` +
+      `${JSON.stringify({ message: { role: 'assistant', content: 'done', stopReason: 'stop' } })}\n`,
+  );
+  const subsystem = new SessionSubsystem({
+    substrate: new FakeSubstrate([]),
+    sessionTable: table,
+    sessionStorageRoot: root,
+    idFactory: () => sessionId,
+    idleTimeoutMs: 0,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    await subsystem.open({ provider: 'omp', prompt: 'initial prompt' });
+    tableDatabase
+      .prepare('UPDATE session_records SET harness_ref = ? WHERE session_id = ?')
+      .run(sessionId, sessionId);
+    assert.equal(table.get(sessionId)?.harnessRef, sessionId);
+    await subsystem.reapIdle();
+    assert.equal(table.get(sessionId)?.harnessRef, '01a0546a-146c-7000-9032-3674b9943f50');
+    assert.equal(table.get(sessionId)?.state, 'resumable');
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    tableDatabase.close();
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('startup reconciliation keeps a live substrate session live and re-attaches it', async () => {

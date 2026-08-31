@@ -1,4 +1,4 @@
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +11,12 @@ import type {
   SubstrateKey,
 } from '../contracts/substrate-contract.js';
 import type { ProviderSession, ProviderSessionRef } from '../contracts/provider-contract.js';
+import { discoverTranscript, harnessRefFromTranscriptPath } from '../session/transcript-ref.js';
+import {
+  transcriptSnapshot,
+  verifyRelaunchLiveness,
+  type RelaunchLivenessResult,
+} from '../session/relaunch-liveness.js';
 import { providerByName } from '../provider/provider.js';
 import {
   SessionTranscriptTailer,
@@ -111,6 +117,9 @@ export class PersistentSessionWorker {
   private nextTurn: number;
   private transcriptPath: string;
   private harnessRef: string;
+  private launchTranscriptPath: string;
+  private launchTranscriptSize = -1;
+  private launchTranscriptMtimeMs = -1;
 
   public constructor(options: PersistentSessionWorkerOptions) {
     this.substrate = options.substrate;
@@ -133,6 +142,7 @@ export class PersistentSessionWorker {
     this.nextTurn = this.initialTurn;
     this.transcriptPath = options.transcriptPath;
     this.harnessRef = options.harnessRef ?? options.sessionId;
+    this.launchTranscriptPath = options.transcriptPath;
   }
 
   public get isBusy(): boolean {
@@ -161,15 +171,33 @@ export class PersistentSessionWorker {
 
   public async start(prompt?: string, resumeRef?: string): Promise<PersistentSessionStartResult> {
     if (this.started) throw new Error(`persistent session already started: ${this.sessionId}`);
+    this.transcriptPath = await discoverTranscript(
+      this.storageDir,
+      this.transcriptFallback,
+      this.transcriptPath,
+    );
+    this.harnessRef =
+      harnessRefFromTranscriptPath(this.transcriptPath) ??
+      this.configuredHarnessRef ??
+      this.harnessRef;
+    this.launchTranscriptPath = this.transcriptPath;
+    const launchBaseline = await transcriptSnapshot(this.transcriptPath);
+    this.launchTranscriptSize = launchBaseline?.size ?? -1;
+    this.launchTranscriptMtimeMs = launchBaseline?.mtimeMs ?? -1;
+    const launchResumeRef =
+      resumeRef === undefined
+        ? undefined
+        : (harnessRefFromTranscriptPath(this.transcriptPath) ?? resumeRef);
     const created = await this.substrate.createSession(
       this.substrateName,
       this.plugin.launchArgv({
         sessionId: this.sessionId,
         cwd: this.cwd ?? process.cwd(),
         ...(prompt === undefined ? {} : { prompt }),
-        ...(resumeRef === undefined ? {} : { resumeRef }),
+        ...(launchResumeRef === undefined ? {} : { resumeRef: launchResumeRef }),
         ...(this.model === undefined ? {} : { model: this.model }),
         storageDir: this.storageDir,
+        transcriptPath: this.transcriptPath,
       }),
       this.cwd === undefined ? undefined : { cwd: this.cwd },
     );
@@ -223,6 +251,18 @@ export class PersistentSessionWorker {
     return this.tailer?.readAvailable() ?? Promise.resolve();
   }
 
+  public verifyRelaunchLiveness(timeoutMs = 3_000): Promise<RelaunchLivenessResult> {
+    return verifyRelaunchLiveness({
+      substrate: this.substrate,
+      substrateName: this.substrateName,
+      transcriptPath: () => this.transcriptPath,
+      baselinePath: this.launchTranscriptPath,
+      baselineSize: this.launchTranscriptSize,
+      baselineMtimeMs: this.launchTranscriptMtimeMs,
+      timeoutMs,
+    });
+  }
+
   private async attachAndTail(startAtEnd: boolean): Promise<void> {
     this.transcriptPath = await discoverTranscript(
       this.storageDir,
@@ -230,7 +270,9 @@ export class PersistentSessionWorker {
       this.transcriptPath,
     );
     this.harnessRef =
-      this.configuredHarnessRef ?? harnessRefFromPath(this.transcriptPath, this.harnessRef);
+      harnessRefFromTranscriptPath(this.transcriptPath) ??
+      this.configuredHarnessRef ??
+      this.harnessRef;
     this.attachment = await this.substrate.attach(this.substrateName);
     this.tailer = new SessionTranscriptTailer({
       transcriptPath: this.transcriptPath,
@@ -244,6 +286,8 @@ export class PersistentSessionWorker {
       initialOutputIndex: this.initialOutputIndex,
       onTranscriptPath: (transcriptPath) => {
         this.transcriptPath = transcriptPath;
+        const derivedHarnessRef = harnessRefFromTranscriptPath(transcriptPath);
+        if (derivedHarnessRef !== undefined) this.harnessRef = derivedHarnessRef;
       },
       onActivity: (activity) => {
         this.busy = !activity.idle;
@@ -278,31 +322,6 @@ export class PersistentSessionWorker {
     this.started = false;
   }
 }
-async function discoverTranscript(
-  storageDir: string,
-  fallback: string,
-  preferred: string,
-): Promise<string> {
-  try {
-    const entries = await readdir(storageDir, { withFileTypes: true });
-    const files = entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl'))
-      .map((entry) => path.join(storageDir, entry.name))
-      .sort();
-    if (files.length === 0) return fallback;
-    if (files.includes(preferred)) return preferred;
-    return files[files.length - 1] ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function harnessRefFromPath(transcriptPath: string, fallback: string): string {
-  const basename = path.basename(transcriptPath, '.jsonl');
-  const match = basename.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
-  return match?.[1] ?? fallback;
-}
-
 interface ConversationState {
   readonly session_id: string;
   readonly stream_id: string;
