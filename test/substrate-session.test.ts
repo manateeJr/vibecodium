@@ -14,6 +14,7 @@ import type {
   SubstrateSessionInfo,
 } from '../src/contracts/substrate-contract.js';
 import { OmpHarnessPlugin } from '../src/provider/omp-harness-plugin.js';
+import { PersistentSessionManager } from '../src/session/persistent-session-manager.js';
 import { SessionSubsystem } from '../src/session/index.js';
 import { SessionTranscriptTailer } from '../src/session/transcript-tailer.js';
 import { SessionTable } from '../src/session/session-table.js';
@@ -293,6 +294,102 @@ test('persistent session commands use resume argv and raw key passthrough', asyn
     await subsystem.stop({ session_id: opened.session_id });
   } finally {
     subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('session-exit transcript records mark live sessions resumable and clean substrate', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-session-exit-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const substrate = new TestSubstrate();
+  const states: Array<{ state: string; reason: string }> = [];
+  const transcriptPath = path.join(root, 'exit-session', 'session.jsonl');
+  table.upsert({
+    sessionId: 'exit-session',
+    provider: 'omp',
+    harnessRef: 'exit-ref',
+    substrateName: 'substrate-exit-session',
+    transcriptPath,
+    storageDir: path.dirname(transcriptPath),
+    state: 'resumable',
+    label: '',
+    origin: 'agent',
+    updatedAt: new Date(0).toISOString(),
+  });
+  const manager = new PersistentSessionManager({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    sessionStorageDirs: new Map(),
+    append: () => 0,
+    summaryFor: () => undefined,
+    onStateChange: (sessionId, state, reason) => {
+      if (sessionId === 'exit-session') states.push({ state, reason });
+    },
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    await manager.ensureLive('exit-session');
+    appendFileSync(
+      transcriptPath,
+      `${JSON.stringify({
+        type: 'custom',
+        customType: 'session_exit',
+        data: { reason: 'dispose', kind: 'normal' },
+      })}\n`,
+    );
+    await manager.flush();
+    await nextImmediate();
+    assert.equal(table.get('exit-session')?.state, 'resumable');
+    assert.deepEqual(states.at(-1), { state: 'resumable', reason: 'harness-exit' });
+    assert.deepEqual(substrate.killedNames, ['substrate-exit-session']);
+  } finally {
+    await manager.shutdown();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('ensure-live relaunches a record incorrectly left live after its child exits', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-dead-live-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const substrate = new TestSubstrate();
+  const states: string[] = [];
+  table.upsert({
+    sessionId: 'dead-live',
+    provider: 'omp',
+    harnessRef: 'dead-ref',
+    substrateName: 'substrate-dead-live',
+    transcriptPath: path.join(root, 'dead-live', 'session.jsonl'),
+    storageDir: path.join(root, 'dead-live'),
+    state: 'live',
+    label: '',
+    origin: 'agent',
+    updatedAt: new Date(0).toISOString(),
+  });
+  const manager = new PersistentSessionManager({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    sessionStorageDirs: new Map(),
+    append: () => 0,
+    summaryFor: () => undefined,
+    onStateChange: (sessionId, state) => {
+      if (sessionId === 'dead-live') states.push(state);
+    },
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    assert.deepEqual(await manager.ensureLive('dead-live'), {
+      state: 'live',
+      substrateName: 'substrate-dead-live',
+    });
+    assert.equal(substrate.created.length, 1);
+    assert.deepEqual(substrate.killedNames, ['substrate-dead-live']);
+    assert.deepEqual(states, ['resumable', 'live']);
+  } finally {
+    await manager.shutdown();
     table.close();
     rmSync(root, { recursive: true, force: true });
   }

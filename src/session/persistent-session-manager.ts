@@ -24,6 +24,7 @@ import {
   type SessionReapReason,
 } from './idle-reaper.js';
 import { sessionEnsureLiveArgs, sessionSendKeysArgs } from './session-helpers.js';
+import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type { SessionTable } from './session-table.js';
 
@@ -47,7 +48,7 @@ export interface PersistentSessionManagerOptions {
 }
 type PersistentWorkerConfig = Omit<
   ConstructorParameters<typeof PersistentSessionWorker>[0],
-  'substrate' | 'append' | 'onActivity'
+  'substrate' | 'append' | 'onActivity' | 'onSessionExit'
 >;
 
 export interface PersistentSessionEnsureResult {
@@ -70,6 +71,7 @@ export class PersistentSessionManager {
   private readonly now: () => Date;
   private readonly workers = new Map<string, PersistentSessionWorker>();
   private readonly relaunches = new Map<string, Promise<PersistentSessionRelaunchResult>>();
+  private readonly sessionExitTasks = new Map<string, Promise<void>>();
   private readonly reaper: SessionIdleReaper;
 
   public constructor(options: PersistentSessionManagerOptions) {
@@ -215,21 +217,33 @@ export class PersistentSessionManager {
     this.workers.delete(sessionId);
     await worker.stop();
   }
-
   public async ensureLive(sessionId: string): Promise<PersistentSessionEnsureResult> {
     const table = this.sessionTable;
     if (!table) throw new Error('session table is not configured');
     const record = table.get(sessionId);
     if (!record) throw new Error('session not found');
     if (record.state === 'closed') throw new Error('session is closed');
-    if (record.state === 'live' && this.workers.has(sessionId)) {
-      return { state: 'live', substrateName: record.substrateName };
-    }
     const relaunch = this.relaunches.get(sessionId);
     if (relaunch) return relaunch;
-    if (record.state === 'live' && (await this.substrate.isLive(record.substrateName))) {
+    if (record.state === 'live' && (await isSubstrateSessionLive(this.substrate, record.substrateName))) {
+      if (this.workers.has(sessionId))
+        return { state: 'live', substrateName: record.substrateName };
       const attached = await this.attach(record);
       return { state: 'live', substrateName: attached.substrateName };
+    }
+    if (record.state === 'live') {
+      const staleWorker = this.workers.get(sessionId);
+      this.workers.delete(sessionId);
+      if (staleWorker) await staleWorker.cleanupAfterHarnessExit();
+      else await this.substrate.kill(record.substrateName).catch(() => undefined);
+      const resumable: SubstrateSessionRecord = {
+        ...record,
+        state: 'resumable',
+        updatedAt: this.now().toISOString(),
+      };
+      table.upsert(resumable);
+      this.onStateChange(sessionId, 'resumable', 'harness-exit');
+      return this.relaunch(resumable);
     }
     return this.relaunch(record);
   }
@@ -268,6 +282,17 @@ export class PersistentSessionManager {
       append: this.append,
       now: () => this.now().getTime(),
       onActivity: () => this.persistWorkerTranscript(options.sessionId),
+      onSessionExit: () => {
+        if (this.sessionExitTasks.has(options.sessionId)) return;
+        const task = new Promise<void>((resolve) => setImmediate(resolve)).then(() =>
+          this.handleSessionExit(options.sessionId),
+        );
+        this.sessionExitTasks.set(options.sessionId, task);
+        void task.finally(() => {
+          if (this.sessionExitTasks.get(options.sessionId) === task)
+            this.sessionExitTasks.delete(options.sessionId);
+        });
+      },
     });
   }
 
@@ -284,6 +309,20 @@ export class PersistentSessionManager {
       transcriptPath,
       updatedAt: this.now().toISOString(),
     });
+  }
+  private async handleSessionExit(sessionId: string): Promise<void> {
+    const worker = this.workers.get(sessionId);
+    const record = this.sessionTable?.get(sessionId);
+    if (!record || record.state !== 'live') return;
+    this.workers.delete(sessionId);
+    this.sessionTable?.upsert({
+      ...record,
+      state: 'resumable',
+      updatedAt: this.now().toISOString(),
+    });
+    this.onStateChange(sessionId, 'resumable', 'harness-exit');
+    if (worker) await worker.cleanupAfterHarnessExit();
+    else await this.substrate.kill(record.substrateName).catch(() => undefined);
   }
   private relaunch(
     record: SubstrateSessionRecord,

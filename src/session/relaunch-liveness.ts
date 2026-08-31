@@ -21,6 +21,25 @@ export async function transcriptSnapshot(
     return undefined;
   }
 }
+/**
+ * A socket can remain connectable after the hosted harness exits. The
+ * abduco listing's `live` marker is the authoritative child-liveness check.
+ */
+export async function isSubstrateSessionLive(
+  substrate: SubstrateClient,
+  substrateName: string,
+): Promise<boolean> {
+  try {
+    const sessions = await substrate.listSessions();
+    return sessions.some((session) => session.name === substrateName && session.live);
+  } catch {
+    try {
+      return await substrate.isLive(substrateName);
+    } catch {
+      return false;
+    }
+  }
+}
 
 export async function verifyRelaunchLiveness(options: {
   readonly substrate: SubstrateClient;

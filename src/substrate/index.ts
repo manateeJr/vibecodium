@@ -41,6 +41,7 @@ const KEY_BYTES: Record<SubstrateKey, Uint8Array> = {
   enter: Uint8Array.of(0x0d),
   escape: Uint8Array.of(0x1b),
   interrupt: Uint8Array.of(0x03),
+  ctrl_l: Uint8Array.of(0x0c),
 };
 
 const DEFAULT_REATTACH_MIN_DELAY_MS = 25;

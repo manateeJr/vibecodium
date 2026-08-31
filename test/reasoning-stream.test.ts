@@ -113,6 +113,21 @@ test('OMP parser exposes thinking, tool calls, summaries, and tool results', () 
   });
 });
 
+test('OMP parser exposes clean session-exit records', () => {
+  const line = JSON.stringify({
+    type: 'custom',
+    customType: 'session_exit',
+    data: { reason: 'dispose', kind: 'normal', recordedAt: '2026-08-31T00:00:05.000Z' },
+  });
+  assert.deepEqual(parseOmpTranscriptLine(line), {
+    kind: 'session_exit',
+    raw: line,
+    reason: 'dispose',
+    exitKind: 'normal',
+    ts: '2026-08-31T00:00:05.000Z',
+  });
+});
+
 test('tailer persists thinking, tool status updates, text, and suppresses whitespace output', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-reasoning-'));
   const transcriptPath = path.join(root, 'session.jsonl');

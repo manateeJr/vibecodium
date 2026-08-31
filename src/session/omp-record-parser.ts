@@ -31,12 +31,35 @@ export interface OmpToolResultRecord extends HarnessTranscriptRecord {
   readonly toolResult: OmpToolResult;
 }
 
-export type OmpTranscriptRecord = OmpAssistantRecord | OmpUserRecord | OmpToolResultRecord;
+export interface OmpSessionExitRecord extends HarnessTranscriptRecord {
+  readonly kind: 'session_exit';
+  readonly reason?: string;
+  readonly exitKind?: string;
+}
+
+export type OmpTranscriptRecord =
+  | OmpAssistantRecord
+  | OmpUserRecord
+  | OmpToolResultRecord
+  | OmpSessionExitRecord;
 
 /** Parse the persisted JSONL shape emitted by omp's session store. */
 export function parseOmpTranscriptLine(line: string): OmpTranscriptRecord | null {
   const value = parseObject(line);
   if (!value) return null;
+  if (value.type === 'custom' && value.customType === 'session_exit') {
+    const data = objectField(value, 'data') ?? {};
+    const reason = stringField(data, 'reason');
+    const exitKind = stringField(data, 'kind');
+    const recordedAt = stringField(data, 'recordedAt') ?? stringField(value, 'recordedAt');
+    return {
+      kind: 'session_exit',
+      raw: line,
+      ...(reason === undefined ? {} : { reason }),
+      ...(exitKind === undefined ? {} : { exitKind }),
+      ...(recordedAt === undefined ? {} : { ts: recordedAt }),
+    };
+  }
   const message = objectField(value, 'message') ?? value;
   const role = stringField(message, 'role');
   const timeMs = recordTimeMs(value, message);

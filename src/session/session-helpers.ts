@@ -153,7 +153,12 @@ export function sessionSendKeysArgs(command: unknown): SessionSendKeysArgs {
   if (
     !Array.isArray(value.keys) ||
     value.keys.some(
-      (key) => key !== 'ctrl_u' && key !== 'enter' && key !== 'escape' && key !== 'interrupt',
+      (key) =>
+        key !== 'ctrl_u' &&
+        key !== 'enter' &&
+        key !== 'escape' &&
+        key !== 'interrupt' &&
+        key !== 'ctrl_l',
     )
   ) {
     throw new Error('keys must contain valid substrate keys');

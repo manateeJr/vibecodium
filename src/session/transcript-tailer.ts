@@ -8,6 +8,7 @@ import type { HarnessPlugin, HarnessTranscriptRecord } from '../contracts/substr
 import {
   parseOmpTranscriptLine,
   type OmpAssistantRecord,
+  type OmpSessionExitRecord,
   type OmpToolResultRecord,
 } from './omp-record-parser.js';
 
@@ -29,6 +30,7 @@ export interface SessionTranscriptTailerOptions {
   readonly initialTurn?: number;
   readonly initialOutputIndex?: number;
   readonly onActivity?: (activity: SessionTranscriptActivity) => void;
+  readonly onSessionExit?: (record: OmpSessionExitRecord) => void;
   readonly onTranscriptPath?: (transcriptPath: string) => void;
 }
 
@@ -42,6 +44,8 @@ export class SessionTranscriptTailer {
   private readonly startAtEnd: boolean;
   private readonly onActivity: ((activity: SessionTranscriptActivity) => void) | undefined;
   private readonly onTranscriptPath: ((transcriptPath: string) => void) | undefined;
+  private readonly onSessionExit: ((record: OmpSessionExitRecord) => void) | undefined;
+  private sessionExitNotified = false;
   private decoder = new StringDecoder('utf8');
   private watcher: FSWatcher | undefined;
   private readChain: Promise<void> = Promise.resolve();
@@ -73,6 +77,7 @@ export class SessionTranscriptTailer {
     this.turn = options.initialTurn ?? 0;
     this.outputIndex = options.initialOutputIndex ?? 0;
     this.onActivity = options.onActivity;
+    this.onSessionExit = options.onSessionExit;
     this.onTranscriptPath = options.onTranscriptPath;
   }
 
@@ -191,7 +196,13 @@ export class SessionTranscriptTailer {
     if (!record) return;
     const at = this.now();
     this.lastActivity = at;
-    if (parsed?.kind === 'tool_result') {
+    if (parsed?.kind === 'session_exit') {
+      this.idle = true;
+      if (!this.sessionExitNotified) {
+        this.sessionExitNotified = true;
+        this.onSessionExit?.(parsed);
+      }
+    } else if (parsed?.kind === 'tool_result') {
       this.processToolResult(parsed);
       this.idle = false;
     } else if (record.kind === 'user' || record.kind === 'steering') {

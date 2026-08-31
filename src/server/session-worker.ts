@@ -22,6 +22,7 @@ import {
   SessionTranscriptTailer,
   type SessionTranscriptActivity,
 } from '../session/transcript-tailer.js';
+import type { OmpSessionExitRecord } from '../session/omp-record-parser.js';
 
 export interface StartWorkerMessage {
   readonly type: 'start';
@@ -83,6 +84,7 @@ export interface PersistentSessionWorkerOptions {
   readonly startAtEnd?: boolean;
   readonly initialTurn?: number;
   readonly initialOutputIndex?: number;
+  readonly onSessionExit?: (record: OmpSessionExitRecord) => void;
   readonly onActivity?: (activity: SessionTranscriptActivity) => void;
 }
 
@@ -108,6 +110,7 @@ export class PersistentSessionWorker {
   private readonly startAtEnd: boolean;
   private readonly initialTurn: number;
   private readonly initialOutputIndex: number;
+  private readonly onSessionExit: ((record: OmpSessionExitRecord) => void) | undefined;
   private readonly onActivity: ((activity: SessionTranscriptActivity) => void) | undefined;
   private attachment: SubstrateAttachment | undefined;
   private tailer: SessionTranscriptTailer | undefined;
@@ -138,6 +141,7 @@ export class PersistentSessionWorker {
     this.startAtEnd = options.startAtEnd ?? false;
     this.initialTurn = options.initialTurn ?? 0;
     this.initialOutputIndex = options.initialOutputIndex ?? 0;
+    this.onSessionExit = options.onSessionExit;
     this.onActivity = options.onActivity;
     this.nextTurn = this.initialTurn;
     this.transcriptPath = options.transcriptPath;
@@ -247,6 +251,23 @@ export class PersistentSessionWorker {
     await this.close(true);
   }
 
+  /**
+   * The harness already exited, so kill the substrate first. Waiting for the
+   * tailer before killing would deadlock while its current read is dispatching
+   * this callback.
+   */
+  public async cleanupAfterHarnessExit(): Promise<void> {
+    if (this.stopping) return;
+    this.stopping = true;
+    this.busy = false;
+    await this.substrate.kill(this.substrateName).catch(() => undefined);
+    await this.tailer?.stop().catch(() => undefined);
+    this.tailer = undefined;
+    await this.attachment?.detach().catch(() => undefined);
+    this.attachment = undefined;
+    this.started = false;
+  }
+
   public flushTranscript(): Promise<void> {
     return this.tailer?.readAvailable() ?? Promise.resolve();
   }
@@ -289,6 +310,7 @@ export class PersistentSessionWorker {
         const derivedHarnessRef = harnessRefFromTranscriptPath(transcriptPath);
         if (derivedHarnessRef !== undefined) this.harnessRef = derivedHarnessRef;
       },
+      onSessionExit: (record) => this.onSessionExit?.(record),
       onActivity: (activity) => {
         this.busy = !activity.idle;
         this.onActivity?.(activity);

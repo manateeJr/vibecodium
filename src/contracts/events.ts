@@ -112,7 +112,13 @@ export interface InboundReceivedPayload {
 }
 
 export type SessionStateReason =
-  'reaped' | 'reaped-pressure' | 'reconciled' | 'shutdown' | 'resumed' | `resume-failed: ${string}`;
+  | 'reaped'
+  | 'reaped-pressure'
+  | 'reconciled'
+  | 'shutdown'
+  | 'resumed'
+  | 'harness-exit'
+  | `resume-failed: ${string}`;
 
 export interface SessionStatePayload {
   readonly session_id: string;

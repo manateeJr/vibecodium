@@ -1,7 +1,8 @@
 import type { SessionOrigin } from './session-commands.js';
+
 export type SubstrateSessionState = 'live' | 'resumable' | 'closed';
 
-export type SubstrateKey = 'ctrl_u' | 'enter' | 'escape' | 'interrupt';
+export type SubstrateKey = 'ctrl_u' | 'enter' | 'escape' | 'interrupt' | 'ctrl_l';
 
 export interface SubstrateCreateOptions {
   readonly cwd?: string;
