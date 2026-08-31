@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
-import type { SubstrateClient } from '../contracts/substrate-contract.js';
+import type { SubstrateClient, SubstrateSessionState } from '../contracts/substrate-contract.js';
+import { isSubstrateSessionLive } from './relaunch-liveness.js';
 
 export const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 export const DEFAULT_REAPER_INTERVAL_MS = 60 * 1000;
@@ -7,7 +8,7 @@ export const DEFAULT_MEMORY_PRESSURE_MIN_MB = 2048;
 
 const MEM_AVAILABLE_PATTERN = /^\s*MemAvailable:\s*(\d+)\s*kB\s*$/im;
 
-export type SessionReapReason = 'reaped' | 'reaped-pressure';
+export type SessionReapReason = 'reaped' | 'reaped-pressure' | 'liveness-sweep';
 
 export interface SessionReapCandidate {
   readonly sessionId: string;
@@ -15,6 +16,12 @@ export interface SessionReapCandidate {
   readonly idle: boolean;
   readonly lastActivityAt: number;
   readonly runningTurn?: boolean;
+}
+
+export interface SessionLivenessCandidate {
+  readonly sessionId: string;
+  readonly state?: SubstrateSessionState;
+  readonly substrateName: string;
 }
 
 export interface SessionIdleReaperOptions {
@@ -29,6 +36,8 @@ export interface SessionIdleReaperOptions {
   readonly intervalMs?: number;
   readonly memoryPressureMinMb?: number;
   readonly memoryAvailableMb?: () => number | Promise<number | undefined>;
+  readonly livenessCandidates?: () => readonly SessionLivenessCandidate[];
+  readonly onLivenessLost?: (candidate: SessionLivenessCandidate) => void | Promise<void>;
 }
 
 export function idleTimeoutMsFromEnv(
@@ -87,6 +96,8 @@ export class SessionIdleReaper {
   private readonly intervalMs: number;
   private readonly memoryPressureMinMb: number;
   private readonly memoryAvailableMb: () => number | Promise<number | undefined>;
+  private readonly livenessCandidates: (() => readonly SessionLivenessCandidate[]) | undefined;
+  private readonly onLivenessLost: SessionIdleReaperOptions['onLivenessLost'];
   private timer: NodeJS.Timeout | undefined;
   private runPromise: Promise<readonly string[]> | undefined;
 
@@ -99,6 +110,8 @@ export class SessionIdleReaper {
     this.intervalMs = options.intervalMs ?? DEFAULT_REAPER_INTERVAL_MS;
     this.memoryPressureMinMb = options.memoryPressureMinMb ?? memoryPressureMinMbFromEnv();
     this.memoryAvailableMb = options.memoryAvailableMb ?? readMemAvailableMb;
+    this.livenessCandidates = options.livenessCandidates;
+    this.onLivenessLost = options.onLivenessLost;
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs < 0) {
       throw new Error('idle timeout must be a non-negative finite number');
     }
@@ -133,8 +146,8 @@ export class SessionIdleReaper {
   }
 
   private async reapExpired(): Promise<readonly string[]> {
-    const reaped: string[] = [];
-    const reapedIds = new Set<string>();
+    const reaped = [...(await this.sweepLiveness())];
+    const reapedIds = new Set(reaped);
     const attemptedPressure = new Set<string>();
 
     if (this.memoryPressureMinMb > 0) {
@@ -168,6 +181,25 @@ export class SessionIdleReaper {
       }
     }
     return reaped;
+  }
+
+  private async sweepLiveness(): Promise<readonly string[]> {
+    const candidates = this.livenessCandidates;
+    const onLivenessLost = this.onLivenessLost;
+    if (!candidates || !onLivenessLost) return [];
+    const swept: string[] = [];
+    for (const candidate of candidates()) {
+      if (candidate.state !== undefined && candidate.state !== 'live') continue;
+      if (await isSubstrateSessionLive(this.substrate, candidate.substrateName)) continue;
+      try {
+        await this.substrate.kill(candidate.substrateName);
+        await onLivenessLost(candidate);
+        swept.push(candidate.sessionId);
+      } catch {
+        // Keep the record live and retry on the next sweep if cleanup fails.
+      }
+    }
+    return swept;
   }
 
   private async reapCandidate(

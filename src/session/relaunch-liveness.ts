@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import type { SubstrateClient } from '../contracts/substrate-contract.js';
 
 export interface RelaunchLivenessResult {
@@ -22,8 +22,8 @@ export async function transcriptSnapshot(
   }
 }
 /**
- * A socket can remain connectable after the hosted harness exits. The
- * abduco listing's `live` marker is the authoritative child-liveness check.
+ * A socket can remain connectable after the hosted harness exits. Require both
+ * the abduco listing's live marker and its hosted-command PID to be alive.
  */
 export async function isSubstrateSessionLive(
   substrate: SubstrateClient,
@@ -31,7 +31,8 @@ export async function isSubstrateSessionLive(
 ): Promise<boolean> {
   try {
     const sessions = await substrate.listSessions();
-    return sessions.some((session) => session.name === substrateName && session.live);
+    const session = sessions.find((candidate) => candidate.name === substrateName);
+    return session !== undefined && session.live && (await hostedChildIsLive(session.pid));
   } catch {
     try {
       return await substrate.isLive(substrateName);
@@ -41,6 +42,17 @@ export async function isSubstrateSessionLive(
   }
 }
 
+async function hostedChildIsLive(serverPid: number | undefined): Promise<boolean> {
+  if (serverPid === undefined) return true;
+  try {
+    const children = (
+      await readFile(`/proc/${serverPid}/task/${serverPid}/children`, 'utf8')
+    ).trim();
+    return children.length > 0;
+  } catch {
+    return false;
+  }
+}
 export async function verifyRelaunchLiveness(options: {
   readonly substrate: SubstrateClient;
   readonly substrateName: string;
@@ -90,7 +102,8 @@ async function childLiveness(
   try {
     const sessions = await substrate.listSessions();
     const session = sessions.find((candidate) => candidate.name === substrateName);
-    if (session !== undefined) return { known: true, live: session.live };
+    if (session !== undefined)
+      return { known: true, live: session.live && (await hostedChildIsLive(session.pid)) };
   } catch {
     // Fall back to the substrate's liveness check for test and alternate clients.
   }

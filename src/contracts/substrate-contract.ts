@@ -14,6 +14,8 @@ export interface SubstrateCreateOptions {
 export interface SubstrateSessionInfo {
   readonly name: string;
   readonly live: boolean;
+  /** PID of the abduco server used to find its hosted command. */
+  readonly pid?: number;
 }
 
 export interface SubstrateOutputChunk {

@@ -395,6 +395,55 @@ test('ensure-live relaunches a record incorrectly left live after its child exit
   }
 });
 
+test('liveness sweep marks dead durable records and leaves live children alone', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-liveness-sweep-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const substrate = new TestSubstrate();
+  substrate.liveNames.add('substrate-alive-live');
+  const states: Array<{ sessionId: string; state: string; reason: string }> = [];
+  for (const [sessionId, substrateName] of [
+    ['dead-live', 'substrate-dead-live'],
+    ['alive-live', 'substrate-alive-live'],
+  ] as const) {
+    table.upsert({
+      sessionId,
+      provider: 'omp',
+      harnessRef: `${sessionId}-ref`,
+      substrateName,
+      transcriptPath: path.join(root, sessionId, 'session.jsonl'),
+      storageDir: path.join(root, sessionId),
+      state: 'live',
+      label: '',
+      origin: 'agent',
+      updatedAt: new Date(0).toISOString(),
+    });
+  }
+  const manager = new PersistentSessionManager({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    sessionStorageDirs: new Map(),
+    append: () => 0,
+    summaryFor: () => undefined,
+    onStateChange: (sessionId, state, reason) => states.push({ sessionId, state, reason }),
+    memoryPressureMinMb: 0,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    assert.deepEqual(await manager.runReaper(), ['dead-live']);
+    assert.equal(table.get('dead-live')?.state, 'resumable');
+    assert.equal(table.get('alive-live')?.state, 'live');
+    assert.deepEqual(states, [
+      { sessionId: 'dead-live', state: 'resumable', reason: 'liveness-sweep' },
+    ]);
+    assert.deepEqual(substrate.killedNames, ['substrate-dead-live']);
+  } finally {
+    await manager.shutdown();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('idle reaper kills persistent substrate and emits reaped state', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-reaper-'));
   const context = new TestContext();

@@ -15,6 +15,8 @@ import {
   MESSAGE_TYPES,
   parseSessionListing,
 } from '../src/substrate/index.js';
+import { isSubstrateSessionLive } from '../src/session/relaunch-liveness.js';
+import type { SubstrateClient } from '../src/contracts/substrate-contract.js';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const binaryPath = path.join(repositoryRoot, '.vibecodium', 'bin', 'abduco');
@@ -78,10 +80,22 @@ test('abduco listing parser preserves session names and liveness marker', () => 
     '',
   ].join('\n');
   assert.deepEqual(parseSessionListing(listing), [
-    { name: 'quiet', live: true },
-    { name: 'attached', live: true },
-    { name: 'dead', live: false },
+    { name: 'quiet', live: true, pid: 123 },
+    { name: 'attached', live: true, pid: 124 },
+    { name: 'dead', live: false, pid: 125 },
   ]);
+});
+
+test('substrate liveness requires the listed hosted child process', async () => {
+  const substrate = {
+    listSessions: async () => [{ name: 'session', live: true }],
+    isLive: async () => false,
+  } as unknown as SubstrateClient;
+  assert.equal(await isSubstrateSessionLive(substrate, 'session'), true);
+  substrate.listSessions = async () => [
+    { name: 'session', live: true, pid: Number.MAX_SAFE_INTEGER },
+  ];
+  assert.equal(await isSubstrateSessionLive(substrate, 'session'), false);
 });
 
 test('substrate launch wraps abduco in a deterministic transient scope', () => {

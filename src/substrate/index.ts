@@ -115,7 +115,6 @@ function sleep(milliseconds: number): Promise<void> {
 function errorFromUnknown(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
-
 export function parseSessionListing(output: string): readonly SubstrateSessionInfo[] {
   const sessions: SubstrateSessionInfo[] = [];
   for (const rawLine of output.split(/\r?\n/)) {
@@ -123,11 +122,15 @@ export function parseSessionListing(output: string): readonly SubstrateSessionIn
     const fields = rawLine.split('\t');
     const name = fields.at(-1)?.trim();
     if (!name || fields.length < 4) continue;
-    sessions.push({ name, live: rawLine[0] !== '+' });
+    const pid = Number(fields.at(-2));
+    sessions.push({
+      name,
+      live: rawLine[0] !== '+',
+      ...(Number.isInteger(pid) && pid > 0 ? { pid } : {}),
+    });
   }
   return sessions;
 }
-
 export class AbducoSubstrateClient implements SubstrateClient {
   private readonly binaryPath: string;
   private readonly environment: NodeJS.ProcessEnv;
@@ -137,7 +140,6 @@ export class AbducoSubstrateClient implements SubstrateClient {
   private readonly operationTimeoutMs: number;
   private readonly attachments = new Map<string, AttachmentState>();
   private readonly listeners = new Set<SubstrateOutputListener>();
-
   public constructor(options: AbducoSubstrateClientOptions = {}) {
     this.binaryPath = options.binaryPath ?? options.abducoPath ?? abducoBinaryPath();
     this.environment = { ...process.env };
@@ -156,7 +158,6 @@ export class AbducoSubstrateClient implements SubstrateClient {
     if (this.operationTimeoutMs <= 0)
       throw new RangeError('abduco operation timeout must be positive');
   }
-
   public async createSession(
     name: string,
     argv: readonly string[],

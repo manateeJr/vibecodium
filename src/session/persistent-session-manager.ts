@@ -82,6 +82,8 @@ export class PersistentSessionManager {
       substrate: this.substrate,
       candidates: () => this.reapCandidates(),
       onReaped: (candidate, reason) => this.finishReap(candidate, reason),
+      livenessCandidates: () => this.sessionTable?.list() ?? [],
+      onLivenessLost: (candidate) => this.finishReap(candidate, 'liveness-sweep'),
       now: () => this.now().getTime(),
       ...(options.idleTimeoutMs === undefined ? {} : { timeoutMs: options.idleTimeoutMs }),
       ...(options.reaperIntervalMs === undefined ? {} : { intervalMs: options.reaperIntervalMs }),
@@ -119,7 +121,7 @@ export class PersistentSessionManager {
       streamId,
       provider: args.provider,
       plugin,
-      substrateName: substrateNameFor(sessionId),
+      substrateName: `substrate-${sessionId}`,
       storageDir,
       transcriptPath,
       ...(resumeRef === undefined ? {} : { harnessRef: resumeRef }),
@@ -442,13 +444,11 @@ export class PersistentSessionManager {
       updatedAt: previous?.updatedAt ?? this.now().toISOString(),
     };
   }
-
   private requireWorker(sessionId: string): PersistentSessionWorker {
     const worker = this.workers.get(sessionId);
     if (!worker) throw new Error('session not found');
     return worker;
   }
-
   private reapCandidates(): readonly SessionReapCandidate[] {
     return [...this.workers.values()].map((worker) => ({
       sessionId: worker.sessionId,
@@ -458,19 +458,23 @@ export class PersistentSessionManager {
       runningTurn: worker.isBusy,
     }));
   }
-
   private async finishReap(
-    candidate: SessionReapCandidate,
+    candidate: Pick<SessionReapCandidate, 'sessionId' | 'substrateName'>,
     reason: SessionReapReason = 'reaped',
   ): Promise<void> {
     const worker = this.workers.get(candidate.sessionId);
-    if (!worker) return;
-    this.workers.delete(candidate.sessionId);
-    await worker.flushTranscript();
+    if (!worker && reason !== 'liveness-sweep') return;
+    if (worker) {
+      this.workers.delete(candidate.sessionId);
+      await worker.flushTranscript().catch(() => undefined);
+    }
     const record = this.sessionTable?.get(candidate.sessionId);
     if (record) {
-      const transcriptPath = worker.currentTranscriptPath;
-      const harnessRef = harnessRefFromTranscriptPath(transcriptPath) ?? worker.currentHarnessRef;
+      const transcriptPath = worker?.currentTranscriptPath ?? record.transcriptPath;
+      const harnessRef =
+        harnessRefFromTranscriptPath(transcriptPath) ??
+        worker?.currentHarnessRef ??
+        record.harnessRef;
       this.sessionTable?.upsert({
         ...record,
         harnessRef,
@@ -479,21 +483,15 @@ export class PersistentSessionManager {
         updatedAt: this.now().toISOString(),
       });
     }
-    await worker.shutdown();
+    await worker?.shutdown();
     this.onStateChange(candidate.sessionId, 'resumable', reason);
   }
 }
-
 function resumeFailureMessage(detail: string, prompt: string | undefined): string {
   return prompt === undefined
     ? `resume-failed: ${detail}`
     : `resume-failed: ${detail}; undelivered prompt: ${prompt}`;
 }
-
-function substrateNameFor(sessionId: string): string {
-  return `substrate-${sessionId}`;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
