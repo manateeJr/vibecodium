@@ -15,7 +15,12 @@ import {
 import { createActions } from '/ui/actions.js';
 import { renderComposeControls } from '/ui/compose-controls.js';
 import { createComposer } from '/ui/composer.js';
-import { createConnectionMonitor, wireConnectivity } from '/ui/connectivity.js';
+import {
+  createConnectionMonitor,
+  createHealthMonitor,
+  createStatusController,
+  wireConnectivity,
+} from '/ui/connectivity.js';
 import { createHistoryDrawer, createSettingsDrawer } from '/ui/drawers.js';
 import { createExternalHint } from '/ui/external-hint.js';
 import { queryElements } from '/ui/elements.js';
@@ -34,17 +39,21 @@ import { createVoiceRecorder } from '/ui/voice.js';
 const SESSION_LIMIT = 10;
 const SESSION_NOTE = 'recent sessions unavailable';
 const elements = queryElements();
+let selectedStreamId = '';
+const { setStatus, setHealth } = createStatusController(elements, () => selectedStreamId);
 let clientToken = loadToken();
 const clientOptions = { baseUrl: globalThis.location.origin };
 if (clientToken) clientOptions.token = clientToken;
 clientOptions.webSocket = createConnectionMonitor(
   setStatus,
   () => selectedStreamId,
-  () => actions.flushQueuedSends(),
+  () => {
+    void actions.flushQueuedSends();
+    void reloadDrawerLoaders();
+  },
 );
 const client = createClient(clientOptions);
 const connection = () => ({ baseUrl: globalThis.location.origin, token: clientToken });
-let selectedStreamId = '';
 const actionState = {
   opening: false,
   stopping: false,
@@ -291,14 +300,18 @@ settings.setShowAllSessions(historyController.showAllSessions);
 showHome();
 updateScope();
 void boot();
+const reloadDrawerLoaders = () =>
+  Promise.all([loadSessions(), historyController.loadRecentSessions(), loadMachineSessions()]);
 wireConnectivity({
   setStatus,
   getSelected: () => selectedStreamId,
   hydrate: feed.hydrate,
   reconnect: () => client.reconnect(),
+  reload: reloadDrawerLoaders,
 });
 wireServiceWorkerUpdates({ button: elements.updateReload });
 client.subscribe(0, feed.ingest, '*');
+createHealthMonitor({ onState: setHealth });
 async function boot() {
   await projectManager.load();
   refreshPresets();
@@ -400,16 +413,10 @@ function setShowAgents(next) {
   renderSessions();
 }
 
-function setStatus(label, tone) {
-  elements.status.textContent = label;
-  elements.connection.dataset.tone = tone;
-}
-
 function setComposeNote(text) {
   elements.composeNote.textContent = text;
   elements.composeNote.hidden = !text;
 }
-
 function refreshControls() {
   renderComposeControls({
     elements,
@@ -432,6 +439,7 @@ function ensureEntry(streamId, label = '') {
 
 function showHome() {
   selectedStreamId = '';
+  setStatus('READY', 'idle');
   gitStatus.hide();
   sessionView.setHome(true);
   sessionView.selectSession('');
@@ -439,23 +447,19 @@ function showHome() {
   streamLog.render();
   refreshControls();
 }
-
 function selectNew() {
   showHome();
   elements.composeInput.focus();
 }
-
 function selectRecent(session) {
   selectSessionItem(itemFromRecent(session));
 }
-
 function selectSessionItem(item) {
   const existing = sessions.get(item.stream_id);
   const entry = existing ?? (item.external ? adoptExternalItem(item) : adoptSessionItem(item));
   if (!entry) return;
   selectStream(entry.stream_id);
 }
-
 function adoptExternalItem(item) {
   const entry = externalEntry(item);
   sessions.set(entry.stream_id, entry);
@@ -467,11 +471,11 @@ function adoptSessionItem(item) {
   const entry = ensureEntry(item.stream_id, item.provider);
   return entry ? applyItem(entry, item) : null;
 }
-
 function selectStream(streamId) {
   const entry = sessions.get(streamId);
   if (!entry) return;
   selectedStreamId = streamId;
+  setStatus('LIVE', 'live');
   sessionView.setHome(false);
   streamLog.render();
   refreshControls();
