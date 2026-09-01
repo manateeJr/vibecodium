@@ -1,0 +1,20 @@
+[Unit]
+Description=Vibecodium event-loop watchdog
+Documentation=https://github.com/manateeJr/vibecodium
+After=network-online.target vibecodium.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vibecodium
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/var/lib/snapd/snap/bin
+Environment=VIBECODIUM_WATCHDOG_ENABLED=1
+ExecStart=node scripts/watchdog.mjs
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vibecodium-watchdog
+
+[Install]
+WantedBy=default.target

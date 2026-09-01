@@ -54,6 +54,7 @@ import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import { applySessionSubstrateState } from './session-state.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
+import { registerSessionProbes } from './substrate-probe.js';
 import { SessionSendIdempotency } from './send-idempotency.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
 export type { SessionFork } from './worker-lifecycle.js';
@@ -95,7 +96,6 @@ export class SessionSubsystem implements Subsystem {
   private readonly idleTimeoutMs: number | undefined;
   private readonly reaperIntervalMs: number | undefined;
   private readonly now: () => Date;
-  private reconciliationStarted = false;
   public constructor(options: SessionSubsystemOptions = {}) {
     this.workerPath =
       options.workerPath ?? fileURLToPath(new URL('../server/session-worker.js', import.meta.url));
@@ -114,7 +114,7 @@ export class SessionSubsystem implements Subsystem {
     if (this.context) throw new Error('session subsystem is already registered');
     this.context = context;
     this.subscribePty = createPtySubscription(this.substrate, this.sessionTable);
-    context.registerPtySource?.(this.subscribePty);
+    registerSessionProbes(context, this.subscribePty, this.substrate, this.sessionTable);
     if (this.substrate) {
       this.persistentManager = new PersistentSessionManager({
         substrate: this.substrate,
@@ -164,8 +164,7 @@ export class SessionSubsystem implements Subsystem {
   }
   public reconcile(): Promise<void> {
     if (!this.sessionTable) return Promise.resolve();
-    if (this.reconciliationStarted) return this.reconciliationPromise ?? Promise.resolve();
-    this.reconciliationStarted = true;
+    if (this.reconciliationPromise) return this.reconciliationPromise;
     this.reconciliationPromise = this.reconcileRecords();
     return this.reconciliationPromise;
   }

@@ -1,4 +1,5 @@
 import type { EventEnvelope, EventKind, EventPayload } from './events.js';
+import type { ProbeFunction, ProbeRegistrationOptions } from './probe.js';
 
 export type EventHandler = (event: EventEnvelope) => void;
 
@@ -18,6 +19,8 @@ export interface SubsystemContext {
   append<K extends EventKind>(stream_id: string, type: K, payload: EventPayload<K>): number;
   /** Subscribe to the global event log after a sequence cursor. */
   subscribe(from_seq: number, onEvent: EventHandler): () => void;
+  /** Register a read-only diagnostic probe for this subsystem. */
+  registerProbe?(name: string, fn: ProbeFunction, opts?: ProbeRegistrationOptions): void;
   /** Register the ephemeral PTY output source; frames are never persisted. */
   registerPtySource?(
     subscribe: (sessionId: string, listener: (data: Uint8Array) => void) => () => void,

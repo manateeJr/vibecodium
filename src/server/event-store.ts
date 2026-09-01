@@ -2,6 +2,10 @@ import Database from 'better-sqlite3';
 import type { EventEnvelope, EventKind, EventPayload } from '../contracts/events.js';
 
 type EventListener = (event: EventEnvelope) => void;
+export interface EventStoreStats {
+  readonly events: number;
+  readonly lastSeq: number;
+}
 type EventRow = {
   seq: number;
   stream_id: string;
@@ -19,6 +23,7 @@ export class EventStore {
   private readonly listeners = new Map<string, Set<EventListener>>();
   private readonly allListeners = new Set<EventListener>();
   private readonly insertEvent;
+  private readonly readStats;
   private readonly readProjectorCursor;
   private readonly writeProjectorCursor;
 
@@ -42,6 +47,9 @@ export class EventStore {
     `);
     this.insertEvent = this.database.prepare(
       'INSERT INTO events (stream_id, type, payload, ts) VALUES (?, ?, ?, ?)',
+    );
+    this.readStats = this.database.prepare(
+      'SELECT COUNT(*) AS events, COALESCE(MAX(seq), 0) AS lastSeq FROM events',
     );
     this.readProjectorCursor = this.database.prepare(
       'SELECT seq FROM projector_cursors WHERE name = ?',
@@ -106,6 +114,10 @@ export class EventStore {
     const row = this.database.prepare('SELECT seq FROM events ORDER BY seq DESC LIMIT 1').get() as
       { seq?: number } | undefined;
     return row?.seq ?? 0;
+  }
+  public stats(): EventStoreStats {
+    const row = this.readStats.get() as { events?: number; lastSeq?: number } | undefined;
+    return { events: Number(row?.events ?? 0), lastSeq: Number(row?.lastSeq ?? 0) };
   }
 
   public projectorCursor(name: string): number {

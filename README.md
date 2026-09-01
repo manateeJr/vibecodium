@@ -7,6 +7,25 @@ Deployment provisions the `vibecodium` command at `~/.local/bin/vibecodium`.
 Start the control plane with `vibecodium start` (or `vibecodium dev`). The
 control plane defaults to `http://127.0.0.1:4310`.
 
+### Event-loop watchdog (optional)
+
+The watchdog is off by default. To install and enable it alongside the user
+service, copy `deploy/vibecodium-watchdog.service` to
+`~/.config/systemd/user/`, adjust `WorkingDirectory` if the checkout is not
+`~/vibecodium`, then run:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now vibecodium-watchdog.service
+```
+
+The control plane writes `heartbeat.json` in its data directory (normally
+`.vibecodium`) before a wedge. After three consecutive `/healthz` failures,
+the watchdog records `wedge-<timestamp>.json` there with the last heartbeat and
+accept-queue/RSS data before restarting `vibecodium.service`. Tune polling,
+timeouts, failure count, and cooldown with the `VIBECODIUM_WATCHDOG_*`
+environment variables.
+
 Session transcripts are stored under `~/.vibecodium/sessions` by default. Set
 `VIBECODIUM_SESSION_STORAGE_ROOT` to override that directory.
 

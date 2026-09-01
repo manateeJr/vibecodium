@@ -11,6 +11,8 @@ import {
   errorMessage,
   isLoopbackAddress,
   readJsonBody,
+  sendAsset,
+  sendJson,
 } from './control-plane-helpers.js';
 import { handleShareIntake } from './share-intake.js';
 import {
@@ -32,6 +34,8 @@ import { registerSubsystems } from '../subsystems/index.js';
 import { Authority } from './authority.js';
 import type { ScopedAction } from './authority.js';
 import { EventStore } from './event-store.js';
+import { Observability } from './observability.js';
+import type { ProbeRun } from '../contracts/probe.js';
 import {
   CommandAuthorizationError,
   CommandDispatcher,
@@ -53,7 +57,6 @@ export interface ControlPlaneOptions {
   readonly capabilityTokens?: Pick<CapabilityTokenManager, 'verify' | 'consume'>;
   readonly tokenVerifier?: Pick<CapabilityTokenManager, 'verify' | 'consume'>;
 }
-
 export type CommandTokenVerifier = Pick<CapabilityTokenManager, 'verify' | 'consume'>;
 export interface ControlPlaneAddress {
   readonly host: string;
@@ -84,8 +87,10 @@ export class ControlPlane {
     registerListener: (name, handler) => this.registerListener(name, handler),
     append: (stream_id, type, payload) => this.eventStore.append(stream_id, type, payload),
     subscribe: (from_seq, onEvent) => this.eventStore.subscribeAll(from_seq, onEvent),
+    registerProbe: (name, fn, options) => this.observability.registerProbe(name, fn, options),
     registerPtySource: (subscribe) => this.ptyBridge.registerSource(subscribe),
   };
+  private readonly observability: Observability;
   private readonly host: string;
   private readonly port: number;
   private readonly projectors = new Map<string, EventHandler>();
@@ -117,6 +122,12 @@ export class ControlPlane {
       });
     this.host = options.host ?? '127.0.0.1';
     this.port = options.port ?? 4310;
+    this.observability = new Observability({
+      dataPath: options.dataPath,
+      eventStore: this.eventStore,
+      httpServer: () => this.httpServer,
+    });
+    this.observability.registerCoreProbes(this.context);
     const registeredSubsystems = registerSubsystems(this.context, options.subsystems, {
       sessionTableFilename: options.dataPath,
     });
@@ -130,6 +141,7 @@ export class ControlPlane {
     this.commandDispatcher = new CommandDispatcher(this.commands, this.tokenVerifier);
     this.commandDispatcher.registerWorkflowRun();
   }
+  public runProbes = (target?: string): Promise<ProbeRun> => this.observability.runProbes(target);
   public async start(): Promise<ControlPlaneAddress> {
     if (this.boundAddress) return this.boundAddress;
     this.httpServer = createServer((request, response) => this.handleHttp(request, response));
@@ -151,9 +163,11 @@ export class ControlPlane {
       httpUrl: `http://${this.host}:${serverAddress.port}`,
       wsUrl: `ws://${this.host}:${serverAddress.port}`,
     };
+    this.observability.startHeartbeat();
     return this.boundAddress;
   }
   public async stop(): Promise<void> {
+    this.observability.stopHeartbeat();
     for (const [socket, subscriptions] of this.clientSubscriptions) {
       for (const unsubscribe of subscriptions.values()) unsubscribe();
       subscriptions.clear();
@@ -215,7 +229,7 @@ export class ControlPlane {
       try {
         commandName = decodeURIComponent(requestUrl.pathname.slice(commandPrefix.length));
       } catch {
-        this.sendJson(response, 400, { error: 'invalid_command_name' });
+        sendJson(response, 400, { error: 'invalid_command_name' });
         return;
       }
       void this.handleCommandHttp(
@@ -226,27 +240,39 @@ export class ControlPlane {
       );
       return;
     }
+    if (request.method === 'GET' && requestUrl.pathname === '/debug/probe') {
+      if (!this.commandDispatcher.verifyToken(bearerToken(request.headers.authorization))) {
+        sendJson(response, 401, { error: 'unauthorized' });
+        return;
+      }
+      const target = requestUrl.searchParams.get('target') ?? undefined;
+      void this.observability
+        .runProbes(target)
+        .then((result) => sendJson(response, 200, result))
+        .catch(() => sendJson(response, 404, { error: 'unknown_probe' }));
+      return;
+    }
     if (
       !isLoopbackAddress(request.socket.remoteAddress) &&
       !this.commandDispatcher.verifyToken(bearerToken(request.headers.authorization))
     ) {
-      this.sendJson(response, 401, { error: 'unauthorized' });
+      sendJson(response, 401, { error: 'unauthorized' });
       return;
     }
     if (request.method === 'GET' && requestUrl.pathname === '/healthz') {
-      this.sendJson(response, 200, { ok: true, service: 'vibecodium-control-plane' });
+      sendJson(response, 200, { ok: true, service: 'vibecodium-control-plane' });
       return;
     }
     if (request.method === 'GET' && requestUrl.pathname === '/events') {
       const stream_id = requestUrl.searchParams.get('stream_id');
       const from_seq = Number(requestUrl.searchParams.get('from_seq') ?? '0');
       if (!stream_id || !Number.isInteger(from_seq) || from_seq < 0) {
-        this.sendJson(response, 400, {
+        sendJson(response, 400, {
           error: 'stream_id and non-negative integer from_seq are required',
         });
         return;
       }
-      this.sendJson(response, 200, { events: this.eventStore.read(stream_id, from_seq) });
+      sendJson(response, 200, { events: this.eventStore.read(stream_id, from_seq) });
       return;
     }
     if (request.method === 'POST' && requestUrl.pathname === '/share-intake') {
@@ -255,7 +281,7 @@ export class ControlPlane {
     }
     if (request.method === 'POST' && requestUrl.pathname === REPORT_INTAKE_PATH) {
       if (!this.reportIntake) {
-        this.sendJson(response, 404, { error: 'not_found' });
+        sendJson(response, 404, { error: 'not_found' });
         return;
       }
       void this.reportIntake(request, response, {
@@ -265,24 +291,24 @@ export class ControlPlane {
     }
     if (request.method === 'GET') {
       if (requestUrl.pathname === '/tokens.css') {
-        this.sendAsset(response, 200, 'text/css', Buffer.from(tokensToCssVars()));
+        sendAsset(response, 200, 'text/css', Buffer.from(tokensToCssVars()));
         return;
       }
       if (requestUrl.pathname === '/client.js') {
         try {
-          this.sendAsset(response, 200, 'text/javascript', fs.readFileSync(CLIENT_BUNDLE));
+          sendAsset(response, 200, 'text/javascript', fs.readFileSync(CLIENT_BUNDLE));
         } catch {
-          this.sendJson(response, 404, { error: 'not_found' });
+          sendJson(response, 404, { error: 'not_found' });
         }
         return;
       }
       const asset = serveStaticAsset(WEB_DIR, requestUrl.pathname);
       if (asset.status === 200) {
-        this.sendAsset(response, asset.status, asset.contentType, asset.body);
+        sendAsset(response, asset.status, asset.contentType, asset.body);
         return;
       }
     }
-    this.sendJson(response, 404, { error: 'not_found' });
+    sendJson(response, 404, { error: 'not_found' });
   }
   private async handleCommandHttp(
     request: IncomingMessage,
@@ -294,7 +320,7 @@ export class ControlPlane {
     try {
       args = await readJsonBody(request);
     } catch {
-      this.sendJson(response, 400, { error: 'request body must be valid JSON' });
+      sendJson(response, 400, { error: 'request body must be valid JSON' });
       return;
     }
     try {
@@ -304,10 +330,10 @@ export class ControlPlane {
         headerToken,
         request.socket.remoteAddress,
       );
-      this.sendJson(response, 200, { value });
+      sendJson(response, 200, { value });
     } catch (error: unknown) {
       const statusCode = error instanceof CommandAuthorizationError ? 401 : 400;
-      this.sendJson(response, statusCode, { error: errorMessage(error) });
+      sendJson(response, statusCode, { error: errorMessage(error) });
     }
   }
   private handleConnection(socket: WebSocket): void {
@@ -453,26 +479,6 @@ export class ControlPlane {
   }
   private send(socket: WebSocket, message: unknown): void {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
-  }
-  private sendAsset(
-    response: ServerResponse,
-    statusCode: number,
-    contentType: string,
-    body: Buffer,
-  ): void {
-    response.writeHead(statusCode, {
-      'content-type': contentType,
-      'content-length': body.byteLength,
-    });
-    response.end(body);
-  }
-  private sendJson(response: ServerResponse, statusCode: number, body: unknown): void {
-    const serialized = JSON.stringify(body);
-    response.writeHead(statusCode, {
-      'content-type': 'application/json; charset=utf-8',
-      'content-length': Buffer.byteLength(serialized),
-    });
-    response.end(serialized);
   }
 }
 
