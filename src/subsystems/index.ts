@@ -1,6 +1,7 @@
 import type { Subsystem, SubsystemContext } from '../contracts/subsystem.js';
 import type { SubstrateClient } from '../contracts/substrate-contract.js';
 import { createSubstrateClient } from '../substrate/index.js';
+import { planeSocketDir } from '../substrate/paths.js';
 import { SessionTable } from '../session/session-table.js';
 import { createHostSubsystem } from '../host/index.js';
 import { createMachineSessionsSubsystem } from '../machine-sessions/index.js';
@@ -26,10 +27,15 @@ export function registerSubsystems(
   subsystems?: readonly Subsystem[],
   options: SubsystemRegistrationOptions = {},
 ): readonly Subsystem[] {
+  const socketDir =
+    options.substrate === undefined
+      ? planeSocketDir(options.sessionTableFilename ?? ':memory:')
+      : undefined;
   const machineSessions = createMachineSessionsSubsystem();
   const sessions = createSessionSubsystem({
     machineSessions,
-    substrate: options.substrate ?? createSubstrateClient(),
+    substrate:
+      options.substrate ?? createSubstrateClient(socketDir === undefined ? {} : { socketDir }),
     sessionTable:
       options.sessionTable ??
       new SessionTable({ filename: options.sessionTableFilename ?? ':memory:' }),

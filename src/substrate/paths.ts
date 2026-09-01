@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
@@ -13,6 +14,32 @@ function userName(): string {
   } catch {
     return process.env.USER ?? process.env.USERNAME ?? String(process.getuid?.() ?? 'user');
   }
+}
+
+const ABDUCO_SUN_PATH_BYTES = 108;
+const WORST_CASE_SUBSTRATE_NAME = `substrate-${'0'.repeat(36)}`;
+
+export function planeSocketDir(
+  dataPath: string,
+  environment?: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const env = environment ?? process.env;
+  if (env.ABDUCO_SOCKET_DIR?.length) return undefined;
+  if (!dataPath || dataPath === ':memory:') return undefined;
+
+  const id = createHash('sha1').update(path.resolve(dataPath)).digest('hex').slice(0, 8);
+  const candidateBases = [
+    env.XDG_RUNTIME_DIR?.length ? env.XDG_RUNTIME_DIR : undefined,
+    env.TMPDIR?.length ? env.TMPDIR : undefined,
+    os.tmpdir(),
+  ].filter((base): base is string => base !== undefined);
+  for (const base of [...new Set(candidateBases)]) {
+    const socketDir = path.join(base, `vc-${id}`);
+    const socketPath = socketPathCandidates(WORST_CASE_SUBSTRATE_NAME, { socketDir })[0];
+    if (socketPath !== undefined && Buffer.byteLength(socketPath) < ABDUCO_SUN_PATH_BYTES)
+      return socketDir;
+  }
+  return undefined;
 }
 
 export function validateSessionName(name: string): void {
