@@ -16,6 +16,7 @@ export function createHistoryDrawer({
   searchInput,
   projectFilter,
   pinnedList,
+  archivedList,
   liveList,
   endedList,
   machineList,
@@ -27,6 +28,7 @@ export function createHistoryDrawer({
   onRecentSelect = onLiveSelect,
   onMachineSelect,
   onPin = () => undefined,
+  onArchive = () => undefined,
   onNew,
   onPreset,
   onOpen,
@@ -35,6 +37,7 @@ export function createHistoryDrawer({
 }) {
   let liveItems = [];
   let recentItems = [];
+  let archivedItems = [];
   let machineEntries = [];
   let registeredProjects = [];
   let presets = [];
@@ -83,10 +86,17 @@ export function createHistoryDrawer({
   });
 
   const visible = (entry, showAgents) =>
+    entry.archived !== true &&
+    (showAgents || entry.origin !== 'agent') &&
+    (getShowAllSessions() || entry.source === 'pocket') &&
+    matchesEntry(entry, query, selectedProject, registeredProjects);
+  const visibleArchived = (entry, showAgents) =>
+    entry.archived === true &&
     (showAgents || entry.origin !== 'agent') &&
     (getShowAllSessions() || entry.source === 'pocket') &&
     matchesEntry(entry, query, selectedProject, registeredProjects);
   const visibleLive = (entry) =>
+    entry.archived !== true &&
     (getShowAllSessions() || entry.source === 'pocket') &&
     matchesQuery(
       query,
@@ -100,18 +110,19 @@ export function createHistoryDrawer({
       projectForEntry(entry, registeredProjects),
     );
 
-  const renderRows = (target, items, onSelect) => {
+  const renderRows = (target, items, onSelect, emptyText = 'No sessions.') => {
     if (items.length === 0) {
-      target.append(emptyItem(query || selectedProject ? 'No matching sessions.' : 'No sessions.'));
+      target.append(emptyItem(query || selectedProject ? 'No matching sessions.' : emptyText));
       return;
     }
     for (const item of items) {
-      target.append(sessionRecentRow(item, onSelect, onPin, registeredProjects));
+      target.append(sessionRecentRow(item, onSelect, onPin, onArchive, registeredProjects));
     }
   };
 
   const render = () => {
     pinnedList.replaceChildren();
+    archivedList?.replaceChildren();
     liveList.replaceChildren();
     endedList.replaceChildren();
     machineList.replaceChildren();
@@ -119,11 +130,14 @@ export function createHistoryDrawer({
     const live = liveItems
       .filter((item) => isLive(item.status) && visibleLive(item))
       .sort(compareActivity);
-    const recent = recentItems.filter((item) => visible(item, showAgents)).sort(compareActivity);
-    const pinned = recent.filter((item) => item.pinned === true);
-    const ended = recent.filter(
-      (item) => item.pinned !== true && !isLive(item.state ?? item.status),
-    );
+    const recent = [
+      ...recentItems.filter((item) => visible(item, showAgents)),
+      ...archivedItems.filter((item) => visibleArchived(item, showAgents)),
+    ];
+    const grouped = groupRecentItems(recent);
+    const pinned = grouped.pinned.sort(compareActivity);
+    const ended = grouped.ended.sort(compareActivity);
+    const archived = grouped.archived.sort(compareActivity);
     const machine = machineEntries
       .filter(
         (entry) =>
@@ -137,8 +151,9 @@ export function createHistoryDrawer({
       liveList.append(
         emptyItem(query || selectedProject ? 'No matching sessions.' : 'No sessions.'),
       );
-    else renderLiveGroups(liveList, live, onLiveSelect, registeredProjects, onPin);
+    else renderLiveGroups(liveList, live, onLiveSelect, registeredProjects, onPin, onArchive);
     renderRows(endedList, ended, onRecentSelect);
+    if (archivedList) renderRows(archivedList, archived, onRecentSelect, 'No archived sessions.');
     if (machine.length === 0)
       machineList.append(
         emptyItem(
@@ -198,6 +213,10 @@ export function createHistoryDrawer({
       recentItems = [...items];
       render();
     },
+    renderArchived(items) {
+      archivedItems = [...items];
+      render();
+    },
     renderMachine(entries) {
       machineEntries = [...entries];
       render();
@@ -224,7 +243,17 @@ export function createHistoryDrawer({
   };
 }
 
-function renderLiveGroups(target, items, onSelect, projects, onPin) {
+export function groupRecentItems(items) {
+  const active = items.filter((item) => item.archived !== true);
+  return {
+    pinned: active.filter((item) => item.pinned === true),
+    live: active.filter((item) => item.pinned !== true && isLive(item.state ?? item.status)),
+    ended: active.filter((item) => item.pinned !== true && !isLive(item.state ?? item.status)),
+    archived: items.filter((item) => item.archived === true),
+  };
+}
+
+function renderLiveGroups(target, items, onSelect, projects, onPin, onArchive) {
   const groups = new Map();
   for (const item of items) {
     const project = projectForEntry(item, projects);
@@ -240,22 +269,25 @@ function renderLiveGroups(target, items, onSelect, projects, onPin) {
     heading.textContent = project;
     const list = document.createElement('div');
     list.className = 'history-group__list';
-    for (const item of grouped) list.append(liveRow(item, onSelect, projects, onPin));
+    for (const item of grouped) list.append(liveRow(item, onSelect, projects, onPin, onArchive));
     section.append(heading, list);
     target.append(section);
   }
 }
 
-function sessionRecentRow(item, onSelect, onPin, projects) {
+function sessionRecentRow(item, onSelect, onPin, onArchive, projects) {
+  const state = item.state ?? item.status ?? 'done';
   return historyRow({
     title: item.label || `session · ${item.provider}`,
     project: projectForEntry(item, projects),
-    meta: `${item.state} · ${relativeTime(item.updated_at)}`,
-    status: item.state,
+    meta: `${state} · ${relativeTime(item.updated_at)}`,
+    status: state,
     preview: Array.isArray(item.preview) ? item.preview : [],
     sub: item.origin === 'agent',
     pinned: item.pinned === true,
+    archived: item.archived === true,
     onPin: (pinned) => onPin(item, pinned),
+    onArchive: (archived) => onArchive(item, archived),
     onSelect: () => onSelect(item),
   });
 }
@@ -264,8 +296,10 @@ function isLive(status) {
   return status === 'running' || status === 'ready' || status === 'live' || status === 'external';
 }
 
-function liveRow(item, onSelect, projects, onPin) {
+function liveRow(item, onSelect, projects, onPin, onArchive) {
   const kind = item.external ? 'machine' : 'session';
+  const canArchive =
+    !item.external && Boolean(item.session_id || item.stream_id?.startsWith('session:'));
   return historyRow({
     title: item.label || `${kind} · ${item.provider}`,
     project: projectForEntry(item, projects),
@@ -273,7 +307,9 @@ function liveRow(item, onSelect, projects, onPin) {
     status: item.status,
     sub: item.origin === 'agent',
     pinned: item.pinned === true,
+    archived: item.archived === true,
     onPin: item.session_id ? (pinned) => onPin(item, pinned) : undefined,
+    onArchive: canArchive ? (archived) => onArchive(item, archived) : undefined,
     onSelect: () => onSelect(item),
   });
 }

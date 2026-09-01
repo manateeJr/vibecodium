@@ -16,6 +16,8 @@ import {
 } from './report-commands.js';
 import type * as ReportCommands from './report-commands.js';
 import type {
+  SessionArchiveArgs,
+  SessionArchiveResult,
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
   SessionEnsureLiveArgs,
@@ -45,6 +47,8 @@ export type {
   PtyServerFrame,
   PtySubscribeFrame,
   PtyUnsubscribeFrame,
+  SessionArchiveArgs,
+  SessionArchiveResult,
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
   SessionEnsureLiveArgs,
@@ -85,7 +89,6 @@ export {
   REPORT_STREAM_ID,
   REPORT_SWEEP_INTERVAL_MS,
 };
-
 export const COMMAND_NAMES = {
   sessionOpen: 'session.open',
   sessionRename: 'session.rename',
@@ -95,6 +98,7 @@ export const COMMAND_NAMES = {
   sessionRecent: SESSION_RECENT_COMMAND,
   sessionFork: 'session.fork',
   sessionPin: 'session.pin',
+  sessionArchive: 'session.archive',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
   workflowApprove: 'workflow.approve',
@@ -137,6 +141,7 @@ export const SESSION_SEND_COMMAND = COMMAND_NAMES.sessionSend;
 export const SESSION_LIST_COMMAND = COMMAND_NAMES.sessionList;
 export const SESSION_FORK_COMMAND = COMMAND_NAMES.sessionFork;
 export const SESSION_PIN_COMMAND = COMMAND_NAMES.sessionPin;
+export const SESSION_ARCHIVE_COMMAND = COMMAND_NAMES.sessionArchive;
 export const WORKSPACE_LIST_COMMAND = COMMAND_NAMES.workspaceList;
 export const WORKFLOW_RUN_COMMAND = COMMAND_NAMES.workflowRun;
 export const WORKFLOW_APPROVE_COMMAND = COMMAND_NAMES.workflowApprove;
@@ -201,27 +206,22 @@ export type ProjectListArgs = Record<string, never>;
 export interface ProjectListResult {
   readonly projects: readonly Project[];
 }
-
 export interface ProjectDetectArgs {
   readonly path: string;
   readonly description?: string;
 }
-
 export interface ProjectDetectResult {
   readonly proposed: readonly QuickAction[];
 }
-
 export interface ProjectSaveArgs {
   readonly name: string;
   readonly path: string;
   readonly description: string;
   readonly quickActions: readonly QuickAction[];
 }
-
 export interface ProjectSaveResult {
   readonly project: Project;
 }
-
 export interface ProjectRemoveArgs {
   readonly name: string;
 }
@@ -370,6 +370,7 @@ export interface CommandArgsMap {
   'session.recent': SessionRecent.SessionRecentArgs;
   'session.fork': SessionForkArgs;
   'session.pin': SessionPinArgs;
+  'session.archive': SessionArchiveArgs;
   'voice.transcribe': VoiceTranscribeArgs;
   'host.stats': HostStatsArgs;
   'host.set_session_cap': HostSetSessionCapArgs;
@@ -415,6 +416,7 @@ export interface CommandResultMap {
   'session.recent': SessionRecent.SessionRecentResult;
   'session.fork': SessionForkResult;
   'session.pin': SessionPinResult;
+  'session.archive': SessionArchiveResult;
   'voice.transcribe': VoiceTranscribeResult;
   'host.stats': HostStatsResult;
   'host.set_session_cap': HostSetSessionCapResult;
@@ -439,10 +441,8 @@ export interface CommandResultMap {
   'skill.propose': SkillProposeResult;
   'skill.invoke': SkillInvokeResult;
 }
-
 export type CommandArgs<Name extends CommandName = CommandName> = CommandArgsMap[Name];
 export type CommandResult<Name extends CommandName = CommandName> = CommandResultMap[Name];
-
 export interface CommandFrame<Name extends string = string> {
   readonly id: string;
   readonly type: 'command';

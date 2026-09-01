@@ -103,6 +103,7 @@ export function queryElements() {
     historySearch: document.querySelector('#history-search'),
     historyProjectFilter: document.querySelector('#history-project-filter'),
     pinnedHistory: document.querySelector('#pinned-history'),
+    archivedHistory: document.querySelector('#archived-history'),
     liveHistory: document.querySelector('#live-history'),
     endedHistory: document.querySelector('#ended-history'),
     machineHistory: document.querySelector('#machine-history'),

@@ -16,6 +16,7 @@ export function mergeSessionItems({ remote, local, limit }) {
       origin: summary.origin ?? '',
       ...(summary.source === undefined ? {} : { source: summary.source }),
       ...(summary.pinned === undefined ? {} : { pinned: summary.pinned }),
+      ...(summary.archived === undefined ? {} : { archived: summary.archived }),
       time: Date.parse(summary.updated_at ?? summary.started_at ?? '') || 0,
     });
   }
@@ -29,9 +30,9 @@ export function mergeSessionItems({ remote, local, limit }) {
       cwd: entry.cwd ?? '',
       project: entry.project ?? '',
       label: entry.sessionLabel ?? '',
-      origin: entry.origin ?? '',
       ...(entry.source === undefined ? {} : { source: entry.source }),
       ...(entry.pinned === undefined ? {} : { pinned: entry.pinned }),
+      ...(entry.archived === undefined ? {} : { archived: entry.archived }),
       time: activityTime(entry),
       ...(entry.external ? { external: true, title: entry.title ?? '' } : {}),
     });

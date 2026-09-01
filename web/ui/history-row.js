@@ -14,8 +14,10 @@ export function historyRow({
   preview = [],
   sub = false,
   pinned = false,
+  archived = false,
   onPin,
   pinLabel = 'session',
+  onArchive,
   onSelect,
 }) {
   const button = document.createElement('button');
@@ -23,6 +25,11 @@ export function historyRow({
   button.type = 'button';
   button.dataset.status = status;
   button.dataset.sub = sub ? 'yes' : 'no';
+  button.dataset.archived = archived ? 'yes' : 'no';
+  button.dataset.swipe = 'closed';
+
+  const content = document.createElement('span');
+  content.className = 'history-item__content';
 
   const heading = document.createElement('span');
   heading.className = 'history-item__title';
@@ -48,12 +55,12 @@ export function historyRow({
   detail.className = 'history-item__meta';
   detail.textContent = meta;
 
-  button.append(heading, scope, detail);
+  content.append(heading, scope, detail);
   for (const line of preview) {
     const previewLine = document.createElement('span');
     previewLine.className = 'history-item__preview';
     previewLine.textContent = line;
-    button.append(previewLine);
+    content.append(previewLine);
   }
   if (onPin) {
     const pin = document.createElement('button');
@@ -65,8 +72,108 @@ export function historyRow({
       event.stopPropagation();
       onPin(!pinned);
     });
-    button.append(pin);
+    content.append(pin);
   }
-  button.addEventListener('click', () => onSelect());
+  button.append(content);
+
+  if (onArchive) {
+    const archiveButton = document.createElement('button');
+    archiveButton.className = 'history-item__archive';
+    archiveButton.type = 'button';
+    archiveButton.textContent = archived ? 'RESTORE' : 'ARCHIVE';
+    archiveButton.setAttribute('aria-label', `${archived ? 'Restore' : 'Archive'} ${title}`);
+    archiveButton.tabIndex = -1;
+    archiveButton.setAttribute('aria-hidden', 'true');
+    button.append(archiveButton);
+
+    const swipeWidth = 88;
+    const swipeThreshold = 48;
+    let startX = 0;
+    let startY = 0;
+    let baseOffset = 0;
+    let horizontal = false;
+    let ignored = false;
+    let suppressClick = false;
+
+    const setOpen = (open) => {
+      button.dataset.swipe = open ? 'open' : 'closed';
+      archiveButton.tabIndex = open ? 0 : -1;
+      archiveButton.setAttribute('aria-hidden', String(!open));
+      content.style.transform = '';
+    };
+
+    const resetPointer = () => {
+      horizontal = false;
+      ignored = false;
+      startX = 0;
+      startY = 0;
+      baseOffset = button.dataset.swipe === 'open' ? swipeWidth : 0;
+      button.classList.remove('history-item--dragging');
+    };
+
+    archiveButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setOpen(false);
+      onArchive(!archived);
+    });
+
+    button.addEventListener('pointerdown', (event) => {
+      if (event.isPrimary === false) return;
+      suppressClick = false;
+      startX = event.clientX;
+      startY = event.clientY;
+      baseOffset = button.dataset.swipe === 'open' ? swipeWidth : 0;
+      horizontal = false;
+      ignored = false;
+      button.classList.remove('history-item--dragging');
+    });
+    button.addEventListener(
+      'pointermove',
+      (event) => {
+        if (event.isPrimary === false || ignored) return;
+        const dx = event.clientX - startX;
+        const dy = event.clientY - startY;
+        if (!horizontal) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+          if (Math.abs(dx) <= Math.abs(dy)) {
+            ignored = true;
+            suppressClick = true;
+            return;
+          }
+          horizontal = true;
+          suppressClick = true;
+          button.classList.add('history-item--dragging');
+          button.setPointerCapture?.(event.pointerId);
+        }
+        event.preventDefault();
+        const offset = Math.max(0, Math.min(swipeWidth, baseOffset - dx));
+        content.style.transform = `translateX(${-offset}px)`;
+      },
+      { passive: false },
+    );
+    button.addEventListener('pointerup', (event) => {
+      if (event.isPrimary === false) return;
+      if (horizontal) {
+        const dx = event.clientX - startX;
+        const offset = Math.max(0, Math.min(swipeWidth, baseOffset - dx));
+        setOpen(offset >= swipeThreshold);
+      }
+      resetPointer();
+    });
+    button.addEventListener('pointercancel', () => {
+      if (horizontal) setOpen(button.dataset.swipe === 'open');
+      resetPointer();
+    });
+
+    button.addEventListener('click', () => {
+      if (suppressClick) {
+        suppressClick = false;
+        return;
+      }
+      onSelect();
+    });
+  } else {
+    button.addEventListener('click', () => onSelect());
+  }
   return button;
 }

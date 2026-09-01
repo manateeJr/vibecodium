@@ -56,6 +56,11 @@ export function recentSessions(
     // sessions as well; the client still applies its AGENTS preference.
     .filter((record) => args.include_ended || record.summary.origin === 'operator')
     .filter((record) => args.project === undefined || record.summary.project === args.project)
+    .filter((record) =>
+      args.scope === 'archived'
+        ? record.summary.archived === true
+        : record.summary.archived !== true,
+    )
     .filter(
       (record) =>
         record.summary.pinned === true || args.include_ended || !isTerminal(record.summary.status),
@@ -72,6 +77,7 @@ export function recentSessions(
       origin: summary.origin,
       ...(summary.project === undefined ? {} : { project: summary.project }),
       pinned: summary.pinned === true,
+      archived: summary.archived === true,
       source: summary.source ?? null,
       cwd: summary.cwd ?? '',
       updated_at: summary.updated_at ?? summary.started_at ?? '',
@@ -97,6 +103,7 @@ function recentArgs(command: unknown): {
   readonly project?: string;
   readonly limit: number;
   readonly include_ended: boolean;
+  readonly scope: 'active' | 'archived';
 } {
   const value = command === undefined ? {} : asRecord(command);
   if (!value) throw new Error('session.recent command must be an object');
@@ -112,10 +119,16 @@ function recentArgs(command: unknown): {
   if (includeEnded !== undefined && typeof includeEnded !== 'boolean') {
     throw new Error('include_ended must be a boolean');
   }
+  const scopeValue = value.scope;
+  if (scopeValue !== undefined && scopeValue !== 'active' && scopeValue !== 'archived') {
+    throw new Error('scope must be active or archived');
+  }
+  const scope: 'active' | 'archived' = scopeValue === 'archived' ? 'archived' : 'active';
   return {
     ...(project === undefined ? {} : { project }),
     limit: (limit as number | undefined) ?? RECENT_SESSION_LIMIT,
     include_ended: includeEnded === true,
+    scope,
   };
 }
 

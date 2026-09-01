@@ -58,6 +58,7 @@ export interface SessionSendResult {
 export interface SessionListArgs {
   readonly project?: string;
   readonly limit?: number;
+  readonly scope?: 'active' | 'archived';
 }
 
 export interface SessionSummary {
@@ -75,6 +76,7 @@ export interface SessionSummary {
   readonly abort_key?: SubstrateKey;
   readonly source?: SessionSource;
   readonly pinned?: boolean;
+  readonly archived?: boolean;
 }
 
 export interface SessionPinArgs {
@@ -84,6 +86,15 @@ export interface SessionPinArgs {
 
 export interface SessionPinResult {
   readonly pinned: boolean;
+}
+
+export interface SessionArchiveArgs {
+  readonly session_id: string;
+  readonly archived: boolean;
+}
+
+export interface SessionArchiveResult {
+  readonly archived: boolean;
 }
 
 export interface SessionListResult {

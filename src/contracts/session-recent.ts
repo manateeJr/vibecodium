@@ -17,6 +17,7 @@ export interface SessionRecentArgs {
   readonly project?: string;
   readonly limit?: number;
   readonly include_ended?: boolean;
+  readonly scope?: 'active' | 'archived';
 }
 
 export interface RecentSession {
@@ -27,6 +28,7 @@ export interface RecentSession {
   readonly origin: SessionOrigin;
   readonly project?: string;
   readonly pinned: boolean;
+  readonly archived: boolean;
   readonly source: SessionSource | null;
   readonly cwd: string;
   readonly updated_at: string;

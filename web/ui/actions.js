@@ -278,6 +278,28 @@ export function createActions({
       renderSessions();
     }
   };
+  const archiveSession = async (item, archived) => {
+    const sessionId = item.session_id || sessionIdOf(sessions.get(item.stream_id));
+    if (!sessionId) {
+      appendError('this session cannot be archived');
+      renderSessions();
+      return null;
+    }
+    try {
+      const result = await client.sessionArchive({ session_id: sessionId, archived });
+      item.archived = archived;
+      const entry = sessions.get(item.stream_id) || sessions.get(`session:${sessionId}`);
+      if (entry) entry.archived = archived;
+      notify(archived ? 'archived' : 'restored');
+      void reloadSessions();
+      return result;
+    } catch (error) {
+      appendError(`session archive failed: ${errorMessage(error)}`);
+      return null;
+    } finally {
+      renderSessions();
+    }
+  };
 
   const stopSession = async () => {
     const entry = sessions.get(getSelectedStreamId());
@@ -372,6 +394,7 @@ export function createActions({
     sendKeys,
     switchModel,
     renameSession,
+    archiveSession,
     flushQueuedSends,
   };
 }

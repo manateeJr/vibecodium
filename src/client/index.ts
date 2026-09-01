@@ -55,6 +55,7 @@ const COMMAND_NAMES = {
   sessionList: 'session.list',
   sessionRecent: 'session.recent',
   sessionPin: 'session.pin',
+  sessionArchive: 'session.archive',
   sessionFork: 'session.fork',
   workspaceList: 'workspace.list',
   workflowRun: 'workflow.run',
@@ -189,6 +190,10 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     post<Commands.SessionRecentResult>(baseUrl, COMMAND_NAMES.sessionRecent, args, options.token);
   const sessionPin = (args: Commands.SessionPinArgs): Promise<Commands.SessionPinResult> =>
     post<Commands.SessionPinResult>(baseUrl, COMMAND_NAMES.sessionPin, args, options.token);
+  const sessionArchive = (
+    args: Commands.SessionArchiveArgs,
+  ): Promise<Commands.SessionArchiveResult> =>
+    post<Commands.SessionArchiveResult>(baseUrl, COMMAND_NAMES.sessionArchive, args, options.token);
   const forkSession = (args: SessionForkArgs): Promise<SessionForkResult> =>
     post<SessionForkResult>(baseUrl, COMMAND_NAMES.sessionFork, args, options.token);
   const sessionEnsureLive = (args: SessionEnsureLiveArgs): Promise<SessionEnsureLiveResult> =>
@@ -358,6 +363,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     listSessions,
     sessionRecent,
     sessionPin,
+    sessionArchive,
     sessionRename,
     forkSession,
     sessionEnsureLive,

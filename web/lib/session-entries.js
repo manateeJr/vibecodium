@@ -27,6 +27,7 @@ export function applyItem(entry, item) {
   entry.origin = item.origin || '';
   if (item.source !== undefined) entry.source = item.source;
   if (item.pinned !== undefined) entry.pinned = item.pinned;
+  if (item.archived !== undefined) entry.archived = item.archived;
   entry.provider = item.provider || entry.provider || '';
   entry.abort_key = item.abort_key || entry.abort_key || '';
   entry.lastActivityAt = item.time || Date.now();
@@ -46,6 +47,7 @@ export function itemFromRecent(session) {
     origin: session.origin,
     source: session.source ?? null,
     pinned: session.pinned === true,
+    archived: session.archived === true,
     time: Date.parse(session.updated_at) || Date.now(),
   };
 }
@@ -56,10 +58,8 @@ export function overlayRemote(entries, summaries) {
     const entry = entries.get(summary.stream_id);
     if (!entry) continue;
     entry.provider = summary.provider || entry.provider || '';
-    entry.abort_key = summary.abort_key || entry.abort_key || '';
-    entry.sessionLabel = summary.label || '';
-    entry.origin = summary.origin || '';
     if (summary.source !== undefined) entry.source = summary.source;
     if (summary.pinned !== undefined) entry.pinned = summary.pinned;
+    if (summary.archived !== undefined) entry.archived = summary.archived;
   }
 }
