@@ -45,6 +45,7 @@ import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import { applySessionSubstrateState } from './session-state.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
+import { reconcileSubstrateSessions } from './substrate-reconciliation.js';
 import { registerSessionProbes } from './substrate-probe.js';
 import { SessionSendIdempotency } from './send-idempotency.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
@@ -211,25 +212,25 @@ export class SessionSubsystem implements Subsystem {
       now: this.now,
     });
     if (!substrate) return;
-    table.repairHarnessRefs(this.now().toISOString());
-    for (const record of table.list()) {
-      if (record.state === 'closed') continue;
-      await this.reconcileRecord(record, substrate);
-    }
+    await reconcileSubstrateSessions({
+      table,
+      substrate,
+      sessionRecords: this.sessionRecords,
+      sessionStorageRoot: this.sessionStorageRoot,
+      sessionStorageDirs: this.sessionStorageDirs,
+      now: this.now,
+      reconcileRecord: (record) => this.reconcileRecord(record, substrate),
+    });
   }
   private async reconcileRecord(
     record: SubstrateSessionRecord,
     substrate: SubstrateClient,
   ): Promise<void> {
-    let live = false;
-    try {
-      live = await isSubstrateSessionLive(substrate, record.substrateName);
-    } catch {
-      live = false;
-    }
+    const live = await isSubstrateSessionLive(substrate, record.substrateName);
     if (!live) {
       this.reconciledSubstrateSessions.delete(record.sessionId);
-      this.emitSessionState(record.sessionId, 'resumable', 'reconciled');
+      if (record.state !== 'closed')
+        this.emitSessionState(record.sessionId, 'resumable', 'reconciled');
       return;
     }
     this.reconciledSubstrateSessions.add(record.sessionId);

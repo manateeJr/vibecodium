@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { listAbducoSessions } from './list-sessions.js';
 import type {
   SubstrateAttachment,
   SubstrateClient,
@@ -315,21 +316,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
   }
 
   public async listSessions(): Promise<readonly SubstrateSessionInfo[]> {
-    const result = spawnSync(this.binaryPath, ['-l'], {
-      env: this.environment,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    if (result.error) {
-      if ((result.error as NodeJS.ErrnoException).code === 'ENOENT')
-        throw new Error(
-          `abduco binary not found at ${this.binaryPath}. Run npm run setup:substrate first.`,
-        );
-      throw new Error(`could not list abduco sessions: ${result.error.message}`);
-    }
-    if (result.status !== 0)
-      throw new Error(`abduco -l failed (exit ${result.status ?? 'unknown'})`);
-    return parseSessionListing(result.stdout);
+    return parseSessionListing(await listAbducoSessions(this.binaryPath, this.environment));
   }
 
   private stateEvents(state: AttachmentState): AttachmentEvents {

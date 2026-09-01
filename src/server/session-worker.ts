@@ -13,6 +13,7 @@ import type {
 import type { ProviderSession, ProviderSessionRef } from '../contracts/provider-contract.js';
 import { discoverTranscript, harnessRefFromTranscriptPath } from '../session/transcript-ref.js';
 import {
+  createSessionWithAdoption,
   transcriptSnapshot,
   verifyRelaunchLiveness,
   type RelaunchLivenessResult,
@@ -183,7 +184,8 @@ export class PersistentSessionWorker {
       resumeRef === undefined
         ? undefined
         : (harnessRefFromTranscriptPath(this.transcriptPath) ?? resumeRef);
-    const created = await this.substrate.createSession(
+    const created = await createSessionWithAdoption(
+      this.substrate,
       this.substrateName,
       this.plugin.launchArgv({
         sessionId: this.sessionId,
@@ -226,7 +228,6 @@ export class PersistentSessionWorker {
     for (const key of keys) await this.substrate.sendKey(this.substrateName, key);
     return keys.length;
   }
-
   public async stop(): Promise<void> {
     await this.close(true);
   }

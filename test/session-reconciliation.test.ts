@@ -346,6 +346,107 @@ test('a stale session_started event with a dead substrate is never projected as 
   table.close();
 });
 
+test('reconciliation adopts an unknown live owned substrate session', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-adopt-reconcile-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const context = new FakeContext();
+  const substrate = new FakeSubstrate(['substrate-unknown-live']);
+  const subsystem = new SessionSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+  });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    assert.equal(table.get('unknown-live')?.state, 'live');
+    assert.equal(
+      subsystem.list({}).sessions.find((summary) => summary.session_id === 'unknown-live')?.status,
+      'live',
+    );
+    assert.deepEqual(substrate.attachedNames, ['substrate-unknown-live']);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('reconciliation backfills a failed history record when its substrate is live', async () => {
+  const context = new FakeContext();
+  const table = new SessionTable({ filename: ':memory:' });
+  const sessionId = 'backfill-live';
+  table.upsert(record(sessionId, 'resumable'));
+  context.append(`session:${sessionId}`, 'session_started', {
+    session_id: sessionId,
+    provider: 'omp',
+    prompt: 'backfill me',
+  });
+  context.append(`session:${sessionId}`, 'verify_failed', {
+    session_id: sessionId,
+    stage: 'session',
+    error: 'false failure',
+  });
+  const substrate = new FakeSubstrate([`substrate-${sessionId}`]);
+  const subsystem = new SessionSubsystem({ substrate, sessionTable: table });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    assert.equal(table.get(sessionId)?.state, 'live');
+    assert.equal(subsystem.list({}).sessions[0]?.status, 'live');
+    assert.deepEqual(substrate.attachedNames, [`substrate-${sessionId}`]);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+  }
+});
+
+test('reconciliation does not resurrect a failed record whose substrate is gone', async () => {
+  const context = new FakeContext();
+  const table = new SessionTable({ filename: ':memory:' });
+  const sessionId = 'backfill-dead';
+  table.upsert(record(sessionId, 'resumable'));
+  context.append(`session:${sessionId}`, 'session_started', {
+    session_id: sessionId,
+    provider: 'omp',
+    prompt: 'leave failed',
+  });
+  context.append(`session:${sessionId}`, 'verify_failed', {
+    session_id: sessionId,
+    stage: 'session',
+    error: 'real failure',
+  });
+  const substrate = new FakeSubstrate([]);
+  const subsystem = new SessionSubsystem({ substrate, sessionTable: table });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    assert.equal(table.get(sessionId)?.state, 'resumable');
+    assert.notEqual(subsystem.list({}).sessions[0]?.status, 'live');
+    assert.deepEqual(substrate.attachedNames, []);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+  }
+});
+
+test('reconciliation ignores live substrate sessions outside its namespace', async () => {
+  const context = new FakeContext();
+  const table = new SessionTable({ filename: ':memory:' });
+  const substrate = new FakeSubstrate(['external-session']);
+  const subsystem = new SessionSubsystem({ substrate, sessionTable: table });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    assert.deepEqual(table.list(), []);
+    assert.deepEqual(subsystem.list({}).sessions, []);
+    assert.deepEqual(substrate.attachedNames, []);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+  }
+});
+
 test('reconciliation explicitly skips when no substrate client is injected', async () => {
   const context = new FakeContext();
   const table = new SessionTable({ filename: ':memory:' });

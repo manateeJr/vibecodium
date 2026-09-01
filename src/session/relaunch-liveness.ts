@@ -1,5 +1,9 @@
 import { readFile, stat } from 'node:fs/promises';
-import type { SubstrateClient } from '../contracts/substrate-contract.js';
+import type {
+  SubstrateClient,
+  SubstrateCreateOptions,
+  SubstrateSessionInfo,
+} from '../contracts/substrate-contract.js';
 
 export interface RelaunchLivenessResult {
   readonly live: boolean;
@@ -39,6 +43,50 @@ export async function isSubstrateSessionLive(
     } catch {
       return false;
     }
+  }
+}
+
+export async function waitForSubstrateSessionLive(
+  substrate: SubstrateClient,
+  substrateName: string,
+): Promise<boolean> {
+  const deadline = Date.now() + 3_000;
+  let delayMs = 25;
+  while (true) {
+    if (await isSubstrateSessionLive(substrate, substrateName)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    delayMs = Math.min(500, delayMs * 2);
+  }
+}
+
+export async function createSessionWithAdoption(
+  substrate: SubstrateClient,
+  substrateName: string,
+  argv: readonly string[],
+  options?: SubstrateCreateOptions,
+): Promise<SubstrateSessionInfo> {
+  try {
+    return await substrate.createSession(substrateName, argv, options);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (
+      !substrateName.startsWith('substrate-') ||
+      substrateName.length === 'substrate-'.length ||
+      !message.startsWith('abduco session did not become live within ') ||
+      !message.endsWith(`: ${substrateName}`)
+    )
+      throw error;
+    if (!(await waitForSubstrateSessionLive(substrate, substrateName))) {
+      console.warn(
+        `[session] substrate session ${substrateName} stayed dead after create timeout; preserving failure`,
+      );
+      throw error;
+    }
+    console.warn(
+      `[session] adopted substrate session ${substrateName} after create liveness timeout`,
+    );
+    return { name: substrateName, live: true };
   }
 }
 

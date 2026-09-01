@@ -194,6 +194,43 @@ test('substrate launch falls back to the direct abduco argv when systemd-run is 
   });
 });
 
+test('listSessions is asynchronous and preserves abduco listing errors', async () => {
+  const directory = fs.mkdtempSync(path.join('/tmp', 'vibecodium-list-sessions-'));
+  const successPath = path.join(directory, 'abduco-success');
+  const failurePath = path.join(directory, 'abduco-failure');
+  fs.writeFileSync(
+    successPath,
+    '#!/bin/sh\nprintf "  Sun\\t 2026-08-30 10:08:32\\t123\\tquiet\\n"\nsleep 0.1\n',
+  );
+  fs.writeFileSync(failurePath, '#!/bin/sh\nexit 7\n');
+  fs.chmodSync(successPath, 0o755);
+  fs.chmodSync(failurePath, 0o755);
+  try {
+    const client = new AbducoSubstrateClient({ binaryPath: successPath });
+    // A real child delay is intentional: setImmediate proves this path does not block on spawnSync.
+    let loopYielded = false;
+    setImmediate(() => {
+      loopYielded = true;
+    });
+    assert.deepEqual(await client.listSessions(), [{ name: 'quiet', live: true, pid: 123 }]);
+    assert.equal(loopYielded, true);
+
+    await assert.rejects(
+      () =>
+        new AbducoSubstrateClient({
+          binaryPath: path.join(directory, 'missing'),
+        }).listSessions(),
+      new RegExp(`abduco binary not found at ${path.join(directory, 'missing')}\\. `),
+    );
+    await assert.rejects(
+      () => new AbducoSubstrateClient({ binaryPath: failurePath }).listSessions(),
+      /abduco -l failed \(exit 7\)/,
+    );
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('live cat attachment survives a forced socket disconnect and reattaches', async (t) => {
   if (!fs.existsSync(binaryPath)) {
     t.skip(`live substrate test skipped: ${binaryPath} is absent; run npm run setup:substrate`);
