@@ -34,7 +34,8 @@ export function registerSubstrateProbe(
         substrate.listSessions(),
         sessionTable.list(),
       ]);
-      const abduco = sessions.filter((session) => session.live).length;
+      const owned = new Set(records.map((record) => record.substrateName));
+      const abduco = sessions.filter((session) => session.live && owned.has(session.name)).length;
       const registry = records.filter((record) => record.state === 'live').length;
       if (abduco === registry) return { status: 'healthy', metrics: { abduco, registry } };
       return {
