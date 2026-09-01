@@ -169,7 +169,7 @@ export function createActions({
   // the same keys a person at the PC would. An interrupt stays pending until the event stream
   // reports the turn boundary, so the button cannot queue duplicate aborts.
   const sendKeys = async (entry, keys, pendingKey) => {
-    if (!entry || !isSendable(entry)) {
+    if (!entry || !isLiveSession(entry)) {
       notify('select a live session first');
       return;
     }
@@ -303,7 +303,7 @@ export function createActions({
 
   const stopSession = async () => {
     const entry = sessions.get(getSelectedStreamId());
-    if (!entry || entry.kind !== 'session' || !isSendable(entry)) return;
+    if (!entry || entry.kind !== 'session' || !isLiveSession(entry)) return;
     const sessionId = entry.session_id || entry.stream_id.slice('session:'.length);
     resetLocalWork(entry);
     state.stopping = true;
@@ -400,6 +400,12 @@ export function createActions({
 }
 
 function isSendable(entry) {
+  return (
+    entry.kind === 'session' &&
+    (entry.status === 'running' || entry.status === 'ready' || entry.status === 'resumable')
+  );
+}
+function isLiveSession(entry) {
   return entry.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
 }
 function resetLocalWork(entry) {

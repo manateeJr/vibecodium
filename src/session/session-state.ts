@@ -9,9 +9,13 @@ export function applySessionSubstrateState(
 ): void {
   const record = records.get(session_id);
   if (!record) return;
-  record.summary = {
+  const status: SessionSummaryRecord['summary']['status'] =
+    state === 'live' ? 'live' : state === 'resumable' ? 'resumable' : 'stopped';
+  const summary = {
     ...record.summary,
-    status: state === 'live' ? 'live' : 'stopped',
+    status,
     updated_at: updatedAt,
   };
+  if (state === 'live') delete summary.pending_prompt;
+  record.summary = summary;
 }

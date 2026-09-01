@@ -33,6 +33,7 @@ export interface RecentSession {
   readonly cwd: string;
   readonly updated_at: string;
   readonly abort_key?: SessionSummary['abort_key'];
+  readonly pending_prompt?: string;
   /** Oldest first, at most RECENT_PREVIEW_LINES entries. */
   readonly preview: readonly string[];
 }

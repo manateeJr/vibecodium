@@ -23,7 +23,7 @@ import {
   type SessionReapCandidate,
   type SessionReapReason,
 } from './idle-reaper.js';
-import { sessionEnsureLiveArgs, sessionSendKeysArgs } from './session-helpers.js';
+import { errorMessage, sessionEnsureLiveArgs, sessionSendKeysArgs } from './session-helpers.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type { SessionTable } from './session-table.js';
@@ -158,15 +158,17 @@ export class PersistentSessionManager {
       ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }),
       startAtEnd: true,
     });
-    return worker.attachExisting().then((started) => {
+    return worker.attachExisting().then(async (started) => {
+      const pendingPrompt = record.pendingPrompt;
+      if (pendingPrompt !== undefined) await worker.sendPrompt(pendingPrompt);
       const updated = this.recordFromStart(record.provider, worker, started, 'live', record);
       this.workers.set(record.sessionId, worker);
       if (
         updated.transcriptPath !== record.transcriptPath ||
-        updated.harnessRef !== record.harnessRef
-      ) {
+        updated.harnessRef !== record.harnessRef ||
+        pendingPrompt !== undefined
+      )
         this.sessionTable?.upsert(updated);
-      }
       return updated;
     });
   }
@@ -351,14 +353,15 @@ export class PersistentSessionManager {
       ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }),
       startAtEnd: true,
     });
-    const turn = prompt === undefined ? undefined : worker.currentTurn + 1;
+    const pendingPrompt = prompt ?? record.pendingPrompt;
+    const turn = pendingPrompt === undefined ? undefined : worker.currentTurn + 1;
     try {
-      const started = await worker.start(prompt, record.harnessRef);
+      const started = await worker.start(pendingPrompt, record.harnessRef);
       const liveness = await worker.verifyRelaunchLiveness();
       if (!liveness.live) {
         await worker.stop().catch(() => undefined);
-        this.persistRelaunchFailure(record, worker, liveness.detail, prompt);
-        throw new Error(resumeFailureMessage(liveness.detail, prompt));
+        this.persistRelaunchFailure(record, worker, liveness.detail, pendingPrompt);
+        throw new Error(resumeFailureMessage(liveness.detail, pendingPrompt));
       }
       const updated = this.recordFromStart(record.provider, worker, started, 'live', record);
       this.workers.set(record.sessionId, worker);
@@ -378,8 +381,8 @@ export class PersistentSessionManager {
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('resume-failed:')) throw error;
       await worker.stop().catch(() => undefined);
-      this.persistRelaunchFailure(record, worker, errorMessage(error), prompt);
-      throw new Error(resumeFailureMessage(errorMessage(error), prompt));
+      this.persistRelaunchFailure(record, worker, errorMessage(error), pendingPrompt);
+      throw new Error(resumeFailureMessage(errorMessage(error), pendingPrompt));
     }
   }
 
@@ -396,6 +399,7 @@ export class PersistentSessionManager {
       harnessRef,
       transcriptPath,
       state: 'resumable',
+      ...(prompt === undefined ? {} : { pendingPrompt: prompt }),
       updatedAt: this.now().toISOString(),
     };
     this.sessionTable?.upsert(updated);
@@ -492,7 +496,4 @@ function resumeFailureMessage(detail: string, prompt: string | undefined): strin
   return prompt === undefined
     ? `resume-failed: ${detail}`
     : `resume-failed: ${detail}; undelivered prompt: ${prompt}`;
-}
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

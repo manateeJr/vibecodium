@@ -62,6 +62,34 @@ test('subscribe replays the cursor then receives newly appended events', () => {
   store.close();
 });
 
+test('subscribeAll drains an event appended during the snapshot window', () => {
+  const store = new EventStore({ filename: ':memory:' });
+  store.append('session:a', 'session_started', {
+    session_id: 'a',
+    provider: 'fake',
+    prompt: 'hello',
+  });
+  const originalReadAll = store.readAll.bind(store);
+  let injected = false;
+  store.readAll = (from_seq = 0) => {
+    const events = originalReadAll(from_seq);
+    if (!injected) {
+      injected = true;
+      store.append('session:a', 'session_output', {
+        session_id: 'a',
+        index: 0,
+        text: 'window event',
+      });
+    }
+    return events;
+  };
+  const received: number[] = [];
+  const unsubscribe = store.subscribeAll(0, (event) => received.push(event.seq));
+  unsubscribe();
+  assert.deepEqual(received, [1, 2]);
+  store.close();
+});
+
 test('events survive closing and reopening the SQLite store', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-events-'));
   const filename = path.join(directory, 'events.sqlite');

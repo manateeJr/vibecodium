@@ -155,9 +155,33 @@ export class EventStore {
 
   public subscribeAll(from_seq: number, listener: EventListener): () => void {
     validateCursor(from_seq);
-    for (const event of this.readAll(from_seq)) listener(event);
-    this.allListeners.add(listener);
-    return () => this.allListeners.delete(listener);
+    const pending: EventEnvelope[] = [];
+    let replaying = true;
+    let delivered = from_seq;
+    const dispatch = (event: EventEnvelope): void => {
+      if (event.seq <= delivered) return;
+      delivered = event.seq;
+      listener(event);
+    };
+    const subscription: EventListener = (event) => {
+      if (event.seq <= from_seq) return;
+      if (replaying) pending.push(event);
+      else dispatch(event);
+    };
+    this.allListeners.add(subscription);
+    try {
+      const highWaterMark = this.latestSequence();
+      for (const event of this.readAll(from_seq)) {
+        if (event.seq > highWaterMark) break;
+        dispatch(event);
+      }
+      replaying = false;
+      for (const event of pending) dispatch(event);
+    } catch (error: unknown) {
+      this.allListeners.delete(subscription);
+      throw error;
+    }
+    return () => this.allListeners.delete(subscription);
   }
 
   private eventFromRow(row: EventRow): EventEnvelope {

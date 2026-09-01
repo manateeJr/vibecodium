@@ -69,6 +69,9 @@ export function projectSessionEvent(
         ...(typeof payload?.cwd === 'string' ? { cwd: payload.cwd } : {}),
         ...(abortKey === undefined ? {} : { abort_key: abortKey }),
         ...(source === undefined || source === null ? {} : { source }),
+        ...(persisted?.pendingPrompt === undefined
+          ? {}
+          : { pending_prompt: persisted.pendingPrompt }),
         ...(persisted?.pinned === true ? { pinned: true } : {}),
         ...(persisted?.archived === true ? { archived: true } : {}),
       },
@@ -81,10 +84,12 @@ export function projectSessionEvent(
   const substrateStateEvent =
     eventType === 'session_state' &&
     (payload?.state === 'live' || payload?.state === 'resumable' || payload?.state === 'closed');
-  const status = substrateStateEvent
-    ? payload?.state === 'live' && options.isLive(session_id)
+  const status: SessionSummary['status'] | undefined = substrateStateEvent
+    ? payload?.state === 'live'
       ? 'live'
-      : 'stopped'
+      : payload?.state === 'resumable'
+        ? 'resumable'
+        : 'stopped'
     : eventType === 'verify_failed'
       ? 'failed'
       : eventType === 'session_complete'
@@ -92,11 +97,20 @@ export function projectSessionEvent(
         : eventType === 'session_stop'
           ? 'stopped'
           : undefined;
-  record.summary = {
+  const nextSummary = {
     ...record.summary,
     updated_at: event.ts,
     ...(status === undefined ? {} : { status }),
   };
+  if (
+    (substrateStateEvent && payload?.state === 'live') ||
+    eventType === 'session_input' ||
+    eventType === 'session_complete'
+  )
+    delete nextSummary.pending_prompt;
+  if (eventType === 'verify_failed' && typeof payload?.prompt === 'string')
+    nextSummary.pending_prompt = payload.prompt;
+  record.summary = nextSummary;
 }
 function isSessionSource(value: unknown): value is SessionSource {
   return value === 'pocket' || value === 'cli' || value === 'api';

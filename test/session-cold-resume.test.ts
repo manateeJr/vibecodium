@@ -221,6 +221,7 @@ test('failed cold resume remains resumable and surfaces the undelivered prompt',
       /resume-failed: .*undelivered prompt: retry this prompt/,
     );
     assert.equal(table.get(sessionId)?.state, 'resumable');
+    assert.equal(table.get(sessionId)?.pendingPrompt, 'retry this prompt');
     assert.equal(
       context.events.some(
         (event) =>

@@ -154,6 +154,10 @@
   color: var(--ok);
 }
 
+.history-item[data-status='resumable'] .history-item__title {
+  color: var(--amber);
+}
+
 /* D8: a session an agent opened is still listed, it just reads as somebody else's work. */
 .history-item[data-sub='yes'] {
   opacity: 0.62;

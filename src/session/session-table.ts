@@ -24,6 +24,7 @@ type SessionRow = {
   pinned: number;
   archived: number;
   source: SessionSource | null;
+  pending_prompt: string | null;
   updated_at: string;
 };
 
@@ -41,6 +42,7 @@ const sessionTableSchema = `
     pinned INTEGER NOT NULL DEFAULT 0,
     archived INTEGER NOT NULL DEFAULT 0,
     source TEXT,
+    pending_prompt TEXT,
     updated_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS session_records_state ON session_records (state);
@@ -71,8 +73,9 @@ export class SessionTable {
     this.upsertRecord = this.database.prepare(`
       INSERT INTO session_records (
         session_id, provider, harness_ref, substrate_name,
-        transcript_path, storage_dir, state, label, origin, pinned, archived, source, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        transcript_path, storage_dir, state, label, origin, pinned, archived, source,
+        pending_prompt, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(session_id) DO UPDATE SET
         provider = excluded.provider,
         harness_ref = excluded.harness_ref,
@@ -85,17 +88,20 @@ export class SessionTable {
         pinned = excluded.pinned,
         archived = excluded.archived,
         source = excluded.source,
+        pending_prompt = excluded.pending_prompt,
         updated_at = excluded.updated_at
     `);
     this.readRecord = this.database.prepare(`
       SELECT session_id, provider, harness_ref, substrate_name,
-             transcript_path, storage_dir, state, label, origin, pinned, archived, source, updated_at
+             transcript_path, storage_dir, state, label, origin, pinned, archived, source,
+             pending_prompt, updated_at
       FROM session_records
       WHERE session_id = ?
     `);
     this.readRecords = this.database.prepare(`
       SELECT session_id, provider, harness_ref, substrate_name,
-             transcript_path, storage_dir, state, label, origin, pinned, archived, source, updated_at
+             transcript_path, storage_dir, state, label, origin, pinned, archived, source,
+             pending_prompt, updated_at
       FROM session_records
       ORDER BY updated_at DESC, session_id ASC
     `);
@@ -133,6 +139,7 @@ export class SessionTable {
       persisted.pinned === true ? 1 : 0,
       persisted.archived === true ? 1 : 0,
       persisted.source ?? null,
+      persisted.pendingPrompt ?? null,
       persisted.updatedAt,
     );
     return persisted;
@@ -233,6 +240,7 @@ function recordFromRow(row: SessionRow): SubstrateSessionRecord {
     ...(row.pinned === 0 ? {} : { pinned: true }),
     ...(row.archived === 0 ? {} : { archived: true }),
     ...(row.source === null ? {} : { source: row.source }),
+    ...(row.pending_prompt === null ? {} : { pendingPrompt: row.pending_prompt }),
     updatedAt: row.updated_at,
   };
 }
@@ -257,6 +265,9 @@ function migrateSessionTable(database: Database.Database): void {
   }
   if (!columns.has('source')) {
     database.exec('ALTER TABLE session_records ADD COLUMN source TEXT');
+  }
+  if (!columns.has('pending_prompt')) {
+    database.exec('ALTER TABLE session_records ADD COLUMN pending_prompt TEXT');
   }
 }
 
@@ -283,6 +294,9 @@ function validateRecord(record: SubstrateSessionRecord): void {
     throw new Error('archived must be a boolean');
   }
   if (record.source !== undefined && record.source !== null) validateSource(record.source);
+  if (record.pendingPrompt !== undefined && typeof record.pendingPrompt !== 'string') {
+    throw new Error('pendingPrompt must be a string');
+  }
   validateState(record.state);
 }
 

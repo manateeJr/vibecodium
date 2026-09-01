@@ -136,7 +136,7 @@ export function createHistoryDrawer({
     ];
     const grouped = groupRecentItems(recent);
     const pinned = grouped.pinned.sort(compareActivity);
-    const ended = grouped.ended.sort(compareActivity);
+    const ended = [...grouped.resumable, ...grouped.ended].sort(compareActivity);
     const archived = grouped.archived.sort(compareActivity);
     const machine = machineEntries
       .filter(
@@ -245,10 +245,14 @@ export function createHistoryDrawer({
 
 export function groupRecentItems(items) {
   const active = items.filter((item) => item.archived !== true);
+  const statusOf = (item) => item.state ?? item.status;
   return {
     pinned: active.filter((item) => item.pinned === true),
-    live: active.filter((item) => item.pinned !== true && isLive(item.state ?? item.status)),
-    ended: active.filter((item) => item.pinned !== true && !isLive(item.state ?? item.status)),
+    live: active.filter((item) => item.pinned !== true && isLive(statusOf(item))),
+    resumable: active.filter((item) => item.pinned !== true && isResumable(statusOf(item))),
+    ended: active.filter(
+      (item) => item.pinned !== true && !isLive(statusOf(item)) && !isResumable(statusOf(item)),
+    ),
     archived: items.filter((item) => item.archived === true),
   };
 }
@@ -294,6 +298,10 @@ function sessionRecentRow(item, onSelect, onPin, onArchive, projects) {
 
 function isLive(status) {
   return status === 'running' || status === 'ready' || status === 'live' || status === 'external';
+}
+
+function isResumable(status) {
+  return status === 'resumable';
 }
 
 function liveRow(item, onSelect, projects, onPin, onArchive) {

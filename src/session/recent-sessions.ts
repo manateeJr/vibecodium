@@ -8,11 +8,20 @@ import {
   type SessionRecentResult,
 } from '../contracts/session-recent.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
+import type { SubstrateClient } from '../contracts/substrate-contract.js';
+import { refreshSessionLiveness } from './session-liveness-refresh.js';
+import type { SessionTable } from './session-table.js';
 import { asRecord } from './session-helpers.js';
 
 export interface RecentSessionRecord {
   readonly summary: SessionSummary;
   readonly startedSeq: number;
+}
+
+export interface RecentSessionRegistrationOptions {
+  readonly substrate: SubstrateClient | undefined;
+  readonly sessionTable: SessionTable | undefined;
+  readonly reconciledSubstrateSessions: Set<string> | undefined;
 }
 
 /**
@@ -82,6 +91,7 @@ export function recentSessions(
       cwd: summary.cwd ?? '',
       updated_at: summary.updated_at ?? summary.started_at ?? '',
       ...(summary.abort_key === undefined ? {} : { abort_key: summary.abort_key }),
+      ...(summary.pending_prompt === undefined ? {} : { pending_prompt: summary.pending_prompt }),
       preview: [...previews.preview(summary.session_id)],
     })),
   };
@@ -91,11 +101,25 @@ export function recentSessions(
 export function registerRecentSessions(
   context: SubsystemContext,
   records: ReadonlyMap<string, RecentSessionRecord>,
+  options: RecentSessionRegistrationOptions = {
+    substrate: undefined,
+    sessionTable: undefined,
+    reconciledSubstrateSessions: undefined,
+  },
 ): void {
   const previews = new SessionPreviews();
+  const substrate = options.substrate;
+  const reconciled = options.reconciledSubstrateSessions;
+  const sessionTable = options.sessionTable;
+  const refresh =
+    substrate === undefined || reconciled === undefined
+      ? undefined
+      : () => refreshSessionLiveness(substrate, records, sessionTable, reconciled);
   context.registerProjector('session-previews', (event) => previews.project(event), 0);
   context.registerCommand(SESSION_RECENT_COMMAND, (command: unknown) =>
-    recentSessions(records, previews, command),
+    refresh === undefined
+      ? recentSessions(records, previews, command)
+      : refresh().then(() => recentSessions(records, previews, command)),
   );
 }
 

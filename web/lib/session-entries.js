@@ -20,7 +20,14 @@ export function blankEntry(streamId, kind, label) {
 // Durable metadata from a list entry laid over whatever the local overlay already knows.
 export function applyItem(entry, item) {
   if (item.session_id) entry.session_id = item.session_id;
-  entry.status = item.status === 'live' ? 'running' : item.status === 'failed' ? 'failed' : 'done';
+  entry.status =
+    item.status === 'live'
+      ? 'running'
+      : item.status === 'resumable'
+        ? 'resumable'
+        : item.status === 'failed'
+          ? 'failed'
+          : 'done';
   entry.cwd = item.cwd || '';
   entry.project = item.project || '';
   entry.sessionLabel = item.label || '';
@@ -28,6 +35,8 @@ export function applyItem(entry, item) {
   if (item.source !== undefined) entry.source = item.source;
   if (item.pinned !== undefined) entry.pinned = item.pinned;
   if (item.archived !== undefined) entry.archived = item.archived;
+  if (item.pending_prompt !== undefined) entry.pending_prompt = item.pending_prompt;
+  else delete entry.pending_prompt;
   entry.provider = item.provider || entry.provider || '';
   entry.abort_key = item.abort_key || entry.abort_key || '';
   entry.lastActivityAt = item.time || Date.now();
@@ -48,6 +57,7 @@ export function itemFromRecent(session) {
     source: session.source ?? null,
     pinned: session.pinned === true,
     archived: session.archived === true,
+    ...(session.pending_prompt === undefined ? {} : { pending_prompt: session.pending_prompt }),
     time: Date.parse(session.updated_at) || Date.now(),
   };
 }

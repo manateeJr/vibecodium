@@ -69,8 +69,9 @@ export interface SessionSummary {
   readonly origin: SessionOrigin;
   readonly project?: string;
   readonly cwd?: string;
-  readonly status: 'live' | 'done' | 'failed' | 'stopped';
+  readonly status: 'live' | 'resumable' | 'done' | 'failed' | 'stopped';
   readonly prompt?: string;
+  readonly pending_prompt?: string;
   readonly started_at?: string;
   readonly updated_at?: string;
   readonly abort_key?: SubstrateKey;

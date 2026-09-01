@@ -131,7 +131,7 @@ test('session rename persists in the durable table and list summary, with agent 
     provider: 'omp',
     label: '',
     origin: 'operator',
-    status: 'stopped',
+    status: 'resumable',
     prompt: 'first prompt',
     started_at: new Date(2000).toISOString(),
     updated_at: new Date(2000).toISOString(),

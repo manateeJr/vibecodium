@@ -8,6 +8,9 @@ import { renderContextChip } from './context-chip.js';
 // which session this lands in, or which project a new one would start in.
 export function renderComposeControls({ elements, entry, state, project, hint }) {
   const sendable =
+    entry?.kind === 'session' &&
+    (entry.status === 'running' || entry.status === 'ready' || entry.status === 'resumable');
+  const live =
     entry?.kind === 'session' && (entry.status === 'running' || entry.status === 'ready');
   const external = isExternalEntry(entry);
   elements.composeSend.textContent = 'SEND';
@@ -22,7 +25,7 @@ export function renderComposeControls({ elements, entry, state, project, hint })
       : '',
   );
   elements.interruptKey.disabled =
-    state.opening || state.interrupting || !sendable || !sessionIdOf(entry) || !entry?.abort_key;
+    state.opening || state.interrupting || !live || !sessionIdOf(entry) || !entry?.abort_key;
   // The chip is part of the compose surface, so it repaints on the same call the buttons do: one
   // pass covers a selection change and every event the feed folds, with no second render path to
   // keep in step. app.js sits exactly on the 500-line cap and has no room to call it itself.

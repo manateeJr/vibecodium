@@ -17,6 +17,7 @@ export function mergeSessionItems({ remote, local, limit }) {
       ...(summary.source === undefined ? {} : { source: summary.source }),
       ...(summary.pinned === undefined ? {} : { pinned: summary.pinned }),
       ...(summary.archived === undefined ? {} : { archived: summary.archived }),
+      ...(summary.pending_prompt === undefined ? {} : { pending_prompt: summary.pending_prompt }),
       time: Date.parse(summary.updated_at ?? summary.started_at ?? '') || 0,
     });
   }
@@ -33,6 +34,7 @@ export function mergeSessionItems({ remote, local, limit }) {
       ...(entry.source === undefined ? {} : { source: entry.source }),
       ...(entry.pinned === undefined ? {} : { pinned: entry.pinned }),
       ...(entry.archived === undefined ? {} : { archived: entry.archived }),
+      ...(entry.pending_prompt === undefined ? {} : { pending_prompt: entry.pending_prompt }),
       time: activityTime(entry),
       ...(entry.external ? { external: true, title: entry.title ?? '' } : {}),
     });
@@ -55,6 +57,7 @@ function activityTime(entry) {
 
 function displayStatus(status) {
   if (status === 'running' || status === 'external') return 'live';
+  if (status === 'resumable') return 'resumable';
   if (status === 'failed' || status === 'throttled') return 'failed';
   return 'done';
 }

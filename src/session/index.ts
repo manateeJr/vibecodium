@@ -45,6 +45,7 @@ import { stopAllSessions } from './session-shutdown.js';
 import { startSession as spawnSession } from './worker-lifecycle.js';
 import { applySessionSubstrateState } from './session-state.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
+import { attachReconciledRecord } from './session-attach-reconciler.js';
 import { reconcileSubstrateSessions } from './substrate-reconciliation.js';
 import { registerSessionProbes } from './substrate-probe.js';
 import { SessionSendIdempotency } from './send-idempotency.js';
@@ -138,7 +139,11 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
     context.registerCommand(COMMAND_NAMES.sessionList, (command: unknown) => this.list(command));
-    registerRecentSessions(context, this.sessionRecords);
+    registerRecentSessions(context, this.sessionRecords, {
+      substrate: this.substrate,
+      sessionTable: this.sessionTable,
+      reconciledSubstrateSessions: this.reconciledSubstrateSessions,
+    });
     context.registerCommand(COMMAND_NAMES.sessionFork, (command: unknown) => this.fork(command));
     context.registerCommand(
       COMMAND_NAMES.sessionEnsureLive,
@@ -235,23 +240,15 @@ export class SessionSubsystem implements Subsystem {
     }
     this.reconciledSubstrateSessions.add(record.sessionId);
     this.emitSessionState(record.sessionId, 'live', 'reconciled');
-    if (this.persistentManager?.supports(record.provider)) {
-      try {
-        const updated = await this.persistentManager.attach(record);
-        this.sessionStorageDirs.set(record.sessionId, updated.storageDir);
-      } catch {
-        this.reconciledSubstrateSessions.delete(record.sessionId);
-        this.emitSessionState(record.sessionId, 'resumable', 'reconciled');
-      }
-      return;
-    }
-    try {
-      const attachment = await substrate.attach(record.substrateName);
-      this.substrateAttachments.set(record.sessionId, attachment);
-    } catch {
-      this.reconciledSubstrateSessions.delete(record.sessionId);
-      this.emitSessionState(record.sessionId, 'resumable', 'reconciled');
-    }
+    await attachReconciledRecord(
+      record,
+      substrate,
+      this.persistentManager,
+      this.sessionStorageDirs,
+      this.substrateAttachments,
+      this.reconciledSubstrateSessions,
+      this.emitSessionState.bind(this),
+    );
   }
   public async open(command: unknown): Promise<SessionCommands.SessionOpenResult> {
     return this.startSession(sessionOpenArgs(command));
@@ -484,10 +481,8 @@ export class SessionSubsystem implements Subsystem {
     if (this.substrate === undefined && this.sessionTable === undefined) return 'live';
     if (this.sessions.has(session_id) || this.persistentManager?.has(session_id) === true)
       return 'live';
-    const record = this.sessionTable?.get(session_id);
-    return this.reconciledSubstrateSessions.has(session_id) && record?.state === 'live'
-      ? 'live'
-      : 'stopped';
+    const state = this.sessionTable?.get(session_id)?.state;
+    return state === 'live' ? 'live' : state === 'resumable' ? 'resumable' : 'stopped';
   }
   private markSessionLive(session_id: string): void {
     applySessionSubstrateState(this.sessionRecords, session_id, 'live', this.now().toISOString());
