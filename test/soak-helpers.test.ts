@@ -3,10 +3,14 @@ import test from 'node:test';
 import type { EventEnvelope, EventKind, EventPayload } from '../src/contracts/events.js';
 import type { SessionSummary } from '../src/contracts/session-commands.js';
 import {
-  SOAK_FAKE_DURATION_MS,
+  SOAK_MIN_DURATION_MS,
   assertEventInvariants,
+  assertEventSurvivedRestart,
   assertNoStuckSessions,
   assertReplayMatchesLive,
+  assertRestartSurvival,
+  assertResumeDelivery,
+  assertStatusAccuracy,
   parseSoakArgs,
   soakDurationMs,
 } from '../src/soak/helpers.js';
@@ -26,13 +30,15 @@ function event<K extends EventKind>(type: K, payload: EventPayload<K>): EventEnv
   };
 }
 
-test('soak arguments default to real OMP and cap fake runs at two minutes', () => {
+test('soak arguments allow long fake runs and keep a short fake default', () => {
   assert.deepEqual(parseSoakArgs([]), { provider: 'omp', minutes: 30 });
-  assert.deepEqual(parseSoakArgs(['--provider', 'fake', '--minutes', '4']), {
+  assert.deepEqual(parseSoakArgs(['--provider', 'fake']), { provider: 'fake', minutes: 2 });
+  assert.deepEqual(parseSoakArgs(['--provider', 'fake', '--minutes', '30']), {
     provider: 'fake',
-    minutes: 4,
+    minutes: 30,
   });
-  assert.equal(soakDurationMs({ provider: 'fake', minutes: 30 }), SOAK_FAKE_DURATION_MS);
+  assert.equal(soakDurationMs({ provider: 'fake', minutes: 30 }), 30 * 60 * 1_000);
+  assert.equal(SOAK_MIN_DURATION_MS, 10 * 60 * 1_000);
   assert.equal(soakDurationMs({ provider: 'omp', minutes: 8 }), 8 * 60 * 1_000);
   assert.throws(() => parseSoakArgs(['--minutes', '0']), /positive/);
   assert.throws(() => parseSoakArgs(['--provider', 'bogus']), /fake or omp/);
@@ -63,6 +69,86 @@ test('event invariants pair turns, allow steering, and preserve duplicate turn n
   assert.equal(report.replayCount, 10);
   assert.equal(report.kinds.session_input, 3);
   assert.equal(report.kinds.turn_complete, 4);
+});
+
+test('restart, status, and resume assertions defend the regression guarantees', () => {
+  sequence = 0;
+  const marker = event('session_started', {
+    session_id: sessionId,
+    provider: 'fake',
+    prompt: 'restart marker',
+  });
+  assertRestartSurvival(
+    ['soak-session', 'second-session'],
+    [
+      { session_id: 'soak-session', state: 'done' },
+      { session_id: 'second-session', state: 'stopped' },
+    ],
+  );
+  assertEventSurvivedRestart(marker, [marker]);
+  assertStatusAccuracy([
+    {
+      session_id: 'live-session',
+      substrate_name: 'substrate-live-session',
+      substrate_live: true,
+      status: 'live',
+      expected_state: 'live',
+    },
+    {
+      session_id: 'resumable-session',
+      substrate_name: 'substrate-resumable-session',
+      substrate_live: false,
+      status: 'resumable',
+      expected_state: 'resumable',
+    },
+    {
+      session_id: 'stopped-session',
+      substrate_name: 'substrate-stopped-session',
+      substrate_live: false,
+      status: 'stopped',
+      expected_state: 'stopped',
+    },
+  ]);
+  assertResumeDelivery({
+    prompt: 'resume marker',
+    session_id: sessionId,
+    events: [event('session_input', { session_id: sessionId, turn: 2, text: 'resume marker' })],
+  });
+  assertResumeDelivery({ prompt: 'pending marker', events: [], pending_prompt: 'pending marker' });
+  assert.throws(
+    () => assertRestartSurvival(['missing'], [{ session_id: 'other' }]),
+    /restart lost sessions/,
+  );
+  assert.throws(() => assertEventSurvivedRestart(marker, []), /restart lost event/);
+  assert.throws(
+    () =>
+      assertStatusAccuracy([
+        {
+          session_id: 'live-session',
+          substrate_name: 'substrate-live-session',
+          substrate_live: true,
+          status: 'stopped',
+        },
+      ]),
+    /reported stopped/,
+  );
+  assert.throws(
+    () =>
+      assertStatusAccuracy([
+        {
+          session_id: 'resumable-session',
+          substrate_name: 'substrate-resumable-session',
+          substrate_live: false,
+          status: 'stopped',
+          expected_state: 'resumable',
+        },
+      ]),
+    /expected resumable/,
+  );
+  assert.throws(
+    () => assertResumeDelivery({ prompt: 'dropped marker', events: [] }),
+    /neither delivered nor durably surfaced/,
+  );
 });
 
 test('event replay and stuck-session checks reject drift', () => {

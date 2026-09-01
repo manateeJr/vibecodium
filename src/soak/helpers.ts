@@ -15,6 +15,29 @@ export interface SoakInvariantReport {
   readonly replayCount: number;
   readonly kinds: Readonly<Record<EventKind, number>>;
 }
+
+export interface SoakRecentSession {
+  readonly session_id: string;
+  readonly state?: SessionSummary['status'];
+  readonly status?: SessionSummary['status'];
+}
+
+export interface SoakStatusObservation {
+  readonly session_id: string;
+  readonly substrate_name: string;
+  readonly substrate_live: boolean;
+  readonly status: SessionSummary['status'];
+  readonly expected_state?: 'live' | 'resumable' | 'stopped';
+}
+
+export interface SoakResumeDeliveryObservation {
+  readonly prompt: string;
+  readonly session_id?: string;
+  readonly events: readonly EventEnvelope[];
+  readonly pending_prompt?: string;
+  readonly undelivered?: boolean;
+}
+
 export const SOAK_PHASES = [
   'open',
   'multi-turn',
@@ -22,12 +45,19 @@ export const SOAK_PHASES = [
   'send_keys',
   'share-intake',
   'rename/recent',
-  'restart',
+  'restart-survival',
+  'status-accuracy',
+  'resume-delivery',
+  'clobber-guard',
+  'reconcile-adopt',
   'reap/resume',
   'invariants',
 ] as const;
 
-export const SOAK_FAKE_DURATION_MS = 2 * 60 * 1000;
+export const SOAK_REQUIRED_MINUTES = 10;
+export const SOAK_MIN_DURATION_MS = SOAK_REQUIRED_MINUTES * 60 * 1000;
+const DEFAULT_OMP_MINUTES = 30;
+const DEFAULT_FAKE_MINUTES = 2;
 
 const EVENT_KINDS: readonly EventKind[] = [
   'session_started',
@@ -54,7 +84,8 @@ const EVENT_KIND_MAP: Readonly<Record<string, true>> = Object.fromEntries(
 
 export function parseSoakArgs(args: readonly string[]): SoakOptions {
   let provider: SoakProvider = 'omp';
-  let minutes = 30;
+  let minutes = DEFAULT_OMP_MINUTES;
+  let minutesProvided = false;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === undefined) throw new Error('soak option is missing');
@@ -68,6 +99,7 @@ export function parseSoakArgs(args: readonly string[]): SoakOptions {
         provider = value;
       } else {
         minutes = parseMinutes(value);
+        minutesProvided = true;
       }
       continue;
     }
@@ -80,21 +112,27 @@ export function parseSoakArgs(args: readonly string[]): SoakOptions {
     }
     if (arg.startsWith('--minutes=')) {
       minutes = parseMinutes(arg.slice('--minutes='.length));
+      minutesProvided = true;
       continue;
     }
     if (arg === '--help' || arg === '-h') throw new Error(usageText());
     throw new Error(`unknown soak option: ${arg}\n${usageText()}`);
   }
-  return { provider, minutes };
+  return {
+    provider,
+    minutes: minutesProvided ? minutes : provider === 'fake' ? DEFAULT_FAKE_MINUTES : minutes,
+  };
 }
 
 export function soakDurationMs(options: SoakOptions): number {
-  const requested = options.minutes * 60 * 1000;
-  return options.provider === 'fake' ? Math.min(SOAK_FAKE_DURATION_MS, requested) : requested;
+  return options.minutes * 60 * 1000;
 }
 
 export function usageText(): string {
-  return 'usage: npm run soak -- [--provider fake|omp] [--minutes N]';
+  return (
+    'usage: npm run soak -- [--provider fake|omp] [--minutes N]\n' +
+    `       npm run gate:soak (fake, ${SOAK_REQUIRED_MINUTES} minutes)`
+  );
 }
 
 export function assertEventInvariants(
@@ -206,6 +244,71 @@ export function assertReplayMatchesLive(
     if (JSON.stringify(live[index]) !== JSON.stringify(replayed[index]))
       throw new Error(`event replay mismatch at index ${index}`);
   }
+}
+
+export function assertRestartSurvival(
+  sessionIds: readonly string[],
+  recent: readonly SoakRecentSession[],
+): void {
+  if (sessionIds.length === 0) throw new Error('restart survival recorded no sessions');
+  const recentIds = new Set(recent.map((session) => session.session_id));
+  const missing = sessionIds.filter((sessionId) => !recentIds.has(sessionId));
+  if (missing.length > 0)
+    throw new Error(`restart lost sessions from recent: ${missing.join(', ')}`);
+}
+
+export function assertEventSurvivedRestart(
+  event: EventEnvelope | undefined,
+  replayed: readonly EventEnvelope[],
+): void {
+  if (event === undefined) throw new Error('restart survival marker event was not captured');
+  const found = replayed.some(
+    (candidate) =>
+      candidate.seq === event.seq && JSON.stringify(candidate) === JSON.stringify(event),
+  );
+  if (!found) throw new Error(`restart lost event seq=${event.seq}`);
+}
+
+export function assertStatusAccuracy(observations: readonly SoakStatusObservation[]): void {
+  if (observations.length === 0) throw new Error('status accuracy observed no sessions');
+  for (const observation of observations) {
+    if (!observation.session_id.trim() || !observation.substrate_name.trim())
+      throw new Error('status accuracy observation omitted an identifier');
+    if (observation.substrate_live && observation.status !== 'live')
+      throw new Error(
+        `live daemon ${observation.substrate_name} reported ${observation.status} instead of live`,
+      );
+    if (!observation.substrate_live && observation.status === 'live')
+      throw new Error(`dead daemon ${observation.substrate_name} reported live`);
+    if (observation.expected_state === 'live' && observation.status !== 'live')
+      throw new Error(`expected live ${observation.session_id}, got ${observation.status}`);
+    if (observation.expected_state === 'resumable' && observation.status !== 'resumable')
+      throw new Error(`expected resumable ${observation.session_id}, got ${observation.status}`);
+    if (
+      observation.expected_state === 'stopped' &&
+      (observation.status === 'live' || observation.status === 'resumable')
+    )
+      throw new Error(`expected stopped ${observation.session_id}, got ${observation.status}`);
+  }
+}
+
+export function assertResumeDelivery(observation: SoakResumeDeliveryObservation): void {
+  if (!observation.prompt.trim()) throw new Error('resume delivery prompt is empty');
+  const delivered = observation.events.some((event) => {
+    if (event.type !== 'session_input') return false;
+    const payload = asRecord(event.payload);
+    return (
+      payload !== undefined &&
+      (observation.session_id === undefined || payload.session_id === observation.session_id) &&
+      payload.text === observation.prompt
+    );
+  });
+  const surfaced =
+    observation.pending_prompt === observation.prompt || observation.undelivered === true;
+  if (!delivered && !surfaced)
+    throw new Error(
+      `resume prompt was neither delivered nor durably surfaced: ${observation.prompt}`,
+    );
 }
 
 export function assertNoStuckSessions(sessions: readonly SessionSummary[]): void {

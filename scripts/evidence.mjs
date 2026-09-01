@@ -35,8 +35,11 @@ export function writeEvidence({
   startedAt,
   endedAt = new Date(),
   status,
+  metrics,
+  durationMs,
 }) {
   fs.mkdirSync(evidenceDirectory, { recursive: true });
+  const evidenceMetrics = durationMs === undefined ? metrics : { ...(metrics ?? {}), durationMs };
   const record = {
     check_name: checkName,
     check_version: checkVersion,
@@ -51,6 +54,7 @@ export function writeEvidence({
     exit_status: exitStatus,
     status: status ?? (exitStatus === 0 ? 'passed' : 'failed'),
     output_sha256: crypto.createHash('sha256').update(output).digest('hex'),
+    ...(evidenceMetrics === undefined ? {} : { metrics: evidenceMetrics }),
   };
   const serialized = `${JSON.stringify(record, null, 2)}\n`;
   const stem = `${timestampForFilename(startedAt)}-${checkName.replaceAll(/[^a-zA-Z0-9_.-]/g, '-')}`;

@@ -131,26 +131,30 @@ says so instead of opening a session with nothing attached.
 
 ## Replayable soak harness
 
-Run the end-to-end session soak from a worktree before wiring it into a deploy
-gate:
+The merge-only `main` checkout requires both fast and long-running evidence:
 
 ```sh
-npm run soak -- --provider fake
-npm run soak -- --provider omp --minutes 30
+npm run gate
+npm run gate:soak
 ```
 
-`omp` is the default provider and runs for the requested duration (30 minutes
-by default); pacing is spread across the phases. `fake` is a deterministic
-two-minute run for fast CI-style checks. The harness uses throwaway SQLite,
-session storage, shared files, and abduco sockets, so it does not touch the
-operator's live control plane. It opens an operator session, runs multi-turn
-conversation and share-intake/file-upload checks, exercises rename plus
-`session.recent`, and (for OMP) verifies terminal typing, raw `send_keys`,
-mid-turn steering, control-plane restart/reconcile, idle reap, and cold resume.
+`npm run gate` remains the fast static/type/lint/test gate. `npm run gate:soak`
+runs the canonical deterministic fake-provider soak for at least 10 minutes,
+repeating the complete session scenario until the duration elapses. It checks
+multi-turn conversation, restart survival, status accuracy against real abduco
+liveness, resume delivery, share-intake/file upload, rename/recent, and the
+stuck-session invariants. Substrate-only OMP interactions such as steering,
+terminal keys, clobber protection, and external-session adoption are logged as
+clean skips when the fake provider cannot exercise them.
 
-The final phase checks event kinds and ordering, pairs every turn with exactly
-one `turn_complete` (including resumed transcripts), compares a full event
-replay with the live stream, and requires no live sessions. A failure exits
-nonzero and prints a temporary artifact directory containing `events.json`,
-`abduco-l.txt`, and transcript tails. The fake provider reports substrate-only
-phases as skipped because it has no persistent terminal.
+The soak sets `VIBECODIUM_PORT=0`, `VIBECODIUM_DB_PATH`,
+`VIBECODIUM_PROJECTS_PATH`, `VIBECODIUM_SESSION_STORAGE_ROOT`,
+`VIBECODIUM_SHARED_DIR`, and `ABDUCO_SOCKET_DIR` to throwaway paths under a
+temporary directory. It never reads or writes the operator's
+`~/.vibecodium/projects.json`, production database, or live substrate sockets.
+
+Both commands mint strict evidence bound to the current commit. The merge gate
+accepts `main` only when it finds passing `gate` evidence and passing `soak`
+evidence for the same `HEAD`, with the latter recording at least 10 minutes.
+On failure the soak exits nonzero and leaves a temporary artifact directory
+with events, abduco listing, and transcript tails for diagnosis.
