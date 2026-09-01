@@ -50,12 +50,35 @@ test('substrate probe counts only owned live sessions', async () => {
   assert.equal(healthyRegistration.name, 'substrate');
   const healthy = await healthyRegistration.fn();
   assert.equal(healthy.status, 'healthy');
-  assert.deepEqual(healthy.metrics, { abduco: 1, registry: 1 });
+  assert.deepEqual(healthy.metrics, { abduco: 1, registry: 1, staleLive: 0 });
 
   registerSubstrateProbe(context, substrate, table([ownedLive, ownedDead, registryOnly]));
   const degradedRegistration = registrations.at(-1);
   if (degradedRegistration === undefined) throw new Error('probe was not registered');
   const degraded = await degradedRegistration.fn();
   assert.equal(degraded.status, 'degraded');
-  assert.deepEqual(degraded.metrics, { abduco: 1, registry: 2 });
+  assert.deepEqual(degraded.metrics, { abduco: 1, registry: 2, staleLive: 1 });
+});
+
+test('a resumable record with a live abduco session is not drift', async () => {
+  const resumable = record('substrate-resumable-live', 'resumable');
+  const sessions = [{ name: resumable.substrateName, live: true }] as const;
+  const substrate = {
+    listSessions: async () => sessions,
+  } as unknown as SubstrateClient;
+  const registrations: Array<{ name: string; fn: ProbeFunction }> = [];
+  const context = {
+    registerProbe(name: string, fn: ProbeFunction): void {
+      registrations.push({ name, fn });
+    },
+  } as unknown as SubsystemContext;
+  const table = (records: readonly SubstrateSessionRecord[]) =>
+    ({ list: () => records }) as unknown as SessionTable;
+
+  registerSubstrateProbe(context, substrate, table([resumable]));
+  const registration = registrations.at(-1);
+  if (registration === undefined) throw new Error('probe was not registered');
+  const result = await registration.fn();
+  assert.equal(result.status, 'healthy');
+  assert.deepEqual(result.metrics, { abduco: 1, registry: 0, staleLive: 0 });
 });
