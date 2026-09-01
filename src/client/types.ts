@@ -15,6 +15,7 @@ export interface VibecodiumClient {
   listSessions(args: Commands.SessionListArgs): Promise<Commands.SessionListResult>;
   sessionRecent(args: Commands.SessionRecentArgs): Promise<Commands.SessionRecentResult>;
   sessionPin(args: Commands.SessionPinArgs): Promise<Commands.SessionPinResult>;
+  sessionArchive(args: Commands.SessionArchiveArgs): Promise<Commands.SessionArchiveResult>;
   sessionRename(args: Commands.SessionRenameArgs): Promise<Commands.SessionRenameResult>;
   forkSession(args: Commands.SessionForkArgs): Promise<Commands.SessionForkResult>;
   sessionEnsureLive(

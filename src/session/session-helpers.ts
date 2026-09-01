@@ -1,10 +1,12 @@
 import { cp, mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type {
+  SessionArchiveArgs,
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
   SessionEnsureLiveArgs,
   SessionForkResult,
+  SessionListArgs,
   SessionListResult,
   SessionOpenArgs,
   SessionPinArgs,
@@ -90,6 +92,14 @@ export function sessionPinArgs(command: unknown): SessionPinArgs {
     throw new Error('session_id is required');
   if (typeof value.pinned !== 'boolean') throw new Error('pinned must be a boolean');
   return { session_id: value.session_id, pinned: value.pinned };
+}
+
+export function sessionArchiveArgs(command: unknown): SessionArchiveArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim())
+    throw new Error('session_id is required');
+  if (typeof value.archived !== 'boolean') throw new Error('archived must be a boolean');
+  return { session_id: value.session_id, archived: value.archived };
 }
 
 export function sessionRenameArgs(command: unknown): SessionRenameArgs {
@@ -233,9 +243,24 @@ export function listSessions(
   if (limitValue !== undefined && (!Number.isInteger(limitValue) || (limitValue as number) < 0)) {
     throw new Error('limit must be a non-negative integer');
   }
-  const limit = (limitValue as number | undefined) ?? 10;
+  const scopeValue = value.scope;
+  if (scopeValue !== undefined && scopeValue !== 'active' && scopeValue !== 'archived') {
+    throw new Error('scope must be active or archived');
+  }
+  const scope: 'active' | 'archived' = scopeValue === 'archived' ? 'archived' : 'active';
+  const args: Required<Pick<SessionListArgs, 'limit' | 'scope'>> &
+    Pick<SessionListArgs, 'project'> = {
+    ...(project === undefined ? {} : { project }),
+    limit: (limitValue as number | undefined) ?? 10,
+    scope,
+  };
   const sessions = [...records.values()]
-    .filter((record) => project === undefined || record.summary.project === project)
+    .filter((record) => args.project === undefined || record.summary.project === args.project)
+    .filter((record) =>
+      args.scope === 'archived'
+        ? record.summary.archived === true
+        : record.summary.archived !== true,
+    )
     .sort((left, right) => {
       const leftStarted = left.summary.started_at
         ? Date.parse(left.summary.started_at)
@@ -247,8 +272,8 @@ export function listSessions(
       const rightTimestamp = Number.isFinite(rightStarted) ? rightStarted : 0;
       return rightTimestamp - leftTimestamp || right.startedSeq - left.startedSeq;
     })
-    .slice(0, limit)
-    .map((record) => record.summary);
+    .slice(0, args.limit)
+    .map((record) => ({ ...record.summary, archived: record.summary.archived === true }));
   return { sessions };
 }
 

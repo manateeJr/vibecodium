@@ -3,18 +3,8 @@ import { fork as nodeFork } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrateSessionStorage, sessionStorageRootFromEnvironment } from './session-storage.js';
-import {
-  COMMAND_NAMES,
-  type SessionForkResult,
-  type SessionListResult,
-  type SessionOpenArgs,
-  type SessionOpenResult,
-  type SessionPinResult,
-  type SessionResumeResult,
-  type SessionSendResult,
-  type SessionStopResult,
-  type SessionSummary,
-} from '../contracts/commands.js';
+import { COMMAND_NAMES } from '../contracts/commands.js';
+import type * as SessionCommands from '../contracts/commands.js';
 import type { MachineSessionResolver } from '../machine-sessions/index.js';
 import {
   hydrateExternalSession,
@@ -35,6 +25,7 @@ import { AdmissionBudget, admissionConfigFromEnv } from './admission.js';
 import { PersistentSessionManager } from './persistent-session-manager.js';
 import { registerRecentSessions } from './recent-sessions.js';
 import { pinSession } from './session-pinning.js';
+import { archiveSession } from './session-archive.js';
 import {
   errorMessage,
   forkSession,
@@ -140,6 +131,9 @@ export class SessionSubsystem implements Subsystem {
       this.rename(command),
     );
     context.registerCommand(COMMAND_NAMES.sessionPin, (command: unknown) => this.pin(command));
+    context.registerCommand(COMMAND_NAMES.sessionArchive, (command: unknown) =>
+      this.archive(command),
+    );
     context.registerCommand(COMMAND_NAMES.sessionSend, (command: unknown) => this.send(command));
     context.registerCommand(COMMAND_NAMES.sessionStop, (command: unknown) => this.stop(command));
     context.registerCommand(COMMAND_NAMES.sessionList, (command: unknown) => this.list(command));
@@ -258,10 +252,10 @@ export class SessionSubsystem implements Subsystem {
       this.emitSessionState(record.sessionId, 'resumable', 'reconciled');
     }
   }
-  public async open(command: unknown): Promise<SessionOpenResult> {
+  public async open(command: unknown): Promise<SessionCommands.SessionOpenResult> {
     return this.startSession(sessionOpenArgs(command));
   }
-  public async resume(command: unknown): Promise<SessionResumeResult> {
+  public async resume(command: unknown): Promise<SessionCommands.SessionResumeResult> {
     const args = sessionResumeArgs(command);
     const external = await resolveExternalSession(this.machineSessions, args.source, args.ref, () =>
       this.now().getTime(),
@@ -291,7 +285,7 @@ export class SessionSubsystem implements Subsystem {
       );
     return result;
   }
-  public list(command: unknown): SessionListResult {
+  public list(command: unknown): SessionCommands.SessionListResult {
     return listSessions(this.sessionRecords, command);
   }
   public rename(command: unknown): { label: string } {
@@ -305,10 +299,13 @@ export class SessionSubsystem implements Subsystem {
     record.summary = { ...record.summary, label: args.label, updated_at: updatedAt };
     return { label: args.label };
   }
-  public pin(command: unknown): SessionPinResult {
+  public pin(command: unknown): SessionCommands.SessionPinResult {
     return pinSession(this.sessionRecords, this.sessionTable, command);
   }
-  public async fork(command: unknown): Promise<SessionForkResult> {
+  public archive(command: unknown): SessionCommands.SessionArchiveResult {
+    return archiveSession(this.sessionRecords, this.sessionTable, command);
+  }
+  public async fork(command: unknown): Promise<SessionCommands.SessionForkResult> {
     return forkSession(command, {
       context: requireContext(this.context),
       sessionRecords: this.sessionRecords,
@@ -321,10 +318,10 @@ export class SessionSubsystem implements Subsystem {
     });
   }
   private startSession(
-    args: SessionOpenArgs,
+    args: SessionCommands.SessionOpenArgs,
     resumeRef?: string,
     resumeStorage?: ExternalResumeStorage,
-  ): Promise<SessionOpenResult> {
+  ): Promise<SessionCommands.SessionOpenResult> {
     if (this.persistentManager?.supports(args.provider)) {
       const active =
         [...this.sessions.values()].filter((state) => state.terminal === false).length +
@@ -366,7 +363,9 @@ export class SessionSubsystem implements Subsystem {
       onWorkerError: (state, message, terminal) => this.failSession(state, message, terminal),
     });
   }
-  public send(command: unknown): SessionSendResult | Promise<SessionSendResult> {
+  public send(
+    command: unknown,
+  ): SessionCommands.SessionSendResult | Promise<SessionCommands.SessionSendResult> {
     const args = sessionSendArgs(command);
     return this.sendIdempotency.run(args.session_id, args.idempotency_key, () => {
       if (
@@ -403,7 +402,7 @@ export class SessionSubsystem implements Subsystem {
       return { stream_id: state.stream_id, turn };
     });
   }
-  public async stop(command: unknown): Promise<SessionStopResult> {
+  public async stop(command: unknown): Promise<SessionCommands.SessionStopResult> {
     const args = sessionStopArgs(command);
     if (this.persistentManager?.has(args.session_id)) {
       const provider = this.sessionTable?.get(args.session_id)?.provider ?? 'omp';
@@ -480,7 +479,7 @@ export class SessionSubsystem implements Subsystem {
         this.reconciledSubstrateSessions.has(sessionId),
     });
   }
-  private sessionStartStatus(session_id: string): SessionSummary['status'] {
+  private sessionStartStatus(session_id: string): SessionCommands.SessionSummary['status'] {
     if (this.substrate === undefined && this.sessionTable === undefined) return 'live';
     if (this.sessions.has(session_id) || this.persistentManager?.has(session_id) === true)
       return 'live';

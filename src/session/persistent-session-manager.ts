@@ -436,6 +436,7 @@ export class PersistentSessionManager {
       label: previous?.label ?? summary?.label ?? '',
       origin: previous?.origin ?? summary?.origin ?? 'agent',
       ...(previous?.pinned === true || summary?.pinned === true ? { pinned: true } : {}),
+      ...(previous?.archived === true || summary?.archived === true ? { archived: true } : {}),
       ...(previous?.source !== undefined
         ? { source: previous.source }
         : summary?.source === undefined

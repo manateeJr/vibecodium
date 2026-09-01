@@ -70,6 +70,7 @@ export function projectSessionEvent(
         ...(abortKey === undefined ? {} : { abort_key: abortKey }),
         ...(source === undefined || source === null ? {} : { source }),
         ...(persisted?.pinned === true ? { pinned: true } : {}),
+        ...(persisted?.archived === true ? { archived: true } : {}),
       },
     });
     return;

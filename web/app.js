@@ -67,6 +67,7 @@ let machineSessions = [];
 let registeredProjects = [];
 let showAgents = loadShowAgentSessions();
 let historyController;
+let actions;
 const sessions = new Map();
 const { transcript, sessionView, home, chip } = createSessionSurface({
   connection,
@@ -102,6 +103,7 @@ const history = createHistoryDrawer({
   scrollContainer: elements.historyScroll,
   searchInput: elements.historySearch,
   projectFilter: elements.historyProjectFilter,
+  archivedList: elements.archivedHistory,
   pinnedList: elements.pinnedHistory,
   liveList: elements.liveHistory,
   endedList: elements.endedHistory,
@@ -121,6 +123,7 @@ const history = createHistoryDrawer({
     history.close();
   },
   onPin: (item, pinned) => void historyController?.pinSession(item, pinned),
+  onArchive: (item, archived) => void historyController?.archiveSession(item, archived),
   onMachineSelect: (summary) => {
     selectSessionItem(externalItem(summary, registeredProjects));
     history.close();
@@ -154,6 +157,7 @@ historyController = createHistoryController({
   errorMessage,
   renderSessions,
   loadSessions,
+  actions: { archiveSession: (...args) => actions?.archiveSession(...args) },
 });
 const hostPanel = createHostPanel({
   client,
@@ -200,7 +204,7 @@ createVoiceRecorder({
   onError: (message) => streamLog.error(message),
   errorMessage,
 });
-const actions = createActions({
+actions = createActions({
   client,
   elements,
   sessions,
@@ -343,7 +347,6 @@ async function loadMachineSessions() {
     renderSessions();
   }
 }
-
 async function loadSessions() {
   if (sessionsLoading) return;
   sessionsLoading = true;
@@ -363,7 +366,6 @@ async function loadSessions() {
     renderSessions();
   }
 }
-
 function updateScope() {
   const project = projectManager.selectedProject();
   elements.activeProject.textContent = project?.name || 'Scratch';
@@ -375,7 +377,6 @@ function updateScope() {
   void loadMachineSessions();
   void historyController.loadRecentSessions();
 }
-
 function refreshPresets() {
   const project = projectManager.selectedProject();
   history.setPresets([
@@ -389,7 +390,6 @@ function refreshPresets() {
     })),
   ]);
 }
-
 function selectPreset(preset) {
   if (preset.kind === 'skill') {
     skills.invoke(preset.id);

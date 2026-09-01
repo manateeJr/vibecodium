@@ -136,6 +136,7 @@ test('session rename persists in the durable table and list summary, with agent 
     started_at: new Date(2000).toISOString(),
     updated_at: new Date(2000).toISOString(),
     abort_key: 'escape',
+    archived: false,
   });
   assert.deepEqual(
     context.commands.get(COMMAND_NAMES.sessionRename)?.({

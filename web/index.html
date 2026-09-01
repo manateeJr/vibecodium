@@ -245,13 +245,16 @@
             <h3 id="ended-history-title">ENDED</h3>
             <div id="ended-history" class="history-list"></div>
           </section>
+          <details class="drawer-section" aria-labelledby="archived-history-title">
+            <summary><h3 id="archived-history-title">ARCHIVED</h3></summary>
+            <div id="archived-history" class="history-list"></div>
+          </details>
           <section class="drawer-section" aria-labelledby="machine-history-title">
             <h3 id="machine-history-title">MACHINE SESSIONS</h3>
             <div id="machine-history" class="history-list"></div>
           </section>
         </div>
       </aside>
-
       <aside id="files-drawer" class="drawer drawer--files" hidden aria-label="Files">
         <div class="drawer-heading">
           <h2>FILES</h2>
@@ -267,7 +270,6 @@
           aria-live="polite"
         ></span>
       </aside>
-
       <aside id="settings-drawer" class="drawer drawer--settings" hidden aria-label="Settings">
         <div class="drawer-heading">
           <h2>SETTINGS</h2>
@@ -479,7 +481,6 @@
         </section>
       </aside>
     </main>
-
     <button id="update-reload" class="update-toast" type="button" hidden>
       UPDATED · TAP TO RELOAD
     </button>

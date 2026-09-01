@@ -92,6 +92,7 @@ export interface SubstrateSessionRecord {
   readonly label?: string;
   readonly origin?: SessionOrigin;
   readonly pinned?: boolean;
+  readonly archived?: boolean;
   readonly source?: SessionSource | null;
   readonly updatedAt: string;
 }
