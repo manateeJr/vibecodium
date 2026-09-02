@@ -13,6 +13,7 @@ import { openTopicStore } from '../src/telegram/store.js';
 import type {
   CallbackQuery,
   IncomingMessage,
+  MachineSessionLite,
   SessionBridge,
   SessionLite,
   TelegramApi,
@@ -116,6 +117,13 @@ class FakeBridge implements SessionBridge {
   }> {
     this.openCalls.push(params);
     return { sessionId: 'session-1', turn: 1 };
+  }
+  async machineSessions(): Promise<MachineSessionLite[]> {
+    return [];
+  }
+
+  async resume(): Promise<{ sessionId: string; turn: number }> {
+    return { sessionId: 'unused', turn: 1 };
   }
 
   async send(params: { sessionId: string; prompt: string }): Promise<{ turn: number }> {

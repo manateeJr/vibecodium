@@ -86,6 +86,13 @@ export interface SessionLite {
   label?: string;
   cwd?: string;
 }
+export interface MachineSessionLite {
+  source: 'omp' | 'codex';
+  ref: string;
+  title: string;
+  cwd: string;
+  updatedAt: string;
+}
 
 export interface SessionBridge {
   health(): Promise<boolean>;
@@ -94,6 +101,13 @@ export interface SessionBridge {
     cwd: string;
     prompt: string;
     project?: string;
+  }): Promise<{ sessionId: string; turn: number }>;
+  machineSessions(): Promise<MachineSessionLite[]>;
+  resume(p: {
+    source: 'omp' | 'codex';
+    ref: string;
+    prompt: string;
+    cwd?: string;
   }): Promise<{ sessionId: string; turn: number }>;
   send(p: { sessionId: string; prompt: string }): Promise<{ turn: number }>;
   stop(sessionId: string): Promise<boolean>;

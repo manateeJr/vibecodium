@@ -10,6 +10,7 @@ import type {
 import type {
   SessionBridge,
   SessionLite,
+  MachineSessionLite,
   TelegramConfig,
   TurnProgress,
   TurnResult,
@@ -39,6 +40,20 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
         const result = await client.listProjects();
         return result.projects.map(({ name, path }) => ({ name, path }));
       }),
+    machineSessions: () =>
+      controlPlaneCall('machine list', async () => {
+        const result = await client.machineList();
+        return result.sessions
+          .filter((session) => session.kind === 'main')
+          .sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
+          .map(({ source, ref, title, cwd, updated_at }): MachineSessionLite => ({
+            source,
+            ref,
+            title,
+            cwd,
+            updatedAt: updated_at,
+          }));
+      }),
     open: ({ cwd, prompt, project }) =>
       controlPlaneCall('session open', async () => {
         const result = await client.openSession({
@@ -48,6 +63,17 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
           ...(project === undefined ? {} : { project }),
           origin: 'operator',
           source: 'api',
+        });
+        return { sessionId: result.session_id, turn: 1 };
+      }),
+    resume: ({ source, ref, prompt, cwd }) =>
+      controlPlaneCall('session resume', async () => {
+        const result = await client.resumeSession({
+          source,
+          ref,
+          prompt,
+          ...(cwd === undefined ? {} : { cwd }),
+          origin: 'operator',
         });
         return { sessionId: result.session_id, turn: 1 };
       }),
