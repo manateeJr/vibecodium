@@ -8,12 +8,7 @@ import type {
   TopicBinding,
   TopicStore,
 } from './types.js';
-import {
-  buildResumeKeyboard,
-  truncateTitle,
-  type PendingStart,
-  type ResumeSnapshot,
-} from './resume.js';
+import { createResumeHandler, truncateTitle, type PendingStart } from './resume.js';
 import { createTurnRelay } from './turn-relay.js';
 
 export interface TelegramFormat {
@@ -84,7 +79,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   const { relayTurn } = createTurnRelay({ api, bridge, config, format });
   const inFlight = new Set<number>();
   const pendingStarts = new Map<number, PendingStart>();
-  const resumeChoices = new Map<number, ResumeSnapshot>();
   const projectChoices = new Map<string, Project>();
   const lastTurns = new Map<string, number>();
 
@@ -104,6 +98,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       // The poll loop must survive even when the error reply cannot be sent.
     }
   }
+  const resumeHandler = createResumeHandler({ api, bridge, ensureHealthy, pendingStarts, reply });
 
   async function chooseProject(message: IncomingMessage): Promise<void> {
     await ensureHealthy();
@@ -236,42 +231,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     await createSession(message, project, prompt);
   }
 
-  async function handleResume(message: IncomingMessage): Promise<void> {
-    const args = commandArguments(message.text ?? '');
-    await ensureHealthy();
-    const sessions = await bridge.machineSessions();
-    if (!args) {
-      const snapshot: ResumeSnapshot = sessions.slice(0, 5).map((session) => ({ ...session }));
-      resumeChoices.delete(message.chatId);
-      if (snapshot.length === 0) {
-        await reply(messageTarget(message), 'no machine sessions found');
-        return;
-      }
-      resumeChoices.set(message.chatId, snapshot);
-      await api.sendMessage({
-        chatId: message.chatId,
-        text: 'Choose a machine session, then send the first prompt here:',
-        buttons: buildResumeKeyboard(snapshot),
-      });
-      return;
-    }
-
-    const session = sessions.find((candidate) => candidate.ref === args);
-    if (!session) {
-      await reply(messageTarget(message), 'unknown session ref');
-      return;
-    }
-    resumeChoices.delete(message.chatId);
-    pendingStarts.set(message.chatId, {
-      kind: 'resume',
-      source: session.source,
-      ref: session.ref,
-      cwd: session.cwd,
-      title: session.title,
-    });
-    await reply(messageTarget(message), `send the first prompt to continue "${session.title}"`);
-  }
-
   async function handleSessions(message: IncomingMessage): Promise<void> {
     await ensureHealthy();
     const [bindings, sessions] = await Promise.all([Promise.resolve(store.all()), bridge.list()]);
@@ -292,29 +251,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
 
   async function handleCallback(callback: CallbackQuery): Promise<void> {
     await api.answerCallbackQuery(callback.id);
-    if (callback.data.startsWith('resume:')) {
-      const indexText = callback.data.slice('resume:'.length);
-      const index = Number(indexText);
-      const snapshot = resumeChoices.get(callback.message.chatId);
-      const session =
-        /^\d+$/.test(indexText) && Number.isSafeInteger(index) && snapshot !== undefined
-          ? snapshot[index]
-          : undefined;
-      if (!session) {
-        await reply(callbackTarget(callback), 'that session selection is invalid');
-        return;
-      }
-      resumeChoices.delete(callback.message.chatId);
-      pendingStarts.set(callback.message.chatId, {
-        kind: 'resume',
-        source: session.source,
-        ref: session.ref,
-        cwd: session.cwd,
-        title: session.title,
-      });
-      await reply(callbackTarget(callback), `send the first prompt to continue "${session.title}"`);
-      return;
-    }
+    if (await resumeHandler.handleCallback(callback)) return;
     if (!callback.data.startsWith('new:')) return;
     const encodedName = callback.data.slice(4);
     let projectName: string;
@@ -430,7 +367,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       return;
     }
     if (command === 'resume') {
-      await handleResume(message);
+      await resumeHandler.handleCommand(message);
       return;
     }
     if (command === 'sessions') {

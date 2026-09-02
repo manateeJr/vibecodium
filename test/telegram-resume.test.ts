@@ -21,6 +21,7 @@ import type {
 
 type SendMessageParams = Parameters<TelegramApi['sendMessage']>[0];
 type EditMessageParams = Parameters<TelegramApi['editMessageText']>[0];
+type EditMarkupParams = Parameters<TelegramApi['editMessageReplyMarkup']>[0];
 type TopicParams = Parameters<TelegramApi['createForumTopic']>[0];
 type WatchParams = Parameters<SessionBridge['watchTurn']>[0];
 type SentMessage = SendMessageParams & { messageId: number };
@@ -28,6 +29,7 @@ type SentMessage = SendMessageParams & { messageId: number };
 class FakeApi implements TelegramApi {
   readonly sentMessages: SentMessage[] = [];
   readonly editedMessages: EditMessageParams[] = [];
+  readonly editedMarkups: EditMarkupParams[] = [];
   readonly createdTopics: TopicParams[] = [];
   readonly calls: string[] = [];
   private nextMessageId = 100;
@@ -58,8 +60,8 @@ class FakeApi implements TelegramApi {
   async editMessageText(params: EditMessageParams): Promise<void> {
     this.editedMessages.push(params);
   }
-  async editMessageReplyMarkup(): Promise<void> {
-    this.calls.push('editMessageReplyMarkup');
+  async editMessageReplyMarkup(params: EditMarkupParams): Promise<void> {
+    this.editedMarkups.push(params);
   }
 
   async sendDocument(): Promise<{ messageId: number }> {
@@ -185,12 +187,12 @@ function update(incoming: IncomingMessage): TelegramUpdate {
   return { updateId: incoming.messageId, message: incoming };
 }
 
-function callback(data: string): CallbackQuery {
+function callback(data: string, messageId = 2): CallbackQuery {
   return {
     id: `callback-${data}`,
     from: { id: 42 },
     data,
-    message: { chatId: -1001, messageId: 2 },
+    message: { chatId: -1001, messageId },
   };
 }
 
@@ -235,9 +237,8 @@ test('resume helpers format age, truncate titles, and build five callbacks', () 
     session('three', 'one day', '/workspace/three', '2026-09-01T12:00:00.000Z'),
     session('four', 'four', '/workspace/four', now.toISOString()),
     session('five', 'five', '/workspace/five', now.toISOString()),
-    session('six', 'six', '/workspace/six', now.toISOString()),
   ];
-  const keyboard = buildResumeKeyboard(sessions, now);
+  const keyboard = buildResumeKeyboard(sessions, 1, 5, now);
   const [first, second, third] = sessions;
   assert.ok(first && second && third);
   assert.equal(formatSessionAge(first.updatedAt, now), '3m');
@@ -247,7 +248,7 @@ test('resume helpers format age, truncate titles, and build five callbacks', () 
   assert.equal(keyboard.length, 5);
   assert.deepEqual(
     keyboard.map(([button]) => button?.callbackData),
-    ['resume:0', 'resume:1', 'resume:2', 'resume:3', 'resume:4'],
+    ['resume:1:0', 'resume:1:1', 'resume:1:2', 'resume:1:3', 'resume:1:4'],
   );
   assert.equal(keyboard[0]?.[0]?.text, `${'a'.repeat(40)} · one · 3m`);
   assert.equal(keyboard[1]?.[0]?.text, 'two hours · two · 2h');
@@ -262,7 +263,14 @@ test('resume callback starts a new topic and relays the first turn', async () =>
   ];
   try {
     await fixture.bot.handleUpdate(update(message('/resume')));
-    await fixture.bot.handleUpdate({ updateId: 2, callbackQuery: callback('resume:0') });
+    const choiceMessage = fixture.api.sentMessages.at(-1);
+    assert.ok(choiceMessage);
+    const choice = choiceMessage.buttons?.[0]?.[0]?.callbackData;
+    assert.ok(choice);
+    await fixture.bot.handleUpdate({
+      updateId: 2,
+      callbackQuery: callback(choice, choiceMessage.messageId),
+    });
     assert.equal(
       fixture.api.sentMessages.at(-1)?.text,
       `send the first prompt to continue "${title}"`,
@@ -325,14 +333,95 @@ test('resume ref starts the pending prompt flow without a keyboard', async () =>
   }
 });
 
-test('unknown resume refs are rejected before resume is called', async () => {
+test('resume expands the same capped snapshot in five-entry pages', async () => {
+  const fixture = createFixture();
+  fixture.bridge.machineSessionsList = Array.from({ length: 25 }, (_, index) =>
+    session(`ref-${index}`, `Session ${index}`, `/workspace/session-${index}`, threeMinutesAgo()),
+  );
+  try {
+    await fixture.bot.handleUpdate(update(message('/resume')));
+    const initial = fixture.api.sentMessages.at(-1);
+    assert.ok(initial);
+    assert.equal(initial.buttons?.length, 6);
+    const firstMore = initial.buttons?.at(-1)?.[0];
+    assert.equal(firstMore?.text, 'more ›');
+    assert.ok(firstMore);
+
+    const tapMore = async (data: string, rows: number, updateId: number) => {
+      await fixture.bot.handleUpdate({
+        updateId,
+        callbackQuery: callback(data, initial.messageId),
+      });
+      const edited = fixture.api.editedMarkups.at(-1);
+      assert.equal(edited?.messageId, initial.messageId);
+      assert.equal(edited?.buttons?.length, rows);
+      return edited?.buttons?.at(-1)?.[0];
+    };
+
+    const secondMore = await tapMore(firstMore.callbackData, 11, 3);
+    assert.equal(secondMore?.text, 'more ›');
+    const thirdMore = await tapMore(secondMore?.callbackData ?? '', 16, 4);
+    assert.equal(thirdMore?.text, 'more ›');
+    const finalRow = await tapMore(thirdMore?.callbackData ?? '', 20, 5);
+    assert.notEqual(finalRow?.text, 'more ›');
+    assert.match(finalRow?.callbackData ?? '', /^resume:\d+:19$/);
+  } finally {
+    cleanup(fixture.store, fixture.directory);
+  }
+});
+
+test('resume filters by title and cwd basename case-insensitively', async () => {
+  const fixture = createFixture();
+  fixture.bridge.machineSessionsList = [
+    session('one', 'Workout roadmap', '/projects/one', threeMinutesAgo()),
+    session('two', 'Road trip', '/projects/two', threeMinutesAgo()),
+    session('three', 'Unrelated', '/projects/AlphaGym', threeMinutesAgo()),
+  ];
+  try {
+    await fixture.bot.handleUpdate(update(message('/resume ROAD')));
+    const titleResult = fixture.api.sentMessages.at(-1);
+    assert.equal(titleResult?.text, 'Sessions matching "ROAD":');
+    assert.equal(titleResult?.buttons?.length, 2);
+    assert.match(titleResult?.buttons?.[0]?.[0]?.text ?? '', /^Workout roadmap/);
+    assert.match(titleResult?.buttons?.[1]?.[0]?.text ?? '', /^Road trip/);
+
+    await fixture.bot.handleUpdate(update(message('/resume alphagym')));
+    const cwdResult = fixture.api.sentMessages.at(-1);
+    assert.equal(cwdResult?.text, 'Sessions matching "alphagym":');
+    assert.equal(cwdResult?.buttons?.length, 1);
+    assert.match(cwdResult?.buttons?.[0]?.[0]?.text ?? '', /^Unrelated/);
+  } finally {
+    cleanup(fixture.store, fixture.directory);
+  }
+});
+
+test('stale resume snapshots are rejected', async () => {
+  const fixture = createFixture();
+  fixture.bridge.machineSessionsList = [
+    session('known-ref', 'Known', '/workspace/known', threeMinutesAgo()),
+  ];
+  try {
+    await fixture.bot.handleUpdate(update(message('/resume')));
+    const sent = fixture.api.sentMessages.at(-1);
+    assert.ok(sent);
+    await fixture.bot.handleUpdate({
+      updateId: 2,
+      callbackQuery: callback('resume:999:0', sent.messageId),
+    });
+    assert.equal(fixture.api.sentMessages.at(-1)?.text, 'that session selection is invalid');
+  } finally {
+    cleanup(fixture.store, fixture.directory);
+  }
+});
+
+test('unknown resume refs become text filters with no matches', async () => {
   const fixture = createFixture();
   fixture.bridge.machineSessionsList = [
     session('known-ref', 'Known', '/workspace/known', threeMinutesAgo()),
   ];
   try {
     await fixture.bot.handleUpdate(update(message('/resume missing-ref')));
-    assert.equal(fixture.api.sentMessages.at(-1)?.text, 'unknown session ref');
+    assert.equal(fixture.api.sentMessages.at(-1)?.text, 'no machine sessions match "missing-ref"');
     assert.equal(fixture.bridge.resumeCalls.length, 0);
   } finally {
     cleanup(fixture.store, fixture.directory);
