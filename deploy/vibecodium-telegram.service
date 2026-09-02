@@ -1,0 +1,20 @@
+[Unit]
+Description=Vibecodium Telegram frontend
+Documentation=https://github.com/manateeJr/vibecodium
+After=network-online.target vibecodium.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/vibecodium
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/var/lib/snapd/snap/bin
+ExecStart=/usr/bin/node dist/src/telegram/main.js
+EnvironmentFile=%h/.config/vibecodium/telegram.env
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vibecodium-telegram
+
+[Install]
+WantedBy=default.target

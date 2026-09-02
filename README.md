@@ -158,3 +158,19 @@ accepts `main` only when it finds passing `gate` evidence and passing `soak`
 evidence for the same `HEAD`, with the latter recording at least 10 minutes.
 On failure the soak exits nonzero and leaves a temporary artifact directory
 with events, abduco listing, and transcript tails for diagnosis.
+
+## Telegram frontend
+
+Create a bot with BotFather and keep its token. Create a private supergroup,
+enable Topics, and add the bot as an administrator with permission to manage
+topics. Get the supergroup chat ID and your numeric Telegram user ID; only that
+user ID is allowed to control the bot.
+
+Copy `deploy/telegram.env.example` to
+`~/.config/vibecodium/telegram.env` and fill in the values. Install and start
+the user service with:
+
+```sh
+cp deploy/vibecodium-telegram.service ~/.config/systemd/user/
+systemctl --user enable --now vibecodium-telegram
+```
