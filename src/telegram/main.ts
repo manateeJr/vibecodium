@@ -27,7 +27,7 @@ export async function runTelegramBot(options: TelegramBotLoopOptions): Promise<v
       updates = await options.api.getUpdates(offset, options.pollTimeoutSec, options.signal);
     } catch (error: unknown) {
       if (options.signal.aborted) break;
-      console.error(`Telegram getUpdates failed: ${formatError(error)}`);
+      console.error(`[telegram] Telegram getUpdates failed: ${formatError(error)}`);
       if (!(await waitForRetry(retryBackoffMs, options.signal))) break;
       continue;
     }
@@ -37,11 +37,13 @@ export async function runTelegramBot(options: TelegramBotLoopOptions): Promise<v
       try {
         await options.bot.handleUpdate(update);
       } catch (error: unknown) {
-        console.error(`Telegram update ${update.updateId} failed: ${formatError(error)}`);
+        console.error(
+          `[telegram] Telegram update ${update.updateId} failed: ${formatError(error)}`,
+        );
       }
       offset = update.updateId + 1;
       options.store.setOffset(offset);
-      console.log(`handled Telegram update ${update.updateId}`);
+      process.stdout.write(`[telegram] handled Telegram update ${update.updateId}\n`);
     }
   }
 }
@@ -74,7 +76,7 @@ export async function main(): Promise<void> {
   try {
     config = loadTelegramConfig();
   } catch (error: unknown) {
-    console.error(formatError(error));
+    console.error(`[telegram] ${formatError(error)}`);
     process.exitCode = 1;
     return;
   }
@@ -97,7 +99,7 @@ export async function main(): Promise<void> {
       format: { escapeMarkdownV2, chunkText },
     });
     const me = await api.getMe();
-    console.log(`Telegram bot @${me.username} started`);
+    process.stdout.write(`[telegram] Telegram bot @${me.username} started\n`);
     await runTelegramBot({
       api,
       bot,
@@ -108,7 +110,7 @@ export async function main(): Promise<void> {
     process.exitCode = 0;
   } catch (error: unknown) {
     if (!controller.signal.aborted) {
-      console.error(`Telegram bot failed: ${formatError(error)}`);
+      console.error(`[telegram] Telegram bot failed: ${formatError(error)}`);
       process.exitCode = 1;
     }
   } finally {
