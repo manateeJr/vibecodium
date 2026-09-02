@@ -23,6 +23,8 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
     webSocket: WebSocket as unknown as SocketConstructor,
   });
   const baseUrl = config.controlPlaneUrl.replace(/\/+$/, '');
+  const watchStartSeqByTurn = new Map<string, number>();
+  const lastSeenSeqBySession = new Map<string, number>();
 
   return {
     health: async (): Promise<boolean> => {
@@ -79,7 +81,17 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
       }),
     send: ({ sessionId, prompt }) =>
       controlPlaneCall('session send', async () => {
+        const streamId = `session:${sessionId}`;
+        const previousTailSeq = lastSeenSeqBySession.get(sessionId) ?? 0;
+        const events = await client.getEvents(streamId, previousTailSeq);
+        const streamTailSeq = events.at(-1)?.seq ?? previousTailSeq;
+        lastSeenSeqBySession.set(sessionId, streamTailSeq);
         const result = await client.sendMessage({ session_id: sessionId, prompt });
+        const sessionKeyPrefix = `${sessionId}:`;
+        for (const key of watchStartSeqByTurn.keys()) {
+          if (key.startsWith(sessionKeyPrefix)) watchStartSeqByTurn.delete(key);
+        }
+        watchStartSeqByTurn.set(`${sessionId}:${result.turn}`, streamTailSeq);
         return { turn: result.turn };
       }),
     stop: (sessionId) =>
@@ -101,8 +113,12 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
           ...(summary.cwd === undefined ? {} : { cwd: summary.cwd }),
         }));
       }),
-    watchTurn: ({ sessionId, turn, onProgress, timeoutMs }) =>
-      watchTurn(client, sessionId, turn, onProgress, timeoutMs),
+    watchTurn: ({ sessionId, turn, onProgress, timeoutMs }) => {
+      const key = `${sessionId}:${turn}`;
+      const fromSeq = watchStartSeqByTurn.get(key);
+      watchStartSeqByTurn.delete(key);
+      return watchTurn(client, sessionId, turn, fromSeq, onProgress, timeoutMs);
+    },
   };
 }
 
@@ -120,6 +136,7 @@ function watchTurn(
   client: VibecodiumClient,
   sessionId: string,
   turn: number,
+  fromSeq: number | undefined,
   onProgress: (progress: TurnProgress) => void,
   timeoutMs: number,
 ): Promise<TurnResult> {
@@ -189,9 +206,9 @@ function watchTurn(
     };
 
     try {
-      // Replay from zero preserves an input emitted before subscription and avoids lost output.
+      // Start after the stream tail captured before this send so replay cannot match an earlier turn.
       // The initial open turn has no session_input, so turn 1 uses stream output as fallback.
-      unsubscribe = client.subscribe(0, receive, streamId);
+      unsubscribe = client.subscribe(fromSeq ?? 0, receive, streamId);
       if (settled) {
         cleanup();
         return;
