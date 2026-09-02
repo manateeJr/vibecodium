@@ -36,9 +36,9 @@ type OpenSession = () => Promise<OpenedSession>;
 
 const HELP_TEXT = [
   '/new <project> <prompt> — start a session in a new topic',
-  '/resume — continue a machine session in a new topic',
+  '/resume — bind a live session or continue a machine session in a new topic',
   '/rename <name> — rename this session topic',
-  '/sessions — list sessions attached to topics',
+  '/sessions — list live sessions with topic bindings',
   '/status — show this session state and last turn',
   '/stop — stop this session',
   '/attach — print the terminal attach command',
@@ -100,7 +100,14 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       // The poll loop must survive even when the error reply cannot be sent.
     }
   }
-  const resumeHandler = createResumeHandler({ api, bridge, ensureHealthy, pendingStarts, reply });
+  const resumeHandler = createResumeHandler({
+    api,
+    bridge,
+    store,
+    ensureHealthy,
+    pendingStarts,
+    reply,
+  });
 
   async function chooseProject(message: IncomingMessage): Promise<void> {
     await ensureHealthy();
@@ -234,21 +241,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   }
 
   async function handleSessions(message: IncomingMessage): Promise<void> {
-    await ensureHealthy();
-    const [bindings, sessions] = await Promise.all([Promise.resolve(store.all()), bridge.list()]);
-    const text = bindings.length
-      ? bindings
-          .map((binding) => {
-            const status =
-              sessions.find((session) => session.sessionId === binding.sessionId)?.status ??
-              'unknown';
-            return (
-              `${binding.label} — ${status} ` + `(thread ${binding.threadId}, ${binding.sessionId})`
-            );
-          })
-          .join('\n')
-      : '(no sessions)';
-    await reply(messageTarget(message), text);
+    await resumeHandler.handleSessions(message);
   }
 
   async function handleCallback(callback: CallbackQuery): Promise<void> {

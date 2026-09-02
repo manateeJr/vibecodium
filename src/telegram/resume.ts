@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { createBindHandler, type BindHandler } from './bind.js';
 import type {
   CallbackQuery,
   IncomingMessage,
@@ -6,6 +7,7 @@ import type {
   MachineSessionLite,
   SessionBridge,
   TelegramApi,
+  TopicStore,
 } from './types.js';
 
 const PAGE_SIZE = 5;
@@ -31,16 +33,19 @@ export type ResumeCallback =
 export type ResumeReplyTarget = { chatId: number; threadId?: number };
 
 export interface ResumeHandlerDependencies {
-  api: Pick<TelegramApi, 'sendMessage' | 'editMessageReplyMarkup'>;
-  bridge: Pick<SessionBridge, 'machineSessions'>;
+  api: Pick<TelegramApi, 'sendMessage' | 'editMessageReplyMarkup' | 'createForumTopic'>;
+  bridge: Pick<SessionBridge, 'machineSessions' | 'list'>;
+  store: Pick<TopicStore, 'bind' | 'bySession' | 'all'>;
   ensureHealthy: () => Promise<void>;
   pendingStarts: Map<number, PendingStart>;
   reply: (target: ResumeReplyTarget, text: string) => Promise<void>;
+  onBind?: (sessionId: string) => void;
 }
 
 export interface ResumeHandler {
   handleCommand(message: IncomingMessage): Promise<void>;
   handleCallback(callback: CallbackQuery): Promise<boolean>;
+  handleSessions(message: IncomingMessage): Promise<void>;
 }
 
 export function truncateTitle(title: string, maxLength: number): string {
@@ -142,7 +147,15 @@ function copySnapshot(sessions: MachineSessionLite[]): ResumeSnapshot {
 }
 
 export function createResumeHandler(deps: ResumeHandlerDependencies): ResumeHandler {
-  const { api, bridge, ensureHealthy, pendingStarts, reply } = deps;
+  const { api, bridge, store, ensureHealthy, pendingStarts, reply, onBind } = deps;
+  const bindHandler: BindHandler = createBindHandler({
+    api,
+    bridge,
+    store,
+    ensureHealthy,
+    reply,
+    ...(onBind === undefined ? {} : { onBind }),
+  });
   const snapshots: ResumeSnapshotRegistry = new Map();
   let nextSnapshotId = 1;
 
@@ -186,36 +199,43 @@ export function createResumeHandler(deps: ResumeHandlerDependencies): ResumeHand
 
   async function handleCommand(message: IncomingMessage): Promise<void> {
     const args = commandArguments(message.text ?? '');
+    bindHandler.clearSnapshot(message.chatId);
     await ensureHealthy();
-    const sessions = await bridge.machineSessions();
-    if (!args) {
+    const [substrateSessions, machineSessions] = await Promise.all([
+      bridge.list(),
+      bridge.machineSessions(),
+    ]);
+    if (args) {
+      const exact = machineSessions.find((session) => session.ref === args);
+      if (exact) {
+        snapshots.delete(message.chatId);
+        setPendingResume(message.chatId, exact);
+        await reply(target(message), `send the first prompt to continue "${exact.title}"`);
+        return;
+      }
+
+      await bindHandler.sendResumeChoices(message, substrateSessions, args);
+      const matching = machineSessions.filter((session) => matchesResumeFilter(session, args));
       await sendChoices(
         message,
-        'Choose a machine session, then send the first prompt here:',
-        sessions,
-        'no machine sessions found',
+        `Sessions matching "${args}":`,
+        matching,
+        `no machine sessions match "${args}"`,
       );
       return;
     }
 
-    const exact = sessions.find((session) => session.ref === args);
-    if (exact) {
-      snapshots.delete(message.chatId);
-      setPendingResume(message.chatId, exact);
-      await reply(target(message), `send the first prompt to continue "${exact.title}"`);
-      return;
-    }
-
-    const matching = sessions.filter((session) => matchesResumeFilter(session, args));
+    await bindHandler.sendResumeChoices(message, substrateSessions);
     await sendChoices(
       message,
-      `Sessions matching "${args}":`,
-      matching,
-      `no machine sessions match "${args}"`,
+      'Choose a machine session, then send the first prompt here:',
+      machineSessions,
+      'no machine sessions found',
     );
   }
 
   async function handleCallback(callback: CallbackQuery): Promise<boolean> {
+    if (await bindHandler.handleCallback(callback)) return true;
     if (!callback.data.startsWith('resume:')) return false;
     const parsed = parseResumeCallback(callback.data);
     const entry = parsed ? snapshots.get(callback.message.chatId) : undefined;
@@ -249,5 +269,10 @@ export function createResumeHandler(deps: ResumeHandlerDependencies): ResumeHand
     return true;
   }
 
-  return { handleCommand, handleCallback };
+  async function handleSessions(message: IncomingMessage): Promise<void> {
+    snapshots.delete(message.chatId);
+    await bindHandler.handleSessions(message);
+  }
+
+  return { handleCommand, handleCallback, handleSessions };
 }
