@@ -1,14 +1,14 @@
 import { createReplayRuntime, spawnTelegramBot, stopTelegramBot } from './runtime.mjs';
+import { replayBindStep, replayOpenStep } from './bind.mjs';
+import { replayTerminalStep } from './echo.mjs';
+import { captureSession } from './capture.mjs';
 import {
-  assistantTextForTurn,
   command,
   finalTelegramEdit,
-  latestCompletedTurn,
   readEvents,
   readTranscript,
   sleep,
   transcriptPath,
-  turnTextFromEvents,
   waitFor,
 } from './io.mjs';
 import { createStepRecord, evaluateExpectations, printStep, printTable } from './report.mjs';
@@ -82,6 +82,28 @@ export async function runReplay(options) {
         evaluateExpectations(step.expect, state, failures);
         continue;
       }
+      if (step.via === 'open') {
+        await replayOpenStep({ context, step, stepNumber, state });
+        continue;
+      }
+      if (step.via === 'bind') {
+        await replayBindStep({
+          context,
+          stub,
+          telegram,
+          ids,
+          step,
+          stepNumber,
+          state,
+          updateId: () => updateId++,
+          messageId: () => messageId++,
+          timeoutMs,
+          signal: controller.signal,
+          onTimeout: () => printTimeoutDiagnostics(context, state.sessionId),
+          records,
+        });
+        continue;
+      }
       if (step.via === 'telegram') {
         await replayTelegramStep({
           context,
@@ -96,7 +118,6 @@ export async function runReplay(options) {
           timeoutMs,
           signal: controller.signal,
           records,
-          strictEcho,
         });
         continue;
       }
@@ -107,8 +128,10 @@ export async function runReplay(options) {
           step,
           stepNumber,
           state,
+          threadId: ids.threadId,
           timeoutMs,
           signal: controller.signal,
+          onTimeout: () => printTimeoutDiagnostics(context, state.sessionId),
           records,
           strictEcho,
           failures,
@@ -223,7 +246,14 @@ async function replayTelegramStep({
       onTimeout: () => printTimeoutDiagnostics(context, state.sessionId),
     },
   );
-  const capture = await captureSession(context, state.sessionId, turn, timeoutMs, signal);
+  const capture = await captureSession({
+    runtime: context.runtime,
+    sessionId: state.sessionId,
+    turn,
+    timeoutMs,
+    signal,
+    onTimeout: () => printTimeoutDiagnostics(context, state.sessionId),
+  });
   state.lastTurn = turn;
   state.telegramText = final.text;
   state.transcriptTurns = capture.transcript.turns.length;
@@ -239,93 +269,7 @@ async function replayTelegramStep({
     eventCount: capture.events.length,
   });
   records.push(record);
-  printStep(record, false);
-}
-
-async function replayTerminalStep({
-  context,
-  stub,
-  step,
-  stepNumber,
-  state,
-  timeoutMs,
-  signal,
-  records,
-  strictEcho,
-  failures,
-}) {
-  if (state.sessionId === undefined) throw new Error('terminal step has no Telegram session');
-  const startedAt = Date.now();
-  const fromCall = stub.calls.length;
-  const beforeEvents = await readEvents(context.runtime, state.sessionId);
-  let turn;
-  let eventText;
-  let detail;
-  if (step.text !== undefined) {
-    const result = await command(context.runtime, 'session.send', {
-      session_id: state.sessionId,
-      prompt: step.text,
-    });
-    if (!Number.isInteger(result?.turn)) throw new Error('session.send omitted turn');
-    turn = result.turn;
-    const events = await waitFor(
-      `terminal turn_complete turn=${turn}`,
-      async () => {
-        const current = await readEvents(context.runtime, state.sessionId);
-        return current.some(
-          (event) => event?.type === 'turn_complete' && event.payload?.turn === turn,
-        )
-          ? current
-          : false;
-      },
-      {
-        timeoutMs,
-        signal,
-        onTimeout: () => printTimeoutDiagnostics(context, state.sessionId),
-      },
-    );
-    eventText = turnTextFromEvents(events, turn) ?? '';
-  } else {
-    const result = await command(context.runtime, 'session.send_keys', {
-      session_id: state.sessionId,
-      keys: step.keys,
-    });
-    detail = `sent ${result?.sent ?? 0} terminal keys`;
-    const events = await readEvents(context.runtime, state.sessionId);
-    const nextTurn = latestCompletedTurn(events);
-    if (nextTurn > latestCompletedTurn(beforeEvents)) {
-      turn = nextTurn;
-      eventText = turnTextFromEvents(events, turn) ?? '';
-    }
-  }
-  const capture = await captureSession(context, state.sessionId, turn, timeoutMs, signal);
-  const echo = finalTelegramEdit(stub.calls, fromCall);
-  const transcriptText = turn === undefined ? undefined : capture.transcriptText;
-  state.lastTurn = turn ?? state.lastTurn;
-  if (echo !== undefined) state.telegramText = echo.text;
-  state.transcriptTurns = capture.transcript.turns.length;
-  if (transcriptText !== undefined) state.transcriptText = transcriptText;
-  if (strictEcho && turn !== undefined && echo === undefined) {
-    failures.push(
-      `[expect] FAIL echo expected terminal turn ${turn} in Telegram; actual echo: pending #113`,
-    );
-  }
-  const record = createStepRecord(stepNumber, {
-    turn,
-    latencyMs: Date.now() - startedAt,
-    telegramText: echo?.text,
-    telegramMessageId: echo?.messageId,
-    transcriptText,
-    transcriptExists: capture.transcript.exists,
-    transcriptTurns: state.transcriptTurns,
-    eventCount: capture.events.length,
-  });
-  records.push(record);
-  if (detail !== undefined) globalThis.console.log(`[terminal] step=${stepNumber} ${detail}`);
-  printStep(record, strictEcho);
-  if (eventText !== undefined && eventText !== transcriptText) {
-    globalThis.console.log(`[terminal] step=${stepNumber} event text differs from transcript text`);
-  }
+  printStep(record);
 }
 
 async function replayReapStep({ context, stepNumber, state, timeoutMs, signal, records }) {
@@ -375,29 +319,7 @@ async function replayReapStep({ context, stepNumber, state, timeoutMs, signal, r
   });
   records.push(record);
   state.transcriptTurns = transcript.turns.length;
-  printStep(record, false);
-}
-
-async function captureSession(context, sessionId, turn, timeoutMs, signal) {
-  const events = await readEvents(context.runtime, sessionId);
-  const filePath = transcriptPath(context.runtime, sessionId);
-  const transcript = await waitFor(
-    `transcript ${sessionId}`,
-    () => {
-      const current = readTranscript(filePath);
-      return turn === undefined || current.turns.length >= turn ? current : false;
-    },
-    {
-      timeoutMs,
-      signal,
-      onTimeout: () => printTimeoutDiagnostics(context, sessionId),
-    },
-  );
-  return {
-    events,
-    transcript,
-    transcriptText: turn === undefined ? undefined : assistantTextForTurn(transcript, turn),
-  };
+  printStep(record);
 }
 
 async function printTimeoutDiagnostics(context, sessionId) {

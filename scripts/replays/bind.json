@@ -1,0 +1,14 @@
+{
+  "project": {
+    "name": "bind-demo"
+  },
+  "steps": [
+    {
+      "via": "open"
+    },
+    {
+      "via": "bind",
+      "text": "reply from the bound topic"
+    }
+  ]
+}

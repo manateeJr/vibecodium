@@ -188,6 +188,30 @@ export function messageUpdate(
   };
 }
 
+export function callbackQueryUpdate(
+  updateId: number,
+  callbackId: string,
+  data: string,
+  messageId: number,
+  topic: boolean,
+  options: TelegramStubOptions = {},
+): WireUpdate {
+  const configured = ids(options);
+  return {
+    update_id: updateId,
+    callback_query: {
+      id: callbackId,
+      from: { id: configured.userId },
+      data,
+      message: {
+        message_id: messageId,
+        chat: { id: configured.chatId, type: 'supergroup' },
+        ...(topic ? { message_thread_id: configured.threadId } : {}),
+      },
+    },
+  };
+}
+
 export function callBody(call: TelegramCall): JsonRecord {
   if (typeof call.body !== 'object' || call.body === null) {
     throw new Error(`Telegram ${call.endpoint} body is not an object`);

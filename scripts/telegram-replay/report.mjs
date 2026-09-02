@@ -15,16 +15,14 @@ export function createStepRecord(step, data) {
   };
 }
 
-export function printStep(record, strictEcho) {
+export function printStep(record) {
   const turn = record.turn === undefined ? '—' : String(record.turn);
   const telegramText = record.telegramText;
   const telegramDetail =
     telegramText === undefined
       ? record.turn === undefined
         ? 'no new assistant post'
-        : strictEcho
-          ? 'echo missing'
-          : 'echo: pending #113'
+        : 'echo missing'
       : `text=${JSON.stringify(unescapeTelegramMarkdown(telegramText))} message_id=${record.telegramMessageId ?? '—'}`;
   const terminalDetail =
     record.reaperProof ??
@@ -92,7 +90,7 @@ export function printTable(records) {
         ? '—'
         : hasTelegram
           ? compareTelegramToTranscript(record.telegramText, record.transcriptText)
-          : 'echo: pending #113';
+          : 'echo missing';
     const latency = `${record.latencyMs}ms`;
     globalThis.console.log(
       `| ${record.step} | telegram | ${turn} | ${hasTelegram ? 'yes' : 'no'} | ${hasTranscript ? 'yes' : 'no'} | ${match} | ${latency} |`,

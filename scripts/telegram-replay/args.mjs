@@ -5,12 +5,12 @@ export function parseReplayArgs(argv) {
   const scriptArgument = argv.find((argument) => !argument.startsWith('--'));
   if (scriptArgument === undefined) {
     throw new Error(
-      'usage: node scripts/telegram-replay.mjs <script.json> [--keep] [--strict-echo] [--provider omp|fake]',
+      'usage: node scripts/telegram-replay.mjs <script.json> [--keep] [--strict-echo] [--no-strict-echo] [--provider omp|fake]',
     );
   }
   let provider = 'omp';
   let keep = false;
-  let strictEcho = false;
+  let strictEcho = true;
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === scriptArgument) continue;
@@ -19,7 +19,10 @@ export function parseReplayArgs(argv) {
       continue;
     }
     if (argument === '--strict-echo') {
-      strictEcho = true;
+      continue;
+    }
+    if (argument === '--no-strict-echo') {
+      strictEcho = false;
       continue;
     }
     if (argument === '--provider') {
@@ -99,6 +102,16 @@ function validateStep(step, label) {
     }
     return;
   }
+  if (step.via === 'open') {
+    if (step.prompt !== undefined && typeof step.prompt !== 'string') {
+      throw new Error(`${label}.prompt must be a string when supplied`);
+    }
+    return;
+  }
+  if (step.via === 'bind') {
+    if (typeof step.text !== 'string') throw new Error(`${label}.text must be a string`);
+    return;
+  }
   if (step.via === 'telegram') {
     if (typeof step.text !== 'string') throw new Error(`${label}.text must be a string`);
     return;
@@ -113,5 +126,5 @@ function validateStep(step, label) {
     return;
   }
   if (step.via === 'reap') return;
-  throw new Error(`${label}.via must be telegram, terminal, or reap`);
+  throw new Error(`${label}.via must be telegram, terminal, open, bind, or reap`);
 }

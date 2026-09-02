@@ -28,13 +28,27 @@ test('Telegram replay smoke drives both surfaces with the fake provider', async 
     assert.match(result.stdout, new RegExp(`\\| ${step} \\| telegram \\|`));
     assert.match(result.stdout, new RegExp(`\\| ${step} \\| terminal \\|`));
   }
-  assert.match(result.stdout, /echo: pending #113/);
+  assert.match(result.stdout, /\| 2 \| terminal \| 2 \| yes \| yes \| OK \|/);
   assert.match(result.stdout, /session_state state=resumable reason=reaped/);
 });
 
-function runReplayProcess(): Promise<ChildResult> {
+test('Telegram replay proves a plain control-plane session can bind and reply', async (t) => {
+  if (!existsSync(substrateBinary)) {
+    t.skip(`replay bind skipped: ${substrateBinary} is absent; run npm run setup:substrate`);
+    return;
+  }
+
+  const result = await runReplayProcess('bind.json');
+  assert.equal(result.code, 0, result.stderr || result.stdout);
+  assert.equal(result.signal, null);
+  assert.match(result.stdout, /\[bind\].*reply="bound to session [^"]+"/);
+  assert.match(result.stdout, /\[bind\].*assistant="fake:reply from the bound topic"/);
+  assert.match(result.stdout, /\| 2 \| telegram \| \d+ \| yes \| yes \| OK \|/);
+});
+
+function runReplayProcess(replayName = 'smoke.json'): Promise<ChildResult> {
   const script = path.join(repositoryRoot, 'scripts/telegram-replay.mjs');
-  const replay = path.join(repositoryRoot, 'scripts/replays/smoke.json');
+  const replay = path.join(repositoryRoot, 'scripts/replays', replayName);
   const child = spawn(process.execPath, [script, replay, '--provider', 'fake'], {
     cwd: repositoryRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
