@@ -172,6 +172,58 @@ evidence for the same `HEAD`, with the latter recording at least 10 minutes.
 On failure the soak exits nonzero and leaves a temporary artifact directory
 with events, abduco listing, and transcript tails for diagnosis.
 
+## Verifying Telegram + terminal together
+
+The replay script drives one real substrate-backed session from both surfaces:
+the Telegram API is a hermetic stub, while terminal turns use the control-plane
+HTTP commands and event stream. It also proves the idle reaper records
+`session_state: resumable` with reason `reaped`, then exercises cold resume.
+
+```sh
+node scripts/telegram-replay.mjs scripts/replays/smoke.json --provider fake
+```
+
+Use `--provider omp` for the real `omp` binary, `--strict-echo` to fail when a
+terminal turn is not echoed into Telegram, and `--keep` to leave the temporary
+plane, bot, and session running for `vibecodium attach <session-id>`.
+
+Replay JSON has a project and ordered steps:
+
+```json
+{
+  "project": { "name": "demo", "path": "/tmp/demo" },
+  "steps": [
+    { "via": "telegram", "text": "/new demo say hi" },
+    { "via": "terminal", "text": "and now say bye" },
+    { "via": "terminal", "keys": ["ctrl_l"] },
+    { "via": "reap" },
+    { "expect": { "telegram": "contains:bye", "transcript": "turns:4" } }
+  ]
+}
+```
+
+Each action prints `[telegram]` and `[terminal]` evidence, followed by a
+two-row-per-step table. `posted-to-telegram?` is what the stub recorded;
+`in-transcript?` is what the session JSONL recorded. `match` compares the
+Telegram final edit with that turn's transcript assistant text and shows
+`!! MISMATCH !!` when they diverge. A terminal turn normally reports
+`echo: pending #113`; this is expected until terminal-to-Telegram echo ships.
+`contains:<text>` checks the latest Telegram text; `turns:<N>` checks completed
+transcript turns (assistant records whose `stopReason` is `stop`), not raw
+thinking/tool assistant records. Failed expectations print the actual value and
+exit 1.
+
+The checked-in fake smoke expectation uses `contains:say hi` rather than the
+issue's illustrative `contains:bye`: the current cold-resume relay returns the
+first fake answer on Telegram while the transcript records the fourth turn.
+The table's mismatch marker intentionally keeps that behavior visible.
+
+For manual real-provider verification:
+
+```sh
+node scripts/telegram-replay.mjs scripts/replays/smoke.json --provider omp
+```
+
 ## Telegram frontend
 
 Create a bot with BotFather and keep its token. Create a private supergroup,

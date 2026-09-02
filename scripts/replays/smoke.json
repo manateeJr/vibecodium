@@ -1,0 +1,32 @@
+{
+  "project": {
+    "name": "demo"
+  },
+  "steps": [
+    {
+      "via": "telegram",
+      "text": "/new demo say hi"
+    },
+    {
+      "via": "terminal",
+      "text": "and now say bye"
+    },
+    {
+      "via": "telegram",
+      "text": "what did you say before?"
+    },
+    {
+      "via": "reap"
+    },
+    {
+      "via": "telegram",
+      "text": "still there?"
+    },
+    {
+      "expect": {
+        "telegram": "contains:say hi",
+        "transcript": "turns:4"
+      }
+    }
+  ]
+}
