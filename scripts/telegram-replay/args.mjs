@@ -82,8 +82,19 @@ function validateStep(step, label) {
       }
       if (typeof operator !== 'string')
         throw new Error(`${label}.expect.${surface} must be a string`);
-      if (!operator.startsWith('contains:') && !operator.startsWith('turns:')) {
-        throw new Error(`${label}.expect.${surface} must use contains: or turns:`);
+      const isMatchTranscript = surface === 'telegram' && operator === 'match:transcript';
+      if (
+        !operator.startsWith('contains:') &&
+        !operator.startsWith('turns:') &&
+        !isMatchTranscript
+      ) {
+        const supported =
+          surface === 'telegram' ? 'contains:, turns:, or match:transcript' : 'contains: or turns:';
+        const scope =
+          operator === 'match:transcript'
+            ? ' (match:transcript is only supported on telegram)'
+            : '';
+        throw new Error(`${label}.expect.${surface} must use ${supported}${scope}`);
       }
     }
     return;

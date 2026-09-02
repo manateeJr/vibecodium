@@ -24,7 +24,7 @@
     },
     {
       "expect": {
-        "telegram": "contains:say hi",
+        "telegram": "match:transcript",
         "transcript": "turns:4"
       }
     }

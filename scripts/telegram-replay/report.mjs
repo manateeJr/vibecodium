@@ -41,8 +41,30 @@ export function printStep(record, strictEcho) {
 
 export function evaluateExpectations(expect, state, failures) {
   for (const [surface, operator] of Object.entries(expect)) {
-    const rawActual = surface === 'telegram' ? state.telegramText : state.transcriptTurns;
-    const actual = typeof rawActual === 'string' ? unescapeTelegramMarkdown(rawActual) : rawActual;
+    if (surface === 'telegram' && operator === 'match:transcript') {
+      const match = compareTelegramToTranscript(state.telegramText, state.transcriptText);
+      if (match === 'OK') {
+        globalThis.console.log(`[expect] PASS ${surface} ${operator}`);
+      } else {
+        const message = `[expect] FAIL ${surface} expected ${operator}; ${formatComparisonTexts(
+          state.telegramText,
+          state.transcriptText,
+        )}`;
+        globalThis.console.log(message);
+        failures.push(message);
+      }
+      continue;
+    }
+    const rawActual =
+      surface === 'telegram'
+        ? state.telegramText
+        : operator.startsWith('turns:')
+          ? state.transcriptTurns
+          : state.transcriptText;
+    const actual =
+      typeof rawActual === 'string' && surface === 'telegram'
+        ? unescapeTelegramMarkdown(rawActual)
+        : rawActual;
     const result = evaluateOperator(operator, actual);
     const actualText = typeof actual === 'number' ? `turns:${actual}` : (actual ?? '(none)');
     if (result.ok) {
@@ -82,14 +104,28 @@ export function printTable(records) {
 }
 
 export function compareTelegramToTranscript(telegramText, transcriptText) {
+  if (telegramText === undefined) return '!! MISMATCH (missing Telegram text) !!';
   if (transcriptText === undefined) return '!! MISMATCH (missing transcript) !!';
-  return unescapeTelegramMarkdown(telegramText) === transcriptText ? 'OK' : '!! MISMATCH !!';
+  return normalizeComparisonText(telegramText, true) ===
+    normalizeComparisonText(transcriptText, false)
+    ? 'OK'
+    : '!! MISMATCH !!';
+}
+
+function normalizeComparisonText(text, isTelegram) {
+  return (isTelegram ? unescapeTelegramMarkdown(text) : text).trimEnd();
+}
+
+function formatComparisonTexts(telegramText, transcriptText) {
+  const telegram = telegramText === undefined ? '(none)' : telegramText;
+  const transcript = transcriptText === undefined ? '(none)' : transcriptText;
+  return `telegram=${JSON.stringify(telegram)} transcript=${JSON.stringify(transcript)}`;
 }
 
 function evaluateOperator(operator, actual) {
   if (operator.startsWith('contains:')) {
-    const expected = operator.slice('contains:'.length);
-    return { ok: typeof actual === 'string' && actual.includes(expected) };
+    const expected = operator.slice('contains:'.length).toLowerCase();
+    return { ok: typeof actual === 'string' && actual.toLowerCase().includes(expected) };
   }
   if (operator.startsWith('turns:')) {
     const expected = Number(operator.slice('turns:'.length));

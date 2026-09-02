@@ -195,9 +195,10 @@ Replay JSON has a project and ordered steps:
   "steps": [
     { "via": "telegram", "text": "/new demo say hi" },
     { "via": "terminal", "text": "and now say bye" },
-    { "via": "terminal", "keys": ["ctrl_l"] },
+    { "via": "telegram", "text": "what did you say before?" },
     { "via": "reap" },
-    { "expect": { "telegram": "contains:bye", "transcript": "turns:4" } }
+    { "via": "telegram", "text": "still there?" },
+    { "expect": { "telegram": "match:transcript", "transcript": "turns:4" } }
   ]
 }
 ```
@@ -205,18 +206,23 @@ Replay JSON has a project and ordered steps:
 Each action prints `[telegram]` and `[terminal]` evidence, followed by a
 two-row-per-step table. `posted-to-telegram?` is what the stub recorded;
 `in-transcript?` is what the session JSONL recorded. `match` compares the
-Telegram final edit with that turn's transcript assistant text and shows
-`!! MISMATCH !!` when they diverge. A terminal turn normally reports
-`echo: pending #113`; this is expected until terminal-to-Telegram echo ships.
-`contains:<text>` checks the latest Telegram text; `turns:<N>` checks completed
-transcript turns (assistant records whose `stopReason` is `stop`), not raw
-thinking/tool assistant records. Failed expectations print the actual value and
-exit 1.
+Telegram final edit with that turn's transcript assistant text after unescaping
+Telegram MarkdownV2 and trimming trailing whitespace on both sides. `OK` means
+the two surfaces agree; `!! MISMATCH !!` keeps a divergence visible. A terminal
+turn normally reports `echo: pending #113`; this is expected until
+terminal-to-Telegram echo ships.
 
-The checked-in fake smoke expectation uses `contains:say hi` rather than the
-issue's illustrative `contains:bye`: the current cold-resume relay returns the
-first fake answer on Telegram while the transcript records the fourth turn.
-The table's mismatch marker intentionally keeps that behavior visible.
+`contains:<text>` checks the latest text on the named surface,
+case-insensitively. `turns:<N>` checks completed transcript turns (assistant
+records whose `stopReason` is `stop`), not raw thinking/tool assistant records.
+`match:transcript` is Telegram-only and checks that the latest Telegram post
+matches the latest turn's transcript text using the same normalization as the
+table. Failed expectations print the actual value and exit 1.
+
+The checked-in smoke script asserts that the cold-resumed session reaches four
+completed transcript turns and that the final Telegram post agrees with its
+transcript (`match:transcript`), without relying on provider-specific reply
+prose.
 
 For manual real-provider verification:
 

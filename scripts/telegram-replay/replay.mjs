@@ -36,6 +36,7 @@ export async function runReplay(options) {
     lastTurn: 0,
     telegramText: undefined,
     transcriptTurns: 0,
+    transcriptText: undefined,
   };
   let stub;
   let bot;
@@ -226,6 +227,7 @@ async function replayTelegramStep({
   state.lastTurn = turn;
   state.telegramText = final.text;
   state.transcriptTurns = capture.transcript.turns.length;
+  state.transcriptText = capture.transcriptText;
   const record = createStepRecord(stepNumber, {
     turn,
     latencyMs: Date.now() - startedAt,
@@ -302,6 +304,7 @@ async function replayTerminalStep({
   state.lastTurn = turn ?? state.lastTurn;
   if (echo !== undefined) state.telegramText = echo.text;
   state.transcriptTurns = capture.transcript.turns.length;
+  if (transcriptText !== undefined) state.transcriptText = transcriptText;
   if (strictEcho && turn !== undefined && echo === undefined) {
     failures.push(
       `[expect] FAIL echo expected terminal turn ${turn} in Telegram; actual echo: pending #113`,
@@ -354,6 +357,9 @@ async function replayReapStep({ context, stepNumber, state, timeoutMs, signal, r
   }
   const events = await readEvents(runtimeBeforeReap, state.sessionId);
   const transcript = readTranscript(transcriptPath(context.runtime, state.sessionId));
+  if (transcript.turns.at(-1)?.text !== undefined) {
+    state.transcriptText = transcript.turns.at(-1).text;
+  }
   const proofText = `reap: observed session_state state=${proof.payload.state} reason=${proof.payload.reason}; restarted same port ${context.port}`;
   globalThis.console.log(`[reap] ${proofText}`);
   await context.stopRuntime(runtimeBeforeReap);
