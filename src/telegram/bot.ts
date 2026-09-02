@@ -9,6 +9,7 @@ import type {
   TopicStore,
 } from './types.js';
 import { createResumeHandler, truncateTitle, type PendingStart } from './resume.js';
+import { handleRenameCommand, RENAME_GENERAL_REPLY } from './rename.js';
 import { createTurnRelay } from './turn-relay.js';
 
 export interface TelegramFormat {
@@ -36,6 +37,7 @@ type OpenSession = () => Promise<OpenedSession>;
 const HELP_TEXT = [
   '/new <project> <prompt> — start a session in a new topic',
   '/resume — continue a machine session in a new topic',
+  '/rename <name> — rename this session topic',
   '/sessions — list sessions attached to topics',
   '/status — show this session state and last turn',
   '/stop — stop this session',
@@ -277,6 +279,18 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     command: string,
   ): Promise<boolean> {
     const target = messageTarget(message);
+    if (command === 'rename') {
+      await handleRenameCommand(
+        { api, bridge, store },
+        {
+          chatId: message.chatId,
+          threadId: binding.threadId,
+          sessionId: binding.sessionId,
+          argumentText: commandArguments(message.text ?? ''),
+        },
+      );
+      return true;
+    }
     if (command === 'status') {
       await ensureHealthy();
       const sessions = await bridge.list();
@@ -368,6 +382,10 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     }
     if (command === 'resume') {
       await resumeHandler.handleCommand(message);
+      return;
+    }
+    if (command === 'rename') {
+      await reply(messageTarget(message), RENAME_GENERAL_REPLY);
       return;
     }
     if (command === 'sessions') {
