@@ -103,6 +103,19 @@ function main() {
       const message = error instanceof Error ? error.message : String(error);
       process.stderr.write(`deploy: restart failed; build succeeded: ${message}\n`);
     }
+    try {
+      execFileSync('systemctl', ['--user', 'is-enabled', 'vibecodium-telegram'], {
+        cwd: repositoryRoot,
+        stdio: 'ignore',
+      });
+      execFileSync('systemctl', ['--user', 'restart', 'vibecodium-telegram'], {
+        cwd: repositoryRoot,
+        stdio: 'inherit',
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`deploy: Telegram service restart skipped or failed: ${message}\n`);
+    }
 
     fs.mkdirSync(path.dirname(markerPath), { recursive: true });
     fs.writeFileSync(markerPath, `${head}\n`, 'utf8');
