@@ -107,7 +107,6 @@ class FakeBridge implements SessionBridge {
   readonly watchCalls: WatchParams[] = [];
   sessions: SessionLite[] = [{ sessionId: 'session-1', status: 'live', cwd: '/tmp/demo' }];
   watchTurnHandler: ((params: WatchParams) => Promise<TurnResult>) | undefined;
-
   async health(): Promise<boolean> {
     return this.healthResult;
   }
@@ -127,7 +126,8 @@ class FakeBridge implements SessionBridge {
   async machineSessions(): Promise<MachineSessionLite[]> {
     return [];
   }
-
+  subscribeSession = (): (() => void) => () => undefined;
+  openTurn = (): Promise<number | null> => Promise.resolve(null);
   async resume(): Promise<{ sessionId: string; turn: number }> {
     return { sessionId: 'unused', turn: 1 };
   }

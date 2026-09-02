@@ -41,6 +41,9 @@ export function openTopicStore(filename: string): TopicStore {
   const selectByThread = database.prepare<[number], TopicRow>(
     'SELECT thread_id, session_id, label, created_at FROM topics WHERE thread_id = ?',
   );
+  const selectBySession = database.prepare<[string], TopicRow>(
+    'SELECT thread_id, session_id, label, created_at FROM topics WHERE session_id = ? ORDER BY thread_id LIMIT 1',
+  );
   const selectAll = database.prepare<[], TopicRow>(
     'SELECT thread_id, session_id, label, created_at FROM topics ORDER BY thread_id',
   );
@@ -62,6 +65,16 @@ export function openTopicStore(filename: string): TopicStore {
 
     byThread(threadId: number): TopicBinding | null {
       const row = selectByThread.get(threadId);
+      if (!row) return null;
+      return {
+        threadId: row.thread_id,
+        sessionId: row.session_id,
+        label: row.label,
+        createdAt: row.created_at,
+      };
+    },
+    bySession(sessionId: string): TopicBinding | null {
+      const row = selectBySession.get(sessionId);
       if (!row) return null;
       return {
         threadId: row.thread_id,

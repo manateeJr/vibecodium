@@ -91,6 +91,15 @@ export interface SessionLite {
   status: string;
   label?: string;
   cwd?: string;
+  updatedAt?: string;
+  prompt?: string;
+}
+export interface ObservedTurn {
+  sessionId: string;
+  turn: number;
+  prompt: string;
+  text: string;
+  completedAt: string;
 }
 export interface MachineSessionLite {
   source: 'omp' | 'codex';
@@ -125,6 +134,13 @@ export interface SessionBridge {
     onProgress: (progress: TurnProgress) => void;
     timeoutMs: number;
   }): Promise<TurnResult>;
+  subscribeSession(p: {
+    sessionId: string;
+    fromTail: true;
+    onTurn: (turn: ObservedTurn) => void;
+    onState?: (state: string) => void;
+  }): () => void; // returns unsubscribe
+  openTurn(sessionId: string): Promise<number | null>;
 }
 
 export interface TopicBinding {
@@ -137,6 +153,7 @@ export interface TopicBinding {
 export interface TopicStore {
   bind(binding: TopicBinding): void;
   byThread(threadId: number): TopicBinding | null;
+  bySession(sessionId: string): TopicBinding | null;
   all(): TopicBinding[];
   unbind(threadId: number): void;
   rename(threadId: number, label: string): void;

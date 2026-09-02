@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   SessionInputPayload,
   SessionOutputPayload,
+  SessionStatePayload,
   TurnCompletePayload,
 } from '../contracts/events.js';
 import type {
@@ -111,7 +112,110 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
           status: summary.status,
           ...(summary.label === undefined ? {} : { label: summary.label }),
           ...(summary.cwd === undefined ? {} : { cwd: summary.cwd }),
+          ...(summary.prompt === undefined ? {} : { prompt: summary.prompt }),
+          ...((summary.updated_at ?? summary.started_at) === undefined
+            ? {}
+            : { updatedAt: summary.updated_at ?? summary.started_at }),
         }));
+      }),
+    subscribeSession: ({ sessionId, onTurn, onState }) => {
+      const streamId = `session:${sessionId}`;
+      const inProgress = new Map<number, { prompt: string; text: string }>();
+      let cancelled = false;
+      let unsubscribe: (() => void) | undefined;
+      const receive = (event: EventEnvelope): void => {
+        if (cancelled || event.stream_id !== streamId) return;
+        if (event.type === 'session_input') {
+          const payload = event.payload as SessionInputPayload;
+          if (payload.session_id !== sessionId) return;
+          inProgress.set(payload.turn, { prompt: payload.text, text: '' });
+          if (inProgress.size > 8) {
+            let lowest: number | undefined;
+            for (const turn of inProgress.keys()) {
+              if (lowest === undefined || turn < lowest) lowest = turn;
+            }
+            if (lowest !== undefined) inProgress.delete(lowest);
+          }
+          return;
+        }
+        if (event.type === 'session_output') {
+          const payload = event.payload as SessionOutputPayload;
+          if (
+            payload.session_id !== sessionId ||
+            (payload.kind !== undefined && payload.kind !== 'text')
+          )
+            return;
+          let currentTurn: number | undefined;
+          for (const turn of inProgress.keys()) {
+            if (currentTurn === undefined || turn > currentTurn) currentTurn = turn;
+          }
+          if (currentTurn === undefined) return;
+          const current = inProgress.get(currentTurn);
+          if (current !== undefined) current.text += payload.text;
+          return;
+        }
+        if (event.type === 'turn_complete') {
+          const payload = event.payload as TurnCompletePayload;
+          if (payload.session_id !== sessionId) return;
+          const observed = inProgress.get(payload.turn);
+          if (observed === undefined) return;
+          inProgress.delete(payload.turn);
+          onTurn({
+            sessionId,
+            turn: payload.turn,
+            prompt: observed.prompt,
+            text: observed.text,
+            completedAt: new Date().toISOString(),
+          });
+          return;
+        }
+        if (event.type === 'session_state') {
+          const payload = event.payload as SessionStatePayload;
+          if (payload.session_id === sessionId) onState?.(payload.state);
+        }
+      };
+      const bootstrap = async (): Promise<void> => {
+        const events = await client.getEvents(streamId, 0);
+        if (cancelled) return;
+        const tail = events.at(-1)?.seq ?? 0;
+        unsubscribe = client.subscribe(tail, receive, streamId);
+        if (cancelled) {
+          unsubscribe();
+          unsubscribe = undefined;
+        }
+      };
+      void bootstrap().catch(() => undefined);
+      return (): void => {
+        if (cancelled) return;
+        cancelled = true;
+        const removeSubscription = unsubscribe;
+        unsubscribe = undefined;
+        removeSubscription?.();
+      };
+    },
+    openTurn: (sessionId) =>
+      controlPlaneCall('session open turn', async () => {
+        const streamId = `session:${sessionId}`;
+        const events = await client.getEvents(streamId, 0);
+        const openInputs = new Map<number, number>();
+        for (const [index, event] of events.slice(-500).entries()) {
+          if (event.type === 'session_input') {
+            const payload = event.payload as SessionInputPayload;
+            if (payload.session_id === sessionId) openInputs.set(payload.turn, index);
+          } else if (event.type === 'turn_complete') {
+            const payload = event.payload as TurnCompletePayload;
+            if (payload.session_id === sessionId) openInputs.delete(payload.turn);
+          }
+        }
+        let latestTurn: number | undefined;
+        let latestIndex = -1;
+        for (const [turn, index] of openInputs) {
+          if (index > latestIndex) {
+            latestTurn = turn;
+            latestIndex = index;
+          }
+        }
+        return latestTurn ?? null;
       }),
     watchTurn: ({ sessionId, turn, onProgress, timeoutMs }) => {
       const key = `${sessionId}:${turn}`;

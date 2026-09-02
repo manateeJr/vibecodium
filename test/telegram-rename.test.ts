@@ -54,6 +54,12 @@ class FakeBridge {
     this.renameCalls.push(params);
     if (this.failRename) throw new Error('boom');
   }
+  subscribeSession(): () => void {
+    return () => undefined;
+  }
+  openTurn(): Promise<number | null> {
+    return Promise.resolve(null);
+  }
 }
 
 class FakeStore {
@@ -63,6 +69,9 @@ class FakeStore {
 
   constructor(calls: string[]) {
     this.calls = calls;
+  }
+  bySession(): TopicBinding | null {
+    return null;
   }
 
   byThread(threadId: number): TopicBinding | null {

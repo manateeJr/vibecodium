@@ -96,7 +96,6 @@ class FakeBridge implements SessionBridge {
   readonly watchCalls: WatchParams[] = [];
   resumeError: Error | undefined;
   resumeResult = { sessionId: 'resumed-session', turn: 1 };
-
   async health(): Promise<boolean> {
     return true;
   }
@@ -113,7 +112,8 @@ class FakeBridge implements SessionBridge {
     this.machineSessionsCalls.push(1);
     return this.machineSessionsList;
   }
-
+  subscribeSession = (): (() => void) => () => undefined;
+  openTurn = (): Promise<number | null> => Promise.resolve(null);
   async resume(params: {
     source: 'omp' | 'codex';
     ref: string;
