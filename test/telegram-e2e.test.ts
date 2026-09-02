@@ -16,6 +16,7 @@ type WireUpdate = JsonRecord;
 type TelegramCall = {
   endpoint: string;
   body: unknown;
+  messageId?: number;
 };
 
 type TelegramStub = {
@@ -106,7 +107,8 @@ async function startTelegramStub(initial: readonly WireUpdate[]): Promise<Telegr
       String(request.headers['content-type'] ?? ''),
       await readRequest(request),
     );
-    calls.push({ endpoint, body });
+    const call: TelegramCall = { endpoint, body };
+    calls.push(call);
 
     if (endpoint === 'getMe') {
       jsonResponse(response, 200, { id: 99, is_bot: true, username: 'e2e_bot' });
@@ -122,6 +124,7 @@ async function startTelegramStub(initial: readonly WireUpdate[]): Promise<Telegr
     }
     if (endpoint === 'sendMessage' || endpoint === 'sendDocument') {
       nextMessageId += 1;
+      call.messageId = nextMessageId;
       jsonResponse(response, 200, { message_id: nextMessageId });
       return;
     }
@@ -361,40 +364,62 @@ test('Telegram main drives a real fake-provider control-plane session end to end
     );
     assert.ok(initialFinalEdit);
     assert.equal(callBody(initialFinalEdit).chat_id, CHAT_ID);
+    const initialWorkingCall = stub.calls.find(
+      (call) =>
+        call.endpoint === 'sendMessage' &&
+        String(callBody(call).text ?? '').startsWith('working…') &&
+        callBody(call).message_thread_id === THREAD_ID,
+    );
+    assert.ok(initialWorkingCall);
+    assert.equal(initialWorkingCall.messageId !== undefined, true);
+    assert.equal(callBody(initialWorkingCall).message_thread_id, THREAD_ID);
+    assert.equal(callBody(initialFinalEdit).message_id, initialWorkingCall.messageId);
+    const callsBefore = stub.calls.length;
     stub.enqueue(messageUpdate(2, 11, 'telegram', true));
 
     await waitForCondition(
       () =>
-        stub.calls.some(
-          (call) =>
-            call.endpoint === 'sendMessage' &&
-            String(callBody(call).text ?? '').startsWith('working…'),
-        ),
+        stub.calls
+          .slice(callsBefore)
+          .some(
+            (call) =>
+              call.endpoint === 'sendMessage' &&
+              String(callBody(call).text ?? '').startsWith('working…'),
+          ),
       'working progress sendMessage',
     );
-    const workingCall = stub.calls.find(
-      (call) =>
-        call.endpoint === 'sendMessage' && String(callBody(call).text ?? '').startsWith('working…'),
-    );
+    const workingCall = stub.calls
+      .slice(callsBefore)
+      .find(
+        (call) =>
+          call.endpoint === 'sendMessage' &&
+          String(callBody(call).text ?? '').startsWith('working…'),
+      );
     assert.ok(workingCall);
     assert.equal(callBody(workingCall).message_thread_id, THREAD_ID);
+    assert.equal(workingCall.messageId !== undefined, true);
 
     await waitForCondition(
       () =>
-        stub.calls.some(
-          (call) =>
-            call.endpoint === 'editMessageText' &&
-            String(callBody(call).text ?? '').includes('echo:telegram'),
-        ),
+        stub.calls
+          .slice(callsBefore)
+          .some(
+            (call) =>
+              call.endpoint === 'editMessageText' &&
+              String(callBody(call).text ?? '').includes('echo:telegram'),
+          ),
       'final fake-provider edit',
     );
-    const edits = stub.calls.filter((call) => call.endpoint === 'editMessageText');
+    const edits = stub.calls
+      .slice(callsBefore)
+      .filter((call) => call.endpoint === 'editMessageText');
     assert.ok(edits.length >= 1);
-    const finalEdit = edits.find((call) =>
-      String(callBody(call).text ?? '').includes('echo:telegram'),
-    );
+    const finalEdit = stub.calls
+      .slice(callsBefore)
+      .find((call) => String(callBody(call).text ?? '').includes('echo:telegram'));
     assert.ok(finalEdit);
     assert.match(String(callBody(finalEdit).text), /echo:telegram/);
+    assert.equal(callBody(finalEdit).message_id, workingCall.messageId);
     stub.enqueue(messageUpdate(3, 12, '/stop', true));
 
     await waitForCondition(

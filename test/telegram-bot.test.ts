@@ -29,10 +29,11 @@ type DocumentParams = Parameters<TelegramApi['sendDocument']>[0];
 type TopicParams = Parameters<TelegramApi['createForumTopic']>[0];
 type WatchParams = Parameters<SessionBridge['watchTurn']>[0];
 type Project = { name: string; path: string };
+type SentMessage = SendMessageParams & { messageId: number };
 
 class FakeApi implements TelegramApi {
   readonly calls: string[] = [];
-  readonly sentMessages: SendMessageParams[] = [];
+  readonly sentMessages: SentMessage[] = [];
   readonly editedMessages: EditMessageParams[] = [];
   readonly documents: DocumentParams[] = [];
   readonly createdTopics: TopicParams[] = [];
@@ -58,9 +59,10 @@ class FakeApi implements TelegramApi {
 
   async sendMessage(params: SendMessageParams): Promise<{ messageId: number }> {
     this.calls.push('sendMessage');
-    this.sentMessages.push(params);
     this.nextMessageId += 1;
-    return { messageId: this.nextMessageId };
+    const messageId = this.nextMessageId;
+    this.sentMessages.push({ ...params, messageId });
+    return { messageId };
   }
 
   async editMessageText(params: EditMessageParams): Promise<void> {
@@ -281,9 +283,14 @@ test('/new project prompt creates a topic, opens a session, and binds it', async
         ({ text, threadId }) => text === 'working… 0s' && threadId === 501,
       ),
     );
+    const workingMessage = fixture.api.sentMessages.find(
+      ({ text, threadId }) => text === 'working… 0s' && threadId === 501,
+    );
+    assert.ok(workingMessage);
     assert.equal(fixture.bridge.watchCalls.at(-1)?.turn, 1);
     assert.ok(fixture.api.editedMessages.some(({ text }) => text.startsWith('working…')));
     assert.equal(fixture.api.editedMessages.at(-1)?.text, 'done');
+    assert.equal(fixture.api.editedMessages.at(-1)?.messageId, workingMessage.messageId);
   } finally {
     cleanup(fixture.store, fixture.directory);
   }
@@ -315,9 +322,14 @@ test('/new without a project presents buttons and consumes the next prompt', asy
         ({ text, threadId }) => text === 'working… 0s' && threadId === 501,
       ),
     );
+    const workingMessage = fixture.api.sentMessages.find(
+      ({ text, threadId }) => text === 'working… 0s' && threadId === 501,
+    );
+    assert.ok(workingMessage);
     assert.equal(fixture.bridge.watchCalls.at(-1)?.turn, 1);
     assert.ok(fixture.api.editedMessages.some(({ text }) => text.startsWith('working…')));
     assert.equal(fixture.api.editedMessages.at(-1)?.text, 'done');
+    assert.equal(fixture.api.editedMessages.at(-1)?.messageId, workingMessage.messageId);
   } finally {
     cleanup(fixture.store, fixture.directory);
   }
