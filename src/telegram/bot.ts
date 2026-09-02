@@ -8,6 +8,12 @@ import type {
   TopicBinding,
   TopicStore,
 } from './types.js';
+import {
+  buildResumeKeyboard,
+  truncateTitle,
+  type PendingStart,
+  type ResumeSnapshot,
+} from './resume.js';
 import { createTurnRelay } from './turn-relay.js';
 
 export interface TelegramFormat {
@@ -29,9 +35,12 @@ export interface TelegramBot {
 
 type ReplyTarget = { chatId: number; threadId?: number };
 type Project = { name: string; path: string };
+type OpenedSession = { sessionId: string; turn: number };
+type OpenSession = () => Promise<OpenedSession>;
 
 const HELP_TEXT = [
   '/new <project> <prompt> — start a session in a new topic',
+  '/resume — continue a machine session in a new topic',
   '/sessions — list sessions attached to topics',
   '/status — show this session state and last turn',
   '/stop — stop this session',
@@ -74,7 +83,8 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   const { api, bridge, store, config, format } = deps;
   const { relayTurn } = createTurnRelay({ api, bridge, config, format });
   const inFlight = new Set<number>();
-  const pendingProjects = new Map<number, Project>();
+  const pendingStarts = new Map<number, PendingStart>();
+  const resumeChoices = new Map<number, ResumeSnapshot>();
   const projectChoices = new Map<string, Project>();
   const lastTurns = new Map<string, number>();
 
@@ -108,20 +118,22 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       ]),
     });
   }
-
-  async function createSession(
+  async function startSessionInTopic(
     message: IncomingMessage,
-    project: Project,
-    prompt: string,
+    name: string,
+    open: OpenSession,
+    notice: (sessionId: string) => string,
+    onOpenError?: (error: unknown) => Promise<void>,
   ): Promise<void> {
-    await ensureHealthy();
-    const name = topicName(project.name, prompt);
     const topic = await api.createForumTopic({ chatId: message.chatId, name });
-    const opened = await bridge.open({
-      cwd: project.path,
-      prompt,
-      project: project.name,
-    });
+    let opened: OpenedSession;
+    try {
+      opened = await open();
+    } catch (error: unknown) {
+      if (onOpenError === undefined) throw error;
+      await onOpenError(error);
+      return;
+    }
     store.bind({
       threadId: topic.threadId,
       sessionId: opened.sessionId,
@@ -132,7 +144,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     await api.sendMessage({
       chatId: message.chatId,
       threadId: topic.threadId,
-      text: `session ${opened.sessionId} started in ${project.name}`,
+      text: notice(opened.sessionId),
     });
     inFlight.add(topic.threadId);
     try {
@@ -145,6 +157,51 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     } finally {
       inFlight.delete(topic.threadId);
     }
+  }
+
+  async function createSession(
+    message: IncomingMessage,
+    project: Project,
+    prompt: string,
+  ): Promise<void> {
+    await ensureHealthy();
+    const name = topicName(project.name, prompt);
+    await startSessionInTopic(
+      message,
+      name,
+      () =>
+        bridge.open({
+          cwd: project.path,
+          prompt,
+          project: project.name,
+        }),
+      (sessionId) => `session ${sessionId} started in ${project.name}`,
+    );
+  }
+
+  async function resumeSession(
+    message: IncomingMessage,
+    pending: Extract<PendingStart, { kind: 'resume' }>,
+    prompt: string,
+  ): Promise<void> {
+    await ensureHealthy();
+    const name = truncateTitle(pending.title, 60);
+    await startSessionInTopic(
+      message,
+      name,
+      () =>
+        bridge.resume({
+          source: pending.source,
+          ref: pending.ref,
+          prompt,
+          cwd: pending.cwd,
+        }),
+      (sessionId) => `session ${sessionId} resumed from ${pending.source}`,
+      async (error: unknown) => {
+        const reason = error instanceof Error ? error.message : String(error);
+        await reply(messageTarget(message), `resume failed: ${reason}`);
+      },
+    );
   }
 
   async function resolveProject(name: string): Promise<Project | null> {
@@ -179,6 +236,42 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     await createSession(message, project, prompt);
   }
 
+  async function handleResume(message: IncomingMessage): Promise<void> {
+    const args = commandArguments(message.text ?? '');
+    await ensureHealthy();
+    const sessions = await bridge.machineSessions();
+    if (!args) {
+      const snapshot: ResumeSnapshot = sessions.slice(0, 5).map((session) => ({ ...session }));
+      resumeChoices.delete(message.chatId);
+      if (snapshot.length === 0) {
+        await reply(messageTarget(message), 'no machine sessions found');
+        return;
+      }
+      resumeChoices.set(message.chatId, snapshot);
+      await api.sendMessage({
+        chatId: message.chatId,
+        text: 'Choose a machine session, then send the first prompt here:',
+        buttons: buildResumeKeyboard(snapshot),
+      });
+      return;
+    }
+
+    const session = sessions.find((candidate) => candidate.ref === args);
+    if (!session) {
+      await reply(messageTarget(message), 'unknown session ref');
+      return;
+    }
+    resumeChoices.delete(message.chatId);
+    pendingStarts.set(message.chatId, {
+      kind: 'resume',
+      source: session.source,
+      ref: session.ref,
+      cwd: session.cwd,
+      title: session.title,
+    });
+    await reply(messageTarget(message), `send the first prompt to continue "${session.title}"`);
+  }
+
   async function handleSessions(message: IncomingMessage): Promise<void> {
     await ensureHealthy();
     const [bindings, sessions] = await Promise.all([Promise.resolve(store.all()), bridge.list()]);
@@ -199,6 +292,29 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
 
   async function handleCallback(callback: CallbackQuery): Promise<void> {
     await api.answerCallbackQuery(callback.id);
+    if (callback.data.startsWith('resume:')) {
+      const indexText = callback.data.slice('resume:'.length);
+      const index = Number(indexText);
+      const snapshot = resumeChoices.get(callback.message.chatId);
+      const session =
+        /^\d+$/.test(indexText) && Number.isSafeInteger(index) && snapshot !== undefined
+          ? snapshot[index]
+          : undefined;
+      if (!session) {
+        await reply(callbackTarget(callback), 'that session selection is invalid');
+        return;
+      }
+      resumeChoices.delete(callback.message.chatId);
+      pendingStarts.set(callback.message.chatId, {
+        kind: 'resume',
+        source: session.source,
+        ref: session.ref,
+        cwd: session.cwd,
+        title: session.title,
+      });
+      await reply(callbackTarget(callback), `send the first prompt to continue "${session.title}"`);
+      return;
+    }
     if (!callback.data.startsWith('new:')) return;
     const encodedName = callback.data.slice(4);
     let projectName: string;
@@ -214,7 +330,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       await reply(callbackTarget(callback), `unknown project: ${projectName}`);
       return;
     }
-    pendingProjects.set(callback.message.chatId, project);
+    pendingStarts.set(callback.message.chatId, { kind: 'new', project });
     await reply(callbackTarget(callback), `send the first prompt for ${project.name}`);
   }
 
@@ -253,6 +369,24 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     return false;
   }
 
+  async function handleTopicMessage(
+    message: IncomingMessage,
+    binding: TopicBinding,
+  ): Promise<void> {
+    const threadId = message.threadId;
+    if (threadId !== undefined && inFlight.has(threadId)) {
+      await reply(messageTarget(message), 'still working on the previous turn');
+      return;
+    }
+    const command = commandName(message.text ?? '');
+    if (command && (await handleTopicCommand(message, binding, command))) return;
+    if (command) {
+      await reply(messageTarget(message), 'unknown command; use /help');
+      return;
+    }
+    await runTurn(message, binding);
+  }
+
   async function runTurn(message: IncomingMessage, binding: TopicBinding): Promise<void> {
     const threadId = message.threadId;
     if (threadId === undefined) return;
@@ -277,35 +411,26 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     }
   }
 
-  async function handleTopicMessage(
-    message: IncomingMessage,
-    binding: TopicBinding,
-  ): Promise<void> {
-    const threadId = message.threadId;
-    if (threadId !== undefined && inFlight.has(threadId)) {
-      await reply(messageTarget(message), 'still working on the previous turn');
-      return;
-    }
-    const command = commandName(message.text ?? '');
-    if (command && (await handleTopicCommand(message, binding, command))) return;
-    if (command) {
-      await reply(messageTarget(message), 'unknown command; use /help');
-      return;
-    }
-    await runTurn(message, binding);
-  }
-
   async function handleGeneralMessage(message: IncomingMessage): Promise<void> {
-    const pending = pendingProjects.get(message.chatId);
+    const pending = pendingStarts.get(message.chatId);
     if (pending) {
-      pendingProjects.delete(message.chatId);
-      await createSession(message, pending, message.text?.trim() ?? '');
+      pendingStarts.delete(message.chatId);
+      const prompt = message.text?.trim() ?? '';
+      if (pending.kind === 'new') {
+        await createSession(message, pending.project, prompt);
+      } else {
+        await resumeSession(message, pending, prompt);
+      }
       return;
     }
 
     const command = commandName(message.text ?? '');
     if (command === 'new') {
       await handleNew(message);
+      return;
+    }
+    if (command === 'resume') {
+      await handleResume(message);
       return;
     }
     if (command === 'sessions') {
