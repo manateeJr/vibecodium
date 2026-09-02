@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { listAbducoSessions } from './list-sessions.js';
 import type {
   SubstrateAttachment,
@@ -147,6 +148,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
     for (const [key, value] of Object.entries(options.env ?? {})) this.environment[key] = value;
     if (options.socketDir !== undefined) this.environment.ABDUCO_SOCKET_DIR = options.socketDir;
     const socketDir = options.socketDir ?? this.environment.ABDUCO_SOCKET_DIR;
+    if (socketDir !== undefined) fs.mkdirSync(socketDir, { recursive: true, mode: 0o700 });
     this.socketOptions =
       socketDir === undefined
         ? { environment: this.environment }
