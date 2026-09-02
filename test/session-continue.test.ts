@@ -18,6 +18,7 @@ import type {
   SubstrateCreateOptions,
   SubstrateSessionInfo,
 } from '../src/contracts/substrate-contract.js';
+import { sessionOpenArgs } from '../src/session/session-helpers.js';
 
 class TestContext implements SubsystemContext {
   public readonly events: EventEnvelope[] = [];
@@ -149,6 +150,67 @@ function makeSubsystem(
     reaperIntervalMs: 60_000,
   });
 }
+
+test('promptless persistent open omits the argv prompt and leaves the worker idle', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-promptless-open-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const context = new TestContext();
+  const substrate = new TestSubstrate();
+  const subsystem = new SessionSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: path.join(root, 'vibecodium'),
+    idFactory: () => 'promptless-session',
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    const opened = await subsystem.open({
+      provider: 'omp',
+      cwd: '/workspace',
+      origin: 'operator',
+      source: 'cli',
+    });
+    assert.deepEqual(substrate.created[0], {
+      name: 'substrate-promptless-session',
+      argv: ['omp', '--session-dir', path.join(root, 'vibecodium', 'promptless-session')],
+      options: { cwd: '/workspace' },
+    });
+    assert.deepEqual(subsystem.send({ session_id: opened.session_id, prompt: 'first prompt' }), {
+      stream_id: opened.stream_id,
+      turn: 1,
+    });
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('session.open prompt validation permits omission but rejects non-string prompts', async () => {
+  assert.deepEqual(sessionOpenArgs({ provider: 'omp' }), {
+    provider: 'omp',
+    origin: 'agent',
+    source: 'api',
+  });
+  assert.throws(() => sessionOpenArgs({ provider: 'omp', prompt: 42 }), /prompt must be a string/);
+
+  const subsystem = new SessionSubsystem({
+    fork: () => {
+      throw new Error('legacy worker should not be forked');
+    },
+  });
+  const context = new TestContext();
+  subsystem.register(context);
+  try {
+    await assert.rejects(
+      () => subsystem.open({ provider: 'fake' }),
+      /prompt is required for non-persistent sessions/,
+    );
+  } finally {
+    subsystem.stopAll();
+  }
+});
 
 test('session.resume continues an external ref with durable lineage and hydrated metadata', async () => {
   const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-session-continue-'));

@@ -43,6 +43,8 @@ export interface StartSessionOptions {
 }
 
 export async function startSession(options: StartSessionOptions): Promise<SessionOpenResult> {
+  const prompt = options.args.prompt;
+  if (prompt === undefined) throw new Error('prompt is required for non-persistent sessions');
   const decision = options.admission.tryAdmit(options.active);
   if (!decision.ok) {
     options.context.append(
@@ -69,7 +71,7 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
   options.context.append(stream_id, 'session_started', {
     session_id,
     provider: options.args.provider,
-    prompt: options.args.prompt,
+    prompt,
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
     origin: options.args.origin ?? 'agent',
@@ -115,7 +117,7 @@ export async function startSession(options: StartSessionOptions): Promise<Sessio
     session_id,
     stream_id,
     provider: options.args.provider,
-    prompt: options.args.prompt,
+    prompt,
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.resumeRef === undefined ? {} : { resumeRef: options.resumeRef }),
     ...(storageDir === undefined || options.sessionStorageRoot === options.defaultSessionStorageRoot

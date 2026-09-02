@@ -4,7 +4,7 @@ export type SessionOrigin = 'operator' | 'agent';
 
 export interface SessionOpenArgs {
   readonly provider: string;
-  readonly prompt: string;
+  readonly prompt?: string;
   readonly cwd?: string;
   readonly project?: string;
   readonly model?: string;

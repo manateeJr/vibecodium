@@ -60,7 +60,8 @@ export function sessionOpenArgs(command: unknown): SessionOpenArgs {
   const value = asRecord(command);
   if (!value || typeof value.provider !== 'string' || !value.provider.trim())
     throw new Error('provider is required');
-  if (typeof value.prompt !== 'string') throw new Error('prompt is required');
+  if (value.prompt !== undefined && typeof value.prompt !== 'string')
+    throw new Error('prompt must be a string');
   if (value.cwd !== undefined && (typeof value.cwd !== 'string' || !value.cwd.trim()))
     throw new Error('cwd must be a non-empty string');
   if (value.project !== undefined && (typeof value.project !== 'string' || !value.project.trim()))
@@ -78,7 +79,7 @@ export function sessionOpenArgs(command: unknown): SessionOpenArgs {
     throw new Error('source must be pocket, cli, or api');
   return {
     provider: value.provider,
-    prompt: value.prompt,
+    ...(value.prompt === undefined ? {} : { prompt: value.prompt }),
     origin: value.origin === undefined ? 'agent' : value.origin,
     source: value.source === undefined ? 'api' : value.source,
     ...(value.cwd === undefined ? {} : { cwd: value.cwd }),

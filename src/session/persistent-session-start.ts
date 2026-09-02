@@ -29,7 +29,7 @@ export async function startPersistentSession(
   options.context.append(stream_id, 'session_started', {
     session_id,
     provider: options.args.provider,
-    prompt: options.args.prompt,
+    prompt: options.args.prompt ?? '',
     ...(options.args.cwd === undefined ? {} : { cwd: options.args.cwd }),
     ...(options.args.project === undefined ? {} : { project: options.args.project }),
     origin: options.args.origin ?? 'agent',

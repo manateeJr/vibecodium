@@ -5,16 +5,126 @@ import path from 'node:path';
 import test from 'node:test';
 import { WebSocket } from 'ws';
 import type { EventEnvelope, SessionOutputPayload } from '../src/contracts/events.js';
+import type {
+  SubstrateAttachment,
+  SubstrateClient,
+  SubstrateCreateOptions,
+  SubstrateKey,
+  SubstrateOutputListener,
+  SubstrateSessionInfo,
+} from '../src/contracts/substrate-contract.js';
 import { createSessionSubsystem } from '../src/session/index.js';
 import { ControlPlane, type ControlPlaneAddress } from '../src/server/control-plane.js';
 import { BASIC_BUILD_TEMPLATE, WorkflowEngine } from '../src/workflow/index.js';
 
 type WireMessage = Record<string, unknown>;
 
+class TestSubstrate implements SubstrateClient {
+  private readonly liveNames = new Set<string>();
+
+  public async createSession(
+    name: string,
+    argv: readonly string[],
+    options?: SubstrateCreateOptions,
+  ): Promise<SubstrateSessionInfo> {
+    void argv;
+    void options;
+    this.liveNames.add(name);
+    return { name, live: true };
+  }
+
+  public async attach(name: string): Promise<SubstrateAttachment> {
+    return { name, detach: async () => undefined };
+  }
+
+  public async write(name: string, bytes: Uint8Array): Promise<void> {
+    void name;
+    void bytes;
+  }
+
+  public async sendKey(name: string, key: SubstrateKey): Promise<void> {
+    void name;
+    void key;
+  }
+
+  public onOutput(listener: SubstrateOutputListener): () => void {
+    void listener;
+    return () => undefined;
+  }
+
+  public async isLive(name: string): Promise<boolean> {
+    return this.liveNames.has(name);
+  }
+
+  public async kill(name: string): Promise<void> {
+    this.liveNames.delete(name);
+  }
+
+  public async listSessions(): Promise<readonly SubstrateSessionInfo[]> {
+    return [...this.liveNames].map((name) => ({ name, live: true }));
+  }
+}
+
 function temporaryPath(): string {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-commands-')), 'events.sqlite');
 }
 
+test('POST session.open starts promptless persistent omp and projects an empty prompt', async () => {
+  const isolatedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-commands-omp-'));
+  const previousEnvironment = {
+    VIBECODIUM_PORT: process.env.VIBECODIUM_PORT,
+    VIBECODIUM_DB_PATH: process.env.VIBECODIUM_DB_PATH,
+    VIBECODIUM_PROJECTS_PATH: process.env.VIBECODIUM_PROJECTS_PATH,
+    ABDUCO_SOCKET_DIR: process.env.ABDUCO_SOCKET_DIR,
+  };
+  process.env.VIBECODIUM_PORT = '0';
+  process.env.VIBECODIUM_DB_PATH = path.join(isolatedRoot, 'events.sqlite');
+  process.env.VIBECODIUM_PROJECTS_PATH = path.join(isolatedRoot, 'projects.json');
+  process.env.ABDUCO_SOCKET_DIR = path.join(isolatedRoot, 'abduco');
+  const sessions = createSessionSubsystem({
+    substrate: new TestSubstrate(),
+    sessionStorageRoot: path.join(isolatedRoot, 'sessions'),
+  });
+  const plane = new ControlPlane({
+    dataPath: path.join(isolatedRoot, 'events.sqlite'),
+    port: 0,
+    subsystems: [sessions],
+  });
+  try {
+    const address = await plane.start();
+    const response = await fetch(`${address.httpUrl}/commands/session.open`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'omp',
+        cwd: isolatedRoot,
+        origin: 'operator',
+        source: 'cli',
+      }),
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as {
+      value: { session_id: string; stream_id: string };
+    };
+    assert.match(body.value.session_id, /^[0-9a-f-]{36}$/);
+    assert.equal(body.value.stream_id, `session:${body.value.session_id}`);
+    const summary = sessions
+      .list({})
+      .sessions.find((session) => session.session_id === body.value.session_id);
+    assert.ok(summary);
+    assert.equal(summary.prompt, '');
+    assert.equal(summary.cwd, isolatedRoot);
+    assert.equal(summary.origin, 'operator');
+    assert.equal(summary.source, 'cli');
+  } finally {
+    await plane.stop();
+    for (const [key, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(isolatedRoot, { recursive: true, force: true });
+  }
+});
 function connect(address: ControlPlaneAddress): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(address.wsUrl);
