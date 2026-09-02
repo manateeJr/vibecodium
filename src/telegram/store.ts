@@ -45,6 +45,7 @@ export function openTopicStore(filename: string): TopicStore {
     'SELECT thread_id, session_id, label, created_at FROM topics ORDER BY thread_id',
   );
   const unbind = database.prepare('DELETE FROM topics WHERE thread_id = ?');
+  const renameStatement = database.prepare('UPDATE topics SET label = ? WHERE thread_id = ?');
   const selectOffset = database.prepare<[string], { value: string }>(
     'SELECT value FROM kv WHERE key = ?',
   );
@@ -81,6 +82,9 @@ export function openTopicStore(filename: string): TopicStore {
 
     unbind(threadId: number): void {
       unbind.run(threadId);
+    },
+    rename(threadId: number, label: string): void {
+      renameStatement.run(label, threadId);
     },
 
     getOffset(): number {

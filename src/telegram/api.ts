@@ -3,8 +3,10 @@ import type { TelegramApi, TelegramConfig, TelegramUpdate } from './types.js';
 type JsonRecord = Record<string, unknown>;
 type SendMessageParams = Parameters<TelegramApi['sendMessage']>[0];
 type EditMessageParams = Parameters<TelegramApi['editMessageText']>[0];
+type EditMessageReplyMarkupParams = Parameters<TelegramApi['editMessageReplyMarkup']>[0];
 type SendDocumentParams = Parameters<TelegramApi['sendDocument']>[0];
 type ForumTopicParams = Parameters<TelegramApi['createForumTopic']>[0];
+type EditForumTopicParams = Parameters<TelegramApi['editForumTopic']>[0];
 
 export function createTelegramApi(
   config: TelegramConfig,
@@ -83,6 +85,20 @@ export function createTelegramApi(
       if (params.markdown) body.parse_mode = 'MarkdownV2';
       await postTelegram(requestFetch, `${apiBase}/editMessageText`, body, undefined, false);
     },
+    async editMessageReplyMarkup(params: EditMessageReplyMarkupParams): Promise<void> {
+      const body: JsonRecord = {
+        chat_id: params.chatId,
+        message_id: params.messageId,
+      };
+      if (params.buttons !== undefined) {
+        body.reply_markup = {
+          inline_keyboard: params.buttons.map((row) =>
+            row.map((button) => ({ text: button.text, callback_data: button.callbackData })),
+          ),
+        };
+      }
+      await postTelegram(requestFetch, `${apiBase}/editMessageReplyMarkup`, body, undefined, false);
+    },
 
     async sendDocument(params: SendDocumentParams): Promise<{ messageId: number }> {
       const form = new FormData();
@@ -122,6 +138,15 @@ export function createTelegramApi(
           'createForumTopic result.message_thread_id',
         ),
       };
+    },
+    async editForumTopic(params: EditForumTopicParams): Promise<void> {
+      await postTelegram(
+        requestFetch,
+        `${apiBase}/editForumTopic`,
+        { chat_id: params.chatId, message_thread_id: params.threadId, name: params.name },
+        undefined,
+        false,
+      );
     },
 
     async answerCallbackQuery(id: string, text?: string): Promise<void> {

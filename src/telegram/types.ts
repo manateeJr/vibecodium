@@ -55,6 +55,11 @@ export interface TelegramApi {
     text: string;
     markdown?: boolean;
   }): Promise<void>;
+  editMessageReplyMarkup(p: {
+    chatId: number;
+    messageId: number;
+    buttons?: InlineButton[][];
+  }): Promise<void>;
   sendDocument(p: {
     chatId: number;
     threadId?: number;
@@ -65,6 +70,7 @@ export interface TelegramApi {
   createForumTopic(p: { chatId: number; name: string }): Promise<{
     threadId: number;
   }>;
+  editForumTopic(p: { chatId: number; threadId: number; name: string }): Promise<void>;
   answerCallbackQuery(id: string, text?: string): Promise<void>;
 }
 
@@ -111,6 +117,7 @@ export interface SessionBridge {
   }): Promise<{ sessionId: string; turn: number }>;
   send(p: { sessionId: string; prompt: string }): Promise<{ turn: number }>;
   stop(sessionId: string): Promise<boolean>;
+  rename(p: { sessionId: string; label: string }): Promise<void>;
   list(): Promise<SessionLite[]>;
   watchTurn(p: {
     sessionId: string;
@@ -132,6 +139,7 @@ export interface TopicStore {
   byThread(threadId: number): TopicBinding | null;
   all(): TopicBinding[];
   unbind(threadId: number): void;
+  rename(threadId: number, label: string): void;
   getOffset(): number;
   setOffset(offset: number): void; // persisted getUpdates offset
   close(): void;

@@ -87,6 +87,10 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
         const result = await client.stopSession({ session_id: sessionId });
         return result.stopped;
       }),
+    rename: ({ sessionId, label }): Promise<void> =>
+      controlPlaneCall('session rename', async () => {
+        await client.sessionRename({ session_id: sessionId, label });
+      }),
     list: () =>
       controlPlaneCall('session list', async () => {
         const result = await client.listSessions({});

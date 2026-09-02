@@ -40,7 +40,6 @@ class FakeApi implements TelegramApi {
   readonly createdTopics: TopicParams[] = [];
   private nextMessageId = 100;
   private nextThreadId = 500;
-
   async getMe(): Promise<{ id: number; username: string }> {
     this.calls.push('getMe');
     return { id: 1, username: 'test-bot' };
@@ -70,6 +69,9 @@ class FakeApi implements TelegramApi {
     this.calls.push('editMessageText');
     this.editedMessages.push(params);
   }
+  async editMessageReplyMarkup(): Promise<void> {
+    this.calls.push('editMessageReplyMarkup');
+  }
 
   async sendDocument(params: DocumentParams): Promise<{ messageId: number }> {
     this.calls.push('sendDocument');
@@ -83,6 +85,9 @@ class FakeApi implements TelegramApi {
     this.createdTopics.push(params);
     this.nextThreadId += 1;
     return { threadId: this.nextThreadId };
+  }
+  async editForumTopic(): Promise<void> {
+    this.calls.push('editForumTopic');
   }
 
   async answerCallbackQuery(id: string, text?: string): Promise<void> {
@@ -98,6 +103,7 @@ class FakeBridge implements SessionBridge {
   readonly openCalls: Array<{ cwd: string; prompt: string; project?: string }> = [];
   readonly sendCalls: Array<{ sessionId: string; prompt: string }> = [];
   readonly stopCalls: string[] = [];
+  readonly renameCalls: Array<{ sessionId: string; label: string }> = [];
   readonly watchCalls: WatchParams[] = [];
   sessions: SessionLite[] = [{ sessionId: 'session-1', status: 'live', cwd: '/tmp/demo' }];
   watchTurnHandler: ((params: WatchParams) => Promise<TurnResult>) | undefined;
@@ -134,6 +140,9 @@ class FakeBridge implements SessionBridge {
   async stop(sessionId: string): Promise<boolean> {
     this.stopCalls.push(sessionId);
     return true;
+  }
+  async rename(params: { sessionId: string; label: string }): Promise<void> {
+    this.renameCalls.push(params);
   }
 
   async list(): Promise<SessionLite[]> {

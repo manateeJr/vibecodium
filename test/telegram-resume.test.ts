@@ -29,6 +29,7 @@ class FakeApi implements TelegramApi {
   readonly sentMessages: SentMessage[] = [];
   readonly editedMessages: EditMessageParams[] = [];
   readonly createdTopics: TopicParams[] = [];
+  readonly calls: string[] = [];
   private nextMessageId = 100;
   private nextThreadId = 500;
 
@@ -57,6 +58,9 @@ class FakeApi implements TelegramApi {
   async editMessageText(params: EditMessageParams): Promise<void> {
     this.editedMessages.push(params);
   }
+  async editMessageReplyMarkup(): Promise<void> {
+    this.calls.push('editMessageReplyMarkup');
+  }
 
   async sendDocument(): Promise<{ messageId: number }> {
     this.nextMessageId += 1;
@@ -68,8 +72,13 @@ class FakeApi implements TelegramApi {
     this.nextThreadId += 1;
     return { threadId: this.nextThreadId };
   }
+  async editForumTopic(): Promise<void> {
+    this.calls.push('editForumTopic');
+  }
 
-  async answerCallbackQuery(): Promise<void> {}
+  async answerCallbackQuery(): Promise<void> {
+    this.calls.push('answerCallbackQuery');
+  }
 }
 
 class FakeBridge implements SessionBridge {
@@ -81,6 +90,7 @@ class FakeBridge implements SessionBridge {
     cwd?: string;
   }> = [];
   readonly machineSessionsCalls: number[] = [];
+  readonly renameCalls: Array<{ sessionId: string; label: string }> = [];
   readonly watchCalls: WatchParams[] = [];
   resumeError: Error | undefined;
   resumeResult = { sessionId: 'resumed-session', turn: 1 };
@@ -111,6 +121,9 @@ class FakeBridge implements SessionBridge {
     this.resumeCalls.push(params);
     if (this.resumeError) throw this.resumeError;
     return this.resumeResult;
+  }
+  async rename(params: { sessionId: string; label: string }): Promise<void> {
+    this.renameCalls.push(params);
   }
 
   async send(): Promise<{ turn: number }> {

@@ -128,7 +128,12 @@ async function startTelegramStub(initial: readonly WireUpdate[]): Promise<Telegr
       jsonResponse(response, 200, { message_id: nextMessageId });
       return;
     }
-    if (endpoint === 'editMessageText' || endpoint === 'answerCallbackQuery') {
+    if (
+      endpoint === 'editMessageText' ||
+      endpoint === 'editMessageReplyMarkup' ||
+      endpoint === 'editForumTopic' ||
+      endpoint === 'answerCallbackQuery'
+    ) {
       jsonResponse(response, 200, true);
       return;
     }

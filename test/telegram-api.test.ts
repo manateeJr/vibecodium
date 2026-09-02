@@ -149,6 +149,48 @@ test('editMessageText posts its message and markdown fields', async () => {
     parse_mode: 'MarkdownV2',
   });
 });
+test('editForumTopic posts the topic name', async () => {
+  const requests: RecordedRequest[] = [];
+  const api = createTelegramApi(
+    config,
+    scriptedFetch([{ body: { ok: true, result: true } }], requests),
+  );
+
+  await api.editForumTopic({ chatId: -1001, threadId: 9, name: 'renamed' });
+  assert.equal(requests[0]?.url, 'https://api.telegram.org/bot123:token/editForumTopic');
+  assert.deepEqual(jsonBody(requests[0] as RecordedRequest), {
+    chat_id: -1001,
+    message_thread_id: 9,
+    name: 'renamed',
+  });
+});
+
+test('editMessageReplyMarkup maps buttons and omits absent buttons', async () => {
+  const requests: RecordedRequest[] = [];
+  const api = createTelegramApi(
+    config,
+    scriptedFetch(
+      [{ body: { ok: true, result: true } }, { body: { ok: true, result: true } }],
+      requests,
+    ),
+  );
+
+  await api.editMessageReplyMarkup({
+    chatId: -1001,
+    messageId: 20,
+    buttons: [[{ text: 'Rename', callbackData: 'rename' }]],
+  });
+  await api.editMessageReplyMarkup({ chatId: -1001, messageId: 21 });
+
+  assert.equal(requests[0]?.url, 'https://api.telegram.org/bot123:token/editMessageReplyMarkup');
+  assert.deepEqual(jsonBody(requests[0] as RecordedRequest), {
+    chat_id: -1001,
+    message_id: 20,
+    reply_markup: { inline_keyboard: [[{ text: 'Rename', callback_data: 'rename' }]] },
+  });
+  const withoutButtons = jsonBody(requests[1] as RecordedRequest);
+  assert.equal('reply_markup' in withoutButtons, false);
+});
 
 test('sendDocument posts multipart form data with a markdown document', async () => {
   const requests: RecordedRequest[] = [];
