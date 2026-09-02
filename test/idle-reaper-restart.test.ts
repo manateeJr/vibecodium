@@ -107,6 +107,36 @@ class TestSubstrate implements SubstrateClient {
     return [...this.liveNames].map((name) => ({ name, live: true }));
   }
 }
+class BlockingListSubstrate extends TestSubstrate {
+  private blocked = false;
+  private releaseBlockedList!: () => void;
+  private resolveListStarted!: () => void;
+  private listGate!: Promise<void>;
+  public listStarted!: Promise<void>;
+
+  public blockNextList(): void {
+    this.blocked = true;
+    this.listStarted = new Promise((resolve) => {
+      this.resolveListStarted = resolve;
+    });
+    this.listGate = new Promise((resolve) => {
+      this.releaseBlockedList = resolve;
+    });
+  }
+
+  public releaseList(): void {
+    this.releaseBlockedList();
+  }
+
+  public override async listSessions(): Promise<readonly SubstrateSessionInfo[]> {
+    if (this.blocked) {
+      this.blocked = false;
+      this.resolveListStarted();
+      await this.listGate;
+    }
+    return super.listSessions();
+  }
+}
 
 function sessionRecord(
   root: string,
@@ -271,6 +301,73 @@ test('session.stop closes a resumable durable row without a live worker', async 
       session_id: sessionId,
       provider: 'omp',
     });
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+test('closed resumable rows ignore stale transitions and repeated stops', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-stop-idempotent-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const context = new TestContext();
+  const sessionId = 'closed-row';
+  const record = sessionRecord(root, sessionId, 'resumable');
+  table.upsert(record);
+  context.append(`session:${sessionId}`, 'session_started', {
+    session_id: sessionId,
+    provider: 'omp',
+    prompt: 'old prompt',
+  });
+  const subsystem = createSubsystem({
+    substrate: new TestSubstrate([]),
+    sessionTable: table,
+    sessionStorageRoot: root,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    assert.deepEqual(await subsystem.stop({ session_id: sessionId }), { stopped: true });
+    const eventCount = context.events.length;
+    subsystem.emitSessionState(sessionId, 'resumable', 'shutdown');
+    assert.equal(table.get(sessionId)?.state, 'closed');
+    assert.equal(context.events.length, eventCount);
+    assert.deepEqual(await subsystem.stop({ session_id: sessionId }), { stopped: false });
+    assert.equal(context.events.filter((event) => event.type === 'session_complete').length, 1);
+  } finally {
+    subsystem.stopAll();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+test('a liveness sweep cannot resurrect a row closed while the sweep is pending', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-stop-race-'));
+  const table = new SessionTable({ filename: ':memory:' });
+  const context = new TestContext();
+  const sessionId = 'stop-race';
+  const substrate = new BlockingListSubstrate([]);
+  const subsystem = createSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    idFactory: () => sessionId,
+    reaperIntervalMs: 60_000,
+  });
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    await subsystem.open({ provider: 'omp', prompt: 'active prompt' });
+    substrate.blockNextList();
+    const sweep = subsystem.reapIdle();
+    await substrate.listStarted;
+    assert.deepEqual(await subsystem.stop({ session_id: sessionId }), { stopped: true });
+    substrate.releaseList();
+    await sweep;
+    assert.equal(table.get(sessionId)?.state, 'closed');
+    assert.equal(context.events.filter((event) => event.type === 'session_complete').length, 1);
+    assert.deepEqual(await subsystem.stop({ session_id: sessionId }), { stopped: false });
+    assert.equal(context.events.filter((event) => event.type === 'session_complete').length, 1);
   } finally {
     subsystem.stopAll();
     table.close();

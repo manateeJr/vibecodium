@@ -197,6 +197,7 @@ export class SessionSubsystem implements Subsystem {
     state: SubstrateSessionState,
     reason: SessionStateReason,
   ): void {
+    if (state === 'resumable' && this.sessionTable?.get(session_id)?.state === 'closed') return;
     const current = this.sessionRecords.get(session_id);
     const stream_id = current?.summary.stream_id ?? `session:${session_id}`;
     requireContext(this.context).append(stream_id, 'session_state', {

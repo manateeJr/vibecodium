@@ -103,7 +103,6 @@ export class PersistentSessionManager {
       return false;
     }
   }
-
   public start(
     args: SessionOpenArgs,
     sessionId: string,
@@ -142,7 +141,6 @@ export class PersistentSessionManager {
       return record;
     });
   }
-
   public attach(record: SubstrateSessionRecord): Promise<SubstrateSessionRecord> {
     const summary = this.summaryFor(record.sessionId);
     const plugin = this.pluginFor(record.provider);
@@ -330,7 +328,6 @@ export class PersistentSessionManager {
     );
     return task;
   }
-
   private clearRelaunch(sessionId: string, task: Promise<PersistentSessionRelaunchResult>): void {
     if (this.relaunches.get(sessionId) === task) this.relaunches.delete(sessionId);
   }
@@ -412,7 +409,6 @@ export class PersistentSessionManager {
     });
     this.onStateChange(record.sessionId, 'resumable', `resume-failed: ${detail}`);
   }
-
   private pluginFor(provider: string) {
     const adapter = providerByName(provider);
     if (!adapter.persistent || !adapter.harnessPlugin) {
@@ -474,6 +470,10 @@ export class PersistentSessionManager {
       await worker.flushTranscript().catch(() => undefined);
     }
     const record = this.sessionTable?.get(candidate.sessionId);
+    if (record?.state === 'closed') {
+      await worker?.shutdown();
+      return;
+    }
     if (record) {
       const transcriptPath = worker?.currentTranscriptPath ?? record.transcriptPath;
       const harnessRef =
