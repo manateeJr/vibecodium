@@ -374,3 +374,75 @@ test('a liveness sweep cannot resurrect a row closed while the sweep is pending'
     rmSync(root, { recursive: true, force: true });
   }
 });
+test('persistent turn numbers survive reap and a durable cold resume', async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), 'vibecodium-turn-restart-'));
+  const tablePath = path.join(root, 'sessions.sqlite');
+  const sessionId = 'turn-restart';
+  let clock = Date.parse('2026-09-02T12:00:00.000Z');
+  const context = new TestContext();
+  const substrate = new TestSubstrate([]);
+  const table = new SessionTable({ filename: tablePath });
+  const subsystem = createSubsystem({
+    substrate,
+    sessionTable: table,
+    sessionStorageRoot: root,
+    idFactory: () => sessionId,
+    now: () => new Date(clock),
+    idleTimeoutMs: 60_000,
+    reaperIntervalMs: 60_000,
+  });
+  let restartedTable: SessionTable | undefined;
+  let restartedSubsystem: SessionSubsystem | undefined;
+  try {
+    subsystem.register(context);
+    await subsystem.reconcile();
+    const opened = await subsystem.open({ provider: 'omp', prompt: 'first turn' });
+    const transcriptPath = table.get(sessionId)?.transcriptPath;
+    assert.ok(transcriptPath);
+    const timestamp = new Date(clock).toISOString();
+    writeTranscript(transcriptPath, [
+      userRecord(timestamp),
+      assistantStop(timestamp),
+      userRecord(timestamp),
+      assistantStop(timestamp),
+    ]);
+    await subsystem.reapIdle();
+    assert.equal(table.get(sessionId)?.lastTurn, 2);
+    clock += 60_000;
+    assert.deepEqual(await subsystem.reapIdle(), [sessionId]);
+    assert.equal(table.get(sessionId)?.state, 'resumable');
+    subsystem.stopAll();
+    table.close();
+
+    restartedTable = new SessionTable({ filename: tablePath });
+    assert.equal(restartedTable.get(sessionId)?.lastTurn, 2);
+    const restartedContext = new TestContext();
+    restartedSubsystem = createSubsystem({
+      substrate: new TestSubstrate([]),
+      sessionTable: restartedTable,
+      sessionStorageRoot: root,
+      now: () => new Date(clock),
+      reaperIntervalMs: 60_000,
+    });
+    restartedSubsystem.register(restartedContext);
+    await restartedSubsystem.reconcile();
+    const sent = await restartedSubsystem.send({
+      session_id: opened.session_id,
+      prompt: 'third turn',
+    });
+    assert.deepEqual(sent, { stream_id: `session:${sessionId}`, turn: 3 });
+    writeTranscript(transcriptPath, [userRecord(timestamp), assistantStop(timestamp)]);
+    await restartedSubsystem.reapIdle();
+    const inputTurns = [...context.events, ...restartedContext.events]
+      .filter((event): event is EventEnvelope<'session_input'> => event.type === 'session_input')
+      .map((event) => event.payload.turn);
+    assert.deepEqual(inputTurns, [1, 2, 3]);
+    assert.equal(inputTurns.filter((turn) => turn === 1).length, 1);
+    assert.equal(restartedTable.get(sessionId)?.lastTurn, 3);
+  } finally {
+    restartedSubsystem?.stopAll();
+    restartedTable?.close();
+    table.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

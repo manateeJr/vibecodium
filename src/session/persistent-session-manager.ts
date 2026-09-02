@@ -155,6 +155,7 @@ export class PersistentSessionManager {
       harnessRef: record.harnessRef,
       ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }),
       startAtEnd: true,
+      initialTurn: record.lastTurn ?? 0,
     });
     return worker.attachExisting().then(async (started) => {
       const pendingPrompt = record.pendingPrompt;
@@ -164,6 +165,7 @@ export class PersistentSessionManager {
       if (
         updated.transcriptPath !== record.transcriptPath ||
         updated.harnessRef !== record.harnessRef ||
+        (updated.lastTurn ?? 0) !== (record.lastTurn ?? 0) ||
         pendingPrompt !== undefined
       )
         this.sessionTable?.upsert(updated);
@@ -271,7 +273,7 @@ export class PersistentSessionManager {
       substrate: this.substrate,
       append: this.append,
       now: () => this.now().getTime(),
-      onActivity: () => this.persistWorkerTranscript(options.sessionId),
+      onActivity: (activity) => this.persistWorkerTranscript(options.sessionId, activity.turn),
       onSessionExit: () => {
         if (this.sessionExitTasks.has(options.sessionId)) return;
         const task = new Promise<void>((resolve) => setImmediate(resolve)).then(() =>
@@ -285,18 +287,20 @@ export class PersistentSessionManager {
       },
     });
   }
-
-  private persistWorkerTranscript(sessionId: string): void {
+  private persistWorkerTranscript(sessionId: string, turn?: number): void {
     const worker = this.workers.get(sessionId);
     const record = this.sessionTable?.get(sessionId);
     if (!worker || !record) return;
     const transcriptPath = worker.currentTranscriptPath;
     const harnessRef = harnessRefFromTranscriptPath(transcriptPath) ?? worker.currentHarnessRef;
-    if (record.transcriptPath === transcriptPath && record.harnessRef === harnessRef) return;
+    const lastTurn = Math.max(record.lastTurn ?? 0, turn ?? 0, worker.currentTurn);
+    const changed = record.transcriptPath !== transcriptPath || record.harnessRef !== harnessRef;
+    if (!changed && (record.lastTurn ?? 0) === lastTurn) return;
     this.sessionTable?.upsert({
       ...record,
       harnessRef,
       transcriptPath,
+      ...(lastTurn === 0 ? {} : { lastTurn }),
       updatedAt: this.now().toISOString(),
     });
   }
@@ -331,7 +335,6 @@ export class PersistentSessionManager {
   private clearRelaunch(sessionId: string, task: Promise<PersistentSessionRelaunchResult>): void {
     if (this.relaunches.get(sessionId) === task) this.relaunches.delete(sessionId);
   }
-
   private async startResumable(
     record: SubstrateSessionRecord,
     prompt?: string,
@@ -343,12 +346,13 @@ export class PersistentSessionManager {
       streamId: `session:${record.sessionId}`,
       provider: record.provider,
       plugin,
-      substrateName: record.substrateName,
       storageDir: record.storageDir,
+      substrateName: record.substrateName,
       transcriptPath: record.transcriptPath,
       harnessRef: record.harnessRef,
       ...(summary?.cwd === undefined ? {} : { cwd: summary.cwd }),
       startAtEnd: true,
+      initialTurn: record.lastTurn ?? 0,
     });
     const pendingPrompt = prompt ?? record.pendingPrompt;
     const turn = pendingPrompt === undefined ? undefined : worker.currentTurn + 1;
@@ -382,7 +386,6 @@ export class PersistentSessionManager {
       throw new Error(resumeFailureMessage(errorMessage(error), pendingPrompt));
     }
   }
-
   private persistRelaunchFailure(
     record: SubstrateSessionRecord,
     worker: PersistentSessionWorker,
@@ -416,7 +419,6 @@ export class PersistentSessionManager {
     }
     return adapter.harnessPlugin;
   }
-
   private recordFromStart(
     provider: string,
     worker: PersistentSessionWorker,
@@ -425,6 +427,7 @@ export class PersistentSessionManager {
     previous?: SubstrateSessionRecord,
   ): SubstrateSessionRecord {
     const summary = this.summaryFor(worker.sessionId);
+    const source = previous?.source !== undefined ? previous.source : summary?.source;
     return {
       sessionId: worker.sessionId,
       provider,
@@ -437,11 +440,8 @@ export class PersistentSessionManager {
       origin: previous?.origin ?? summary?.origin ?? 'agent',
       ...(previous?.pinned === true || summary?.pinned === true ? { pinned: true } : {}),
       ...(previous?.archived === true || summary?.archived === true ? { archived: true } : {}),
-      ...(previous?.source !== undefined
-        ? { source: previous.source }
-        : summary?.source === undefined
-          ? {}
-          : { source: summary.source }),
+      ...(source === undefined ? {} : { source }),
+      lastTurn: Math.max(previous?.lastTurn ?? 0, worker.currentTurn),
       updatedAt: previous?.updatedAt ?? this.now().toISOString(),
     };
   }
@@ -470,10 +470,7 @@ export class PersistentSessionManager {
       await worker.flushTranscript().catch(() => undefined);
     }
     const record = this.sessionTable?.get(candidate.sessionId);
-    if (record?.state === 'closed') {
-      await worker?.shutdown();
-      return;
-    }
+    if (record?.state === 'closed') return worker?.shutdown();
     if (record) {
       const transcriptPath = worker?.currentTranscriptPath ?? record.transcriptPath;
       const harnessRef =
@@ -485,6 +482,7 @@ export class PersistentSessionManager {
         harnessRef,
         transcriptPath,
         state: 'resumable',
+        lastTurn: Math.max(record.lastTurn ?? 0, worker?.currentTurn ?? 0),
         updatedAt: this.now().toISOString(),
       });
     }

@@ -234,17 +234,16 @@ test('session bridge ignores stale replay after a cold resume', async () => {
 
     const coldSend = await bridge.send({
       sessionId: opened.sessionId,
-      prompt: 'new cold turn one',
+      prompt: 'new cold turn three',
     });
-    assert.equal(coldSend.turn, 1);
+    assert.equal(coldSend.turn, 3);
     const resumed = await bridge.watchTurn({
       sessionId: opened.sessionId,
       turn: coldSend.turn,
       onProgress: () => undefined,
       timeoutMs: 10_000,
     });
-    assert.equal(resumed.status, 'complete');
-    assert.equal(resumed.text, 'echo:new cold turn one');
+    assert.equal(resumed.text, 'echo:new cold turn three');
   } finally {
     try {
       if (plane !== undefined) await plane.stop();

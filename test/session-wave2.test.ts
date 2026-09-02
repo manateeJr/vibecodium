@@ -172,6 +172,7 @@ test('session table migrates old rows with safe metadata defaults', () => {
   const table = new SessionTable({ database });
   assert.deepEqual(table.get('old')?.label, '');
   assert.deepEqual(table.get('old')?.origin, 'agent');
+  assert.equal(table.get('old')?.lastTurn ?? 0, 0);
   table.close();
   database.close();
 });

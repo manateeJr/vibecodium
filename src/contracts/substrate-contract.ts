@@ -95,5 +95,7 @@ export interface SubstrateSessionRecord {
   readonly archived?: boolean;
   readonly source?: SessionSource | null;
   readonly pendingPrompt?: string;
+  /** Highest user-turn number durably observed for this session. */
+  readonly lastTurn?: number;
   readonly updatedAt: string;
 }

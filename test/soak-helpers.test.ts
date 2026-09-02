@@ -44,7 +44,7 @@ test('soak arguments allow long fake runs and keep a short fake default', () => 
   assert.throws(() => parseSoakArgs(['--provider', 'bogus']), /fake or omp/);
 });
 
-test('event invariants pair turns, allow steering, and preserve duplicate turn numbers on resume', () => {
+test('event invariants pair turns and tolerate duplicate turn numbers in legacy pre-monotonic-resume streams', () => {
   sequence = 0;
   const events: EventEnvelope[] = [
     event('session_started', {
@@ -59,6 +59,7 @@ test('event invariants pair turns, allow steering, and preserve duplicate turn n
     event('session_output', { session_id: sessionId, index: 0, text: 'reply' }),
     event('turn_complete', { session_id: sessionId, turn: 2 }),
     event('turn_complete', { session_id: sessionId, turn: 2 }),
+    // Legacy pre-#111 streams may contain a resumed turn 1; live sessions no longer emit it.
     event('session_input', { session_id: sessionId, turn: 1, text: 'cold resume' }),
     event('turn_complete', { session_id: sessionId, turn: 1 }),
     event('session_complete', { session_id: sessionId, provider: 'fake' }),
