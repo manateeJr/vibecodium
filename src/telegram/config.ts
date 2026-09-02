@@ -4,6 +4,7 @@ export const TELEGRAM_API_BASE_ENV = 'VIBECODIUM_TELEGRAM_API_BASE';
 const DEFAULT_CONTROL_PLANE_URL = 'http://127.0.0.1:4310';
 const DEFAULT_DB_PATH = '.vibecodium/telegram.sqlite';
 const DEFAULT_TELEGRAM_API_BASE = 'https://api.telegram.org';
+const DEFAULT_TELEGRAM_PROVIDER = 'omp';
 
 function parseInteger(value: string | undefined): number | undefined {
   if (value === undefined || !/^-?\d+$/.test(value.trim())) return undefined;
@@ -13,6 +14,10 @@ function parseInteger(value: string | undefined): number | undefined {
 
 export function getTelegramApiBase(environment: NodeJS.ProcessEnv = process.env): string {
   return environment[TELEGRAM_API_BASE_ENV]?.trim() || DEFAULT_TELEGRAM_API_BASE;
+}
+
+export function getTelegramProvider(environment: NodeJS.ProcessEnv = process.env): string {
+  return environment.VIBECODIUM_TELEGRAM_PROVIDER?.trim() || DEFAULT_TELEGRAM_PROVIDER;
 }
 
 export function loadTelegramConfig(environment: NodeJS.ProcessEnv = process.env): TelegramConfig {

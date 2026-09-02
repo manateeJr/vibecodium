@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { createTelegramBot, type TelegramBot, type TelegramFormat } from '../src/telegram/bot.js';
-import { getTelegramApiBase, loadTelegramConfig } from '../src/telegram/config.js';
+import {
+  getTelegramApiBase,
+  getTelegramProvider,
+  loadTelegramConfig,
+} from '../src/telegram/config.js';
 import { openTopicStore } from '../src/telegram/store.js';
 import type {
   CallbackQuery,
@@ -217,6 +221,8 @@ test('Telegram config validates required values and applies defaults', () => {
   assert.equal(loaded.dbPath, '.vibecodium/telegram.sqlite');
   assert.equal(loaded.progressThrottleMs, 5_000);
   assert.equal(getTelegramApiBase({}), 'https://api.telegram.org');
+  assert.equal(getTelegramProvider({}), 'omp');
+  assert.equal(getTelegramProvider({ VIBECODIUM_TELEGRAM_PROVIDER: ' fake ' }), 'fake');
   assert.equal(
     getTelegramApiBase({ VIBECODIUM_TELEGRAM_API_BASE: 'http://stub/' }),
     'http://stub/',
