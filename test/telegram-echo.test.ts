@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createClient } from '../src/client/index.js';
 import { createTelegramBot, type TelegramBot } from '../src/telegram/bot.js';
 import { createEcho } from '../src/telegram/echo.js';
 import { escapeMarkdownV2, chunkText } from '../src/telegram/format.js';
@@ -56,6 +57,45 @@ class FakeApi implements TelegramApi {
   }
   async editForumTopic(): Promise<void> {}
   async answerCallbackQuery(): Promise<void> {}
+}
+
+type SocketListener = (event: unknown) => void;
+
+const prematureCloseSockets: PrematureCloseSocket[] = [];
+
+class PrematureCloseSocket {
+  public readyState = 0;
+  public unhandledErrors = 0;
+  private readonly listeners = new Map<string, SocketListener[]>();
+
+  public constructor(public readonly url: string) {
+    prematureCloseSockets.push(this);
+  }
+
+  public addEventListener(type: string, listener: SocketListener): void {
+    const listeners = this.listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  public send(data: string): void {
+    void data;
+  }
+
+  public close(): void {
+    if (this.readyState === 3) return;
+    this.readyState = 3;
+    queueMicrotask(() => {
+      this.emit('error', new Error('closed before open'));
+      this.emit('close', {});
+    });
+  }
+
+  private emit(type: string, event: unknown): void {
+    const listeners = this.listeners.get(type) ?? [];
+    if (type === 'error' && listeners.length === 0) this.unhandledErrors += 1;
+    for (const listener of listeners) listener(event);
+  }
 }
 
 class FakeBridge implements SessionBridge {
@@ -387,4 +427,20 @@ test('/stop unsubscribes the bound session and suppresses later observations', a
   assert.deepEqual(fixture.bridge.stopCalls, ['session-1']);
   assert.deepEqual(fixture.bridge.unsubscribeCalls, ['session-1']);
   assert.equal(fixture.api.sentMessages.length, sentMessageCount);
+});
+
+test('client subscription handles immediate unsubscribe before websocket open', async () => {
+  prematureCloseSockets.length = 0;
+  const client = createClient({
+    baseUrl: 'http://127.0.0.1:4310',
+    webSocket: PrematureCloseSocket,
+  });
+  const unsubscribe = client.subscribe(0, () => undefined, 'session:session-1');
+  const socket = prematureCloseSockets.at(-1);
+  assert.ok(socket);
+
+  unsubscribe();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(socket.unhandledErrors, 0);
 });

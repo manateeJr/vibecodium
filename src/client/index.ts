@@ -295,6 +295,9 @@ export function createClient(options: ClientOptions): VibecodiumClient {
         return;
       }
       socket = nextSocket;
+      // A connecting ws emits `error` when unsubscribe closes it before `open`.
+      // Keep that lifecycle error handled; the close listener owns reconnects.
+      addSocketListener(nextSocket, 'error', () => undefined);
       const frameFromSeq = firstConnection ? from_seq : lastSeq + 1;
       firstConnection = false;
       const sendFrame = (): void => {
