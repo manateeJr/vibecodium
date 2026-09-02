@@ -98,6 +98,7 @@ export async function main(): Promise<void> {
       config,
       format: { escapeMarkdownV2, chunkText },
     });
+    bot.start();
     const me = await api.getMe();
     process.stdout.write(`[telegram] Telegram bot @${me.username} started\n`);
     await runTelegramBot({

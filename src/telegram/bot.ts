@@ -11,6 +11,8 @@ import type {
 import { createResumeHandler, truncateTitle, type PendingStart } from './resume.js';
 import { handleRenameCommand, RENAME_GENERAL_REPLY } from './rename.js';
 import { createTurnRelay } from './turn-relay.js';
+import { createEcho } from './echo.js';
+import { createSessionWatch } from './session-watch.js';
 
 export interface TelegramFormat {
   escapeMarkdownV2(text: string): string;
@@ -26,6 +28,7 @@ export interface TelegramBotDependencies {
 }
 
 export interface TelegramBot {
+  start(): void;
   handleUpdate(update: TelegramUpdate): Promise<void>;
 }
 
@@ -78,6 +81,8 @@ function topicName(project: string, prompt: string): string {
 
 export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   const { api, bridge, store, config, format } = deps;
+  const echo = createEcho({ api, store, format, chatId: config.chatId });
+  const sessionWatch = createSessionWatch({ bridge, store, echoTurn: echo.echoTurn });
   const { relayTurn } = createTurnRelay({ api, bridge, config, format });
   const inFlight = new Set<number>();
   const pendingStarts = new Map<number, PendingStart>();
@@ -107,6 +112,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     ensureHealthy,
     pendingStarts,
     reply,
+    onBind: sessionWatch.watch,
   });
 
   async function chooseProject(message: IncomingMessage): Promise<void> {
@@ -125,6 +131,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   async function startSessionInTopic(
     message: IncomingMessage,
     name: string,
+    prompt: string,
     open: OpenSession,
     notice: (sessionId: string) => string,
     onOpenError?: (error: unknown) => Promise<void>,
@@ -144,6 +151,8 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       label: name,
       createdAt: new Date().toISOString(),
     });
+    sessionWatch.markSent(opened.sessionId, prompt);
+    sessionWatch.markRelayed(opened.sessionId, opened.turn);
     lastTurns.set(opened.sessionId, opened.turn);
     await api.sendMessage({
       chatId: message.chatId,
@@ -160,6 +169,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       });
     } finally {
       inFlight.delete(topic.threadId);
+      sessionWatch.watch(opened.sessionId);
     }
   }
 
@@ -173,6 +183,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     await startSessionInTopic(
       message,
       name,
+      prompt,
       () =>
         bridge.open({
           cwd: project.path,
@@ -193,6 +204,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     await startSessionInTopic(
       message,
       name,
+      prompt,
       () =>
         bridge.resume({
           source: pending.source,
@@ -294,8 +306,8 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       return true;
     }
     if (command === 'stop') {
-      await ensureHealthy();
       const stopped = await bridge.stop(binding.sessionId);
+      sessionWatch.unwatch(binding.sessionId);
       await reply(
         target,
         stopped ? `stopped ${binding.sessionId}` : `already stopped ${binding.sessionId}`,
@@ -340,9 +352,17 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     }
 
     inFlight.add(threadId);
+    sessionWatch.unwatch(binding.sessionId);
     try {
       await ensureHealthy();
-      const sent = await bridge.send({ sessionId: binding.sessionId, prompt: message.text ?? '' });
+      if ((await bridge.openTurn(binding.sessionId)) !== null) {
+        await reply(messageTarget(message), 'still working on the previous turn');
+        return;
+      }
+      const prompt = message.text ?? '';
+      sessionWatch.markSent(binding.sessionId, prompt);
+      const sent = await bridge.send({ sessionId: binding.sessionId, prompt });
+      sessionWatch.markRelayed(binding.sessionId, sent.turn);
       lastTurns.set(binding.sessionId, sent.turn);
       await relayTurn({
         chatId: message.chatId,
@@ -352,6 +372,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       });
     } finally {
       inFlight.delete(threadId);
+      sessionWatch.watch(binding.sessionId);
     }
   }
 
@@ -406,6 +427,9 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   }
 
   return {
+    start(): void {
+      sessionWatch.start();
+    },
     async handleUpdate(update: TelegramUpdate): Promise<void> {
       const fromId = update.callbackQuery?.from.id ?? update.message?.from.id;
       if (fromId !== config.allowedUserId) return;
