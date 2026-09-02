@@ -295,6 +295,7 @@ export class PersistentSessionWorker {
       },
     });
     await this.tailer.start();
+    if (startAtEnd || this.startAtEnd) await this.tailer.seedFromTranscriptTail();
     this.started = true;
   }
   private async inject(prompt: string): Promise<void> {
@@ -335,7 +336,6 @@ interface ConversationState {
   turnChain: Promise<void>;
   stopPromise: Promise<void> | undefined;
 }
-
 function send(message: WorkerOutputMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!process.send) {

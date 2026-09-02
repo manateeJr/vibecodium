@@ -35,6 +35,8 @@ export interface SessionTranscriptTailerOptions {
   readonly onTranscriptPath?: (transcriptPath: string) => void;
 }
 
+const TRANSCRIPT_SEED_BYTES = 64 * 1024;
+
 export class SessionTranscriptTailer {
   private activeTranscriptPath: string;
   private readonly sessionId: string;
@@ -93,6 +95,61 @@ export class SessionTranscriptTailer {
 
   public get lastActivityAt(): number {
     return this.lastActivity;
+  }
+  public async seedFromTranscriptTail(): Promise<void> {
+    let handle;
+    try {
+      handle = await open(this.activeTranscriptPath, 'r');
+    } catch {
+      return;
+    }
+    try {
+      const snapshot = await handle.stat();
+      const tailStart = Math.max(0, snapshot.size - TRANSCRIPT_SEED_BYTES);
+      const readStart = tailStart > 0 ? tailStart - 1 : 0;
+      const amount = snapshot.size - readStart;
+      let bytesRead = 0;
+      if (amount > 0) {
+        const buffer = Buffer.allocUnsafe(amount);
+        bytesRead = (await handle.read(buffer, 0, amount, readStart)).bytesRead;
+        if (bytesRead > 0) {
+          const lines = new StringDecoder('utf8').write(buffer.subarray(0, bytesRead)).split('\n');
+          if (readStart > 0 && buffer[0] !== 0x0a) lines.shift();
+          lines.pop();
+          let lastRecord: HarnessTranscriptRecord | undefined;
+          let lastRecordTimeMs: number | undefined;
+          for (const line of lines) {
+            const completeLine = line.endsWith('\r') ? line.slice(0, -1) : line;
+            const parsed = this.plugin.name === 'omp' ? parseOmpTranscriptLine(completeLine) : null;
+            const record = parsed ?? this.plugin.parseTranscriptLine(completeLine);
+            if (!record) continue;
+            lastRecord = record;
+            lastRecordTimeMs =
+              parsed?.kind === 'tool_result'
+                ? parsed.toolResult.timeMs
+                : parsed !== null &&
+                    'timeMs' in parsed &&
+                    typeof parsed.timeMs === 'number' &&
+                    Number.isFinite(parsed.timeMs)
+                  ? parsed.timeMs
+                  : undefined;
+          }
+          this.idle =
+            lastRecord !== undefined &&
+            lastRecord.kind === 'assistant' &&
+            this.plugin.idleDetector(lastRecord);
+          this.lastActivity =
+            (lastRecord === undefined ? undefined : timestampMs(lastRecord.ts)) ??
+            lastRecordTimeMs ??
+            snapshot.mtimeMs;
+          return;
+        }
+      }
+      this.idle = false;
+      this.lastActivity = snapshot.mtimeMs;
+    } finally {
+      await handle.close();
+    }
   }
   public get currentTurn(): number {
     return this.turn;
@@ -316,4 +373,11 @@ function durationMs(
 ): number | undefined {
   if (startedAt === undefined || endedAt === undefined || endedAt < startedAt) return undefined;
   return Math.round(endedAt - startedAt);
+}
+function timestampMs(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

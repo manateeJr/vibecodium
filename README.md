@@ -45,6 +45,7 @@ whole session scope, releases the OMP and abduco processes and their RAM, and
 records the session as resumable. The next `session.send` cold-resumes that
 session and delivers the prompt to the same transcript. Set
 `VIBECODIUM_IDLE_TIMEOUT_MS` to tune the idle period (the default is 30 minutes;
+The deployed service reaps idle sessions after 3h.
 `0` reaps every idle session on the next sweep). When
 `MemAvailable` falls below `VIBECODIUM_MEMORY_PRESSURE_MIN_MB` (default `2048`
 MB), the reaper also evicts the oldest idle sessions early until memory recovers;

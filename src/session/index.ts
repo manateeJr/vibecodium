@@ -402,14 +402,15 @@ export class SessionSubsystem implements Subsystem {
   }
   public async stop(command: unknown): Promise<SessionCommands.SessionStopResult> {
     const args = sessionStopArgs(command);
-    if (this.persistentManager?.has(args.session_id)) {
-      const provider = this.sessionTable?.get(args.session_id)?.provider ?? 'omp';
+    const persistentRecord = this.sessionTable?.get(args.session_id);
+    if (this.persistentManager?.has(args.session_id) || persistentRecord?.state === 'resumable') {
+      const provider = persistentRecord?.provider ?? 'omp';
       requireContext(this.context).append(`session:${args.session_id}`, 'session_complete', {
         session_id: args.session_id,
         provider,
       });
       this.stoppedSessions.add(args.session_id);
-      await this.persistentManager.stop(args.session_id);
+      await this.persistentManager?.stop(args.session_id);
       if (this.sessionTable?.get(args.session_id) !== undefined) {
         this.sessionTable.updateState(args.session_id, 'closed');
       }

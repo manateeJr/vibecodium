@@ -12,6 +12,7 @@ ExecStart=/usr/bin/node dist/src/cli.js start
 Restart=always
 RestartSec=2
 Environment=VIBECODIUM_PORT=4310
+Environment=VIBECODIUM_IDLE_TIMEOUT_MS=10800000
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=vibecodium
