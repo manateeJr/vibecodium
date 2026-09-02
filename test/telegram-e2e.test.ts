@@ -345,6 +345,22 @@ test('Telegram main drives a real fake-provider control-plane session end to end
           .some((event) => event.type === 'turn_complete') ?? false,
       'initial fake-provider turn',
     );
+    await waitForCondition(
+      () =>
+        stub.calls.some(
+          (call) =>
+            call.endpoint === 'editMessageText' &&
+            String(callBody(call).text ?? '').includes('echo:hello'),
+        ),
+      'initial fake-provider edit',
+    );
+    const initialFinalEdit = stub.calls.find(
+      (call) =>
+        call.endpoint === 'editMessageText' &&
+        String(callBody(call).text ?? '').includes('echo:hello'),
+    );
+    assert.ok(initialFinalEdit);
+    assert.equal(callBody(initialFinalEdit).chat_id, CHAT_ID);
     stub.enqueue(messageUpdate(2, 11, 'telegram', true));
 
     await waitForCondition(

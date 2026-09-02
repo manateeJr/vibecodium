@@ -276,6 +276,14 @@ test('/new project prompt creates a topic, opens a session, and binds it', async
     assert.ok(binding);
     assert.equal(binding.sessionId, 'session-1');
     assert.equal(fixture.api.sentMessages.at(-1)?.threadId, 501);
+    assert.ok(
+      fixture.api.sentMessages.some(
+        ({ text, threadId }) => text === 'working… 0s' && threadId === 501,
+      ),
+    );
+    assert.equal(fixture.bridge.watchCalls.at(-1)?.turn, 1);
+    assert.ok(fixture.api.editedMessages.some(({ text }) => text.startsWith('working…')));
+    assert.equal(fixture.api.editedMessages.at(-1)?.text, 'done');
   } finally {
     cleanup(fixture.store, fixture.directory);
   }
@@ -301,6 +309,15 @@ test('/new without a project presents buttons and consumes the next prompt', asy
       { cwd: '/tmp/demo', prompt: 'first prompt', project: 'demo' },
     ]);
     assert.ok(fixture.store.byThread(501));
+    assert.deepEqual(fixture.api.createdTopics, [{ chatId: -1001, name: 'demo · first prompt' }]);
+    assert.ok(
+      fixture.api.sentMessages.some(
+        ({ text, threadId }) => text === 'working… 0s' && threadId === 501,
+      ),
+    );
+    assert.equal(fixture.bridge.watchCalls.at(-1)?.turn, 1);
+    assert.ok(fixture.api.editedMessages.some(({ text }) => text.startsWith('working…')));
+    assert.equal(fixture.api.editedMessages.at(-1)?.text, 'done');
   } finally {
     cleanup(fixture.store, fixture.directory);
   }
@@ -385,6 +402,37 @@ test('a bridge health failure is reported without escaping the handler', async (
   }
 });
 
+test('a new topic rejects messages while its first turn is running', async () => {
+  const fixture = createFixture();
+  let resolveTurn: ((result: TurnResult) => void) | undefined;
+  let watchStartedResolve: (() => void) | undefined;
+  const watchStarted = new Promise<void>((resolve) => {
+    watchStartedResolve = resolve;
+  });
+  const turnPending = new Promise<TurnResult>((resolve) => {
+    resolveTurn = resolve;
+  });
+  fixture.bridge.watchTurnHandler = async (params) => {
+    params.onProgress({ elapsedMs: 1_000, toolCalls: 1 });
+    watchStartedResolve?.();
+    return turnPending;
+  };
+  try {
+    const first = fixture.bot.handleUpdate(update(message('/new demo first')));
+    await watchStarted;
+    await fixture.bot.handleUpdate(
+      update(message('second', { threadId: 501, isTopicMessage: true })),
+    );
+    assert.equal(fixture.bridge.sendCalls.length, 0);
+    assert.ok(
+      fixture.api.sentMessages.some(({ text }) => text === 'still working on the previous turn'),
+    );
+    resolveTurn?.({ status: 'complete', text: 'done', elapsedMs: 1_000, toolCalls: 1 });
+    await first;
+  } finally {
+    cleanup(fixture.store, fixture.directory);
+  }
+});
 test('a second topic message while a turn is running is rejected', async () => {
   const fixture = createFixture();
   const binding = topicBinding(603);

@@ -7,9 +7,8 @@ import type {
   TelegramUpdate,
   TopicBinding,
   TopicStore,
-  TurnProgress,
-  TurnResult,
 } from './types.js';
+import { createTurnRelay } from './turn-relay.js';
 
 export interface TelegramFormat {
   escapeMarkdownV2(text: string): string;
@@ -71,12 +70,9 @@ function topicName(project: string, prompt: string): string {
   return `${project} · ${promptHead(prompt)}`;
 }
 
-function seconds(ms: number): number {
-  return Math.max(1, Math.ceil(ms / 1_000));
-}
-
 export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   const { api, bridge, store, config, format } = deps;
+  const { relayTurn } = createTurnRelay({ api, bridge, config, format });
   const inFlight = new Set<number>();
   const pendingProjects = new Map<number, Project>();
   const projectChoices = new Map<string, Project>();
@@ -138,6 +134,17 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       threadId: topic.threadId,
       text: `session ${opened.sessionId} started in ${project.name}`,
     });
+    inFlight.add(topic.threadId);
+    try {
+      await relayTurn({
+        chatId: message.chatId,
+        threadId: topic.threadId,
+        sessionId: opened.sessionId,
+        turn: opened.turn,
+      });
+    } finally {
+      inFlight.delete(topic.threadId);
+    }
   }
 
   async function resolveProject(name: string): Promise<Project | null> {
@@ -246,44 +253,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     return false;
   }
 
-  async function finishTurn(
-    message: IncomingMessage,
-    progressMessageId: number,
-    turn: number,
-    result: TurnResult,
-  ): Promise<void> {
-    const target = messageTarget(message);
-    if (result.status === 'timeout') {
-      await api.editMessageText({
-        chatId: target.chatId,
-        messageId: progressMessageId,
-        text: `turn timed out after ${seconds(result.elapsedMs)}s; check /status`,
-      });
-      return;
-    }
-
-    const fullText = format.escapeMarkdownV2(result.text);
-    const chunks = format.chunkText(fullText);
-    const firstChunk = chunks[0] ?? '(no output)';
-    await api.editMessageText({
-      chatId: target.chatId,
-      messageId: progressMessageId,
-      text: firstChunk,
-      markdown: true,
-    });
-    if (chunks.length <= 3) {
-      for (const chunk of chunks.slice(1)) {
-        await api.sendMessage({ ...target, text: chunk, markdown: true });
-      }
-      return;
-    }
-    await api.sendDocument({
-      ...target,
-      filename: `turn-${turn}.md`,
-      content: fullText,
-    });
-  }
-
   async function runTurn(message: IncomingMessage, binding: TopicBinding): Promise<void> {
     const threadId = message.threadId;
     if (threadId === undefined) return;
@@ -297,34 +266,12 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       await ensureHealthy();
       const sent = await bridge.send({ sessionId: binding.sessionId, prompt: message.text ?? '' });
       lastTurns.set(binding.sessionId, sent.turn);
-      const progressMessage = await api.sendMessage({
-        ...messageTarget(message),
-        text: 'working… 0s',
-      });
-      let lastProgressAt = Number.NEGATIVE_INFINITY;
-      let progressEdits = Promise.resolve();
-      const onProgress = (progress: TurnProgress): void => {
-        const now = Date.now();
-        if (now - lastProgressAt < config.progressThrottleMs) return;
-        lastProgressAt = now;
-        progressEdits = progressEdits
-          .then(() =>
-            api.editMessageText({
-              chatId: message.chatId,
-              messageId: progressMessage.messageId,
-              text: `working… ${Math.floor(progress.elapsedMs / 1_000)}s · ${progress.toolCalls} tool calls`,
-            }),
-          )
-          .catch(() => undefined);
-      };
-      const result = await bridge.watchTurn({
+      await relayTurn({
+        chatId: message.chatId,
+        threadId,
         sessionId: binding.sessionId,
         turn: sent.turn,
-        timeoutMs: config.turnTimeoutMs,
-        onProgress,
       });
-      await progressEdits;
-      await finishTurn(message, progressMessage.messageId, sent.turn, result);
     } finally {
       inFlight.delete(threadId);
     }
