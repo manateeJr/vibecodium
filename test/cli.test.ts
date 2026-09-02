@@ -173,18 +173,170 @@ test('open creates an omp session for the requested path and attaches it', async
       name: 'session.open',
       args: {
         provider: 'omp',
-        prompt: '',
         cwd: '/work/project',
         origin: 'operator',
         source: 'cli',
       },
     });
+    assert.equal('prompt' in (requests[0]!.args as Record<string, unknown>), false);
     assert.deepEqual(calls[0], {
       command: '/opt/vibecodium/bin/abduco',
       args: ['-a', 'substrate-opened'],
       stdio: 'inherit',
     });
   } finally {
+    process.exitCode = originalExitCode;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('omp opens an idle session without a prompt and announces its attach hint', async () => {
+  const operations: string[] = [];
+  const requests: Request[] = [];
+  const calls: SpawnCall[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalStderrWrite = process.stderr.write;
+  const originalExitCode = process.exitCode;
+  let stderr = '';
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    return true;
+  }) as typeof process.stderr.write;
+  const client = transportedClient(operations, (name, args) => {
+    requests.push({ name, args });
+    if (name === 'session.open')
+      return { session_id: 'session-omp', stream_id: 'session:session-omp' };
+    if (name === 'session.attach_info')
+      return {
+        substrate_name: 'substrate-omp',
+        abduco_bin_path: '/opt/vibecodium/bin/abduco',
+        state: 'live',
+      };
+    if (name === 'session.ensure_live') return { state: 'live', substrate_name: 'substrate-omp' };
+    throw new Error(`unexpected command: ${name}`);
+  });
+  try {
+    await main(['omp'], { client, spawn: spawnSpy(operations, calls) });
+    assert.deepEqual(operations, [
+      'session.open',
+      'session.attach_info',
+      'session.ensure_live',
+      'spawn',
+    ]);
+    assert.deepEqual(requests[0], {
+      name: 'session.open',
+      args: {
+        provider: 'omp',
+        cwd: process.cwd(),
+        origin: 'operator',
+        source: 'cli',
+      },
+    });
+    assert.equal('prompt' in (requests[0]!.args as Record<string, unknown>), false);
+    assert.deepEqual(calls[0], {
+      command: '/opt/vibecodium/bin/abduco',
+      args: ['-a', 'substrate-omp'],
+      stdio: 'inherit',
+    });
+    assert.equal(stderr, 'session session-omp — reattach with: vibecodium attach session-omp\n');
+
+    operations.length = 0;
+    requests.length = 0;
+    calls.length = 0;
+    stderr = '';
+    await main(['omp', '--model', 'o4-mini'], { client, spawn: spawnSpy(operations, calls) });
+    assert.deepEqual(requests[0], {
+      name: 'session.open',
+      args: {
+        provider: 'omp',
+        cwd: process.cwd(),
+        origin: 'operator',
+        source: 'cli',
+        model: 'o4-mini',
+      },
+    });
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    process.exitCode = originalExitCode;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('open --attach uses the current or supplied cwd and announces the session', async () => {
+  const operations: string[] = [];
+  const requests: Request[] = [];
+  const calls: SpawnCall[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalStderrWrite = process.stderr.write;
+  const originalExitCode = process.exitCode;
+  let stderr = '';
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    return true;
+  }) as typeof process.stderr.write;
+  const client = transportedClient(operations, (name, args) => {
+    requests.push({ name, args });
+    if (name === 'session.open')
+      return { session_id: 'session-alias', stream_id: 'session:session-alias' };
+    if (name === 'session.attach_info')
+      return { substrate_name: 'substrate-alias', abduco_bin_path: '/bin/abduco', state: 'live' };
+    if (name === 'session.ensure_live') return { state: 'live', substrate_name: 'substrate-alias' };
+    throw new Error(`unexpected command: ${name}`);
+  });
+  try {
+    await main(['open', '--attach', '/work/alias'], {
+      client,
+      spawn: spawnSpy(operations, calls),
+    });
+    assert.deepEqual(requests[0], {
+      name: 'session.open',
+      args: {
+        provider: 'omp',
+        cwd: '/work/alias',
+        origin: 'operator',
+        source: 'cli',
+      },
+    });
+    assert.equal('prompt' in (requests[0]!.args as Record<string, unknown>), false);
+    assert.equal(
+      stderr,
+      'session session-alias — reattach with: vibecodium attach session-alias\n',
+    );
+    assert.deepEqual(operations, [
+      'session.open',
+      'session.attach_info',
+      'session.ensure_live',
+      'spawn',
+    ]);
+  } finally {
+    process.stderr.write = originalStderrWrite;
+    process.exitCode = originalExitCode;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('omp rejects unknown flags and usage advertises the command', async () => {
+  const operations: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const originalStderrWrite = process.stderr.write;
+  const originalExitCode = process.exitCode;
+  let stderr = '';
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    return true;
+  }) as typeof process.stderr.write;
+  const client = transportedClient(operations, () => {
+    throw new Error('session.open should not be called');
+  });
+  try {
+    await main(['omp', '--unknown'], { client, spawn: neverSpawn });
+    assert.deepEqual(operations, []);
+    assert.match(stderr, /omp \[--model <m>\] \[--cwd <dir>\]/);
+    stderr = '';
+    await main(['unknown'], { client, spawn: neverSpawn });
+    assert.match(stderr, /omp \[--model <m>\] \[--cwd <dir>\]/);
+  } finally {
+    process.stderr.write = originalStderrWrite;
     process.exitCode = originalExitCode;
     globalThis.fetch = originalFetch;
   }

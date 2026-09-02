@@ -73,6 +73,18 @@ control-plane session. If that session is later resumed through Vibecodium, it
 follows the existing fork-on-conflict behavior rather than becoming a
 substrate-backed live session.
 
+### PC + phone on one session
+
+`vibecodium omp` opens an idle OMP TUI owned by `abduco` and attaches your
+terminal immediately. Closing the terminal detaches it, but the session stays
+live and resumable.
+
+For a shell shortcut, add `alias omp='vibecodium omp'` to your shell rc. Use
+`command omp` as the escape hatch when you want to run the real `omp` binary.
+
+The phone/Telegram side binds to the same session through `session.list` and
+`vibecodium attach <id>`. The phone binding UX lands in #113 (forthcoming).
+
 ## Sharing files into Vibecodium from a phone
 
 Sharing puts one or more files into the control plane's shared folder and then

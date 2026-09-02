@@ -1,23 +1,14 @@
 #!/usr/bin/env node
-import {
-  spawn,
-  spawnSync,
-  type ChildProcess,
-  type SpawnSyncOptions,
-  type SpawnSyncReturns,
-} from 'node:child_process';
+import { spawn, spawnSync, type SpawnSyncOptions } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient, type ProjectSaveArgs, type VibecodiumClient } from './client/index.js';
 import { ControlPlane } from './server/control-plane.js';
+import { runAttachCommand, type AttachProcess, type AttachSpawner } from './cli-attach.js';
+import { openAndAttach, runOmpCommand, runOpenCommand } from './cli-omp.js';
 import { runListCommand } from './cli-list.js';
 
-export type AttachProcess = SpawnSyncReturns<Buffer> | ChildProcess;
-export type AttachSpawner = (
-  command: string,
-  args: string[],
-  options: Pick<SpawnSyncOptions, 'stdio'>,
-) => AttachProcess;
+export type { AttachProcess, AttachSpawner };
 
 export interface CliDependencies {
   readonly client?: VibecodiumClient;
@@ -58,11 +49,21 @@ export async function main(
     return;
   }
   if (command === 'attach') {
-    await runAttachCommand(client, args.slice(1), spawnProcess);
+    if (!(await runAttachCommand(client, args.slice(1), spawnProcess, openAndAttach))) {
+      usage();
+    }
     return;
   }
   if (command === 'open') {
-    await runOpenCommand(client, args.slice(1), spawnProcess);
+    if (!(await runOpenCommand(client, args.slice(1), spawnProcess))) {
+      usage();
+    }
+    return;
+  }
+  if (command === 'omp') {
+    if (!(await runOmpCommand(client, args.slice(1), spawnProcess))) {
+      usage();
+    }
     return;
   }
   if (command === 'project') {
@@ -111,103 +112,6 @@ function createClientFromEnv(): VibecodiumClient {
   const token = process.env.VIBECODIUM_TOKEN;
   return createClient({ baseUrl, ...(token === undefined ? {} : { token }) });
 }
-async function runAttachCommand(
-  client: VibecodiumClient,
-  args: string[],
-  spawnProcess: AttachSpawner,
-): Promise<void> {
-  if (args.length === 0) {
-    const result = await client.listSessions({});
-    for (const session of result.sessions)
-      process.stdout.write(`${session.session_id}\t${session.status}\n`);
-    return;
-  }
-  if (args[0] === '--new') {
-    if (args.length > 2) {
-      usage();
-      return;
-    }
-    await openAndAttach(client, args[1] ?? process.cwd(), spawnProcess);
-    return;
-  }
-  if (args.length !== 1 || !args[0]) {
-    usage();
-    return;
-  }
-  await attachSession(client, args[0], spawnProcess);
-}
-
-async function runOpenCommand(
-  client: VibecodiumClient,
-  args: string[],
-  spawnProcess: AttachSpawner,
-): Promise<void> {
-  if (args.length !== 1 || !args[0]) {
-    usage();
-    return;
-  }
-  await openAndAttach(client, args[0], spawnProcess);
-}
-
-async function openAndAttach(
-  client: VibecodiumClient,
-  cwd: string,
-  spawnProcess: AttachSpawner,
-): Promise<void> {
-  const result = await client.openSession({
-    provider: 'omp',
-    prompt: '',
-    cwd,
-    origin: 'operator',
-    source: 'cli',
-  });
-  await attachSession(client, result.session_id, spawnProcess);
-}
-
-async function attachSession(
-  client: VibecodiumClient,
-  session_id: string,
-  spawnProcess: AttachSpawner,
-): Promise<void> {
-  const info = await client.sessionAttachInfo({ session_id });
-  if (info.state === 'closed') throw new Error(`session is closed: ${session_id}`);
-  const result = await client.sessionEnsureLive({ session_id });
-  if (result.state === 'closed') throw new Error(`session is closed: ${session_id}`);
-  process.stdout.write('detach: Ctrl+\\; double Ctrl+C exits the agent\n');
-  const child = spawnProcess(info.abduco_bin_path, ['-a', result.substrate_name], {
-    stdio: 'inherit',
-  });
-  if (isChildProcess(child)) {
-    const status = waitForChild(child);
-    await forceRepaintAfterAttach(client, session_id, child);
-    process.exitCode = await status;
-    return;
-  }
-  if (child.error) throw child.error;
-  process.exitCode = child.status ?? 1;
-}
-
-function isChildProcess(value: AttachProcess): value is ChildProcess {
-  return typeof (value as ChildProcess).once === 'function';
-}
-
-function waitForChild(child: ChildProcess): Promise<number> {
-  return new Promise((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', (code, signal) => resolve(code ?? (signal === null ? 1 : 1)));
-  });
-}
-
-async function forceRepaintAfterAttach(
-  client: VibecodiumClient,
-  session_id: string,
-  child: ChildProcess,
-): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 50));
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  await client.sessionSendKeys({ session_id, keys: ['ctrl_l'] }).catch(() => undefined);
-}
-
 async function runMachineCommand(client: VibecodiumClient, args: string[]): Promise<void> {
   if (args.length !== 1 || args[0] !== 'list') {
     usage();
@@ -358,6 +262,7 @@ function configuredPort(): number {
 function printJson(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value)}\n`);
 }
+
 function usage(): void {
   process.stderr.write(
     [
@@ -369,6 +274,9 @@ function usage(): void {
       '  attach                            list attachable sessions',
       '  attach <session-id>               ensure-live, then attach this terminal to the session TUI (detach: Ctrl+\\)',
       '  attach --new [cwd]                open a fresh omp session and attach',
+      '  omp [--model <m>] [--cwd <dir>]   open an idle omp session here and attach (detach: Ctrl+\\; reattach: vibecodium attach <id>)',
+      '                                    raw omp escape hatch: command omp',
+      '  open --attach [cwd]               open an idle omp session and attach',
       '  open <cwd>                        open a fresh omp session in <cwd> and attach',
       '  project list                      registered projects',
       '  project detect <path>             detect project settings for a path',
