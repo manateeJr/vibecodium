@@ -9,7 +9,7 @@ export type AttachProcess = SpawnSyncReturns<Buffer> | ChildProcess;
 export type AttachSpawner = (
   command: string,
   args: string[],
-  options: Pick<SpawnSyncOptions, 'stdio'>,
+  options: Pick<SpawnSyncOptions, 'stdio' | 'env'>,
 ) => AttachProcess;
 
 type OpenAndAttach = (
@@ -54,6 +54,9 @@ export async function attachSession(
   process.stdout.write('detach: Ctrl+\\; double Ctrl+C exits the agent\n');
   const child = spawnProcess(info.abduco_bin_path, ['-a', result.substrate_name], {
     stdio: 'inherit',
+    ...(info.socket_dir === undefined
+      ? {}
+      : { env: { ...process.env, ABDUCO_SOCKET_DIR: info.socket_dir } }),
   });
   if (isChildProcess(child)) {
     const status = waitForChild(child);

@@ -158,7 +158,7 @@ export class SessionSubsystem implements Subsystem {
         Promise.reject(new Error('persistent substrate is not configured')),
     );
     context.registerCommand(COMMAND_NAMES.sessionAttachInfo, (command: unknown) =>
-      sessionAttachInfo(this.sessionTable, command),
+      sessionAttachInfo(this.sessionTable, command, this.substrate?.socketDir),
     );
     void this.reconcile().catch(() => undefined);
   }

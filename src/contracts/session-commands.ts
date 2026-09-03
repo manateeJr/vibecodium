@@ -144,6 +144,7 @@ export interface SessionAttachInfoResult {
   readonly substrate_name: string;
   readonly abduco_bin_path: string;
   readonly state: SubstrateSessionState;
+  readonly socket_dir?: string;
 }
 
 /**

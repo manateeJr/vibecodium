@@ -166,6 +166,7 @@ export function sessionAttachInfoArgs(command: unknown): SessionAttachInfoArgs {
 export function sessionAttachInfo(
   table: SessionTable | undefined,
   command: unknown,
+  socketDir?: string,
 ): SessionAttachInfoResult {
   const args = sessionAttachInfoArgs(command);
   if (!table) throw new Error('session table is not configured');
@@ -175,6 +176,7 @@ export function sessionAttachInfo(
     substrate_name: record.substrateName,
     abduco_bin_path: abducoBinaryPath(),
     state: record.state,
+    ...(socketDir === undefined ? {} : { socket_dir: socketDir }),
   };
 }
 

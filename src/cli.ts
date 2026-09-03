@@ -41,8 +41,11 @@ export async function main(
   const client = dependencies.client ?? createClientFromEnv();
   const spawnProcess =
     dependencies.spawn ??
-    ((command: string, spawnArgs: string[], options: Pick<SpawnSyncOptions, 'stdio'>) =>
-      spawn(command, spawnArgs, { stdio: options.stdio }));
+    ((command: string, spawnArgs: string[], options: Pick<SpawnSyncOptions, 'stdio' | 'env'>) =>
+      spawn(command, spawnArgs, {
+        stdio: options.stdio,
+        ...(options.env === undefined ? {} : { env: options.env }),
+      }));
 
   if (command === 'list') {
     await runListCommand(client, args.slice(1));

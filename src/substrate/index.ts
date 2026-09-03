@@ -19,6 +19,8 @@ import {
 } from './paths.js';
 
 import { stopSubstrateScope } from './session-scope.js';
+import { parseSessionListing } from './listing.js';
+export { parseSessionListing };
 export interface AbducoSubstrateClientOptions {
   readonly binaryPath?: string;
   readonly abducoPath?: string;
@@ -117,22 +119,6 @@ function sleep(milliseconds: number): Promise<void> {
 function errorFromUnknown(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
-export function parseSessionListing(output: string): readonly SubstrateSessionInfo[] {
-  const sessions: SubstrateSessionInfo[] = [];
-  for (const rawLine of output.split(/\r?\n/)) {
-    if (rawLine.length === 0 || rawLine.startsWith('Active sessions')) continue;
-    const fields = rawLine.split('\t');
-    const name = fields.at(-1)?.trim();
-    if (!name || fields.length < 4) continue;
-    const pid = Number(fields.at(-2));
-    sessions.push({
-      name,
-      live: rawLine[0] !== '+',
-      ...(Number.isInteger(pid) && pid > 0 ? { pid } : {}),
-    });
-  }
-  return sessions;
-}
 export class AbducoSubstrateClient implements SubstrateClient {
   private readonly binaryPath: string;
   private readonly environment: NodeJS.ProcessEnv;
@@ -160,6 +146,9 @@ export class AbducoSubstrateClient implements SubstrateClient {
       throw new RangeError('abduco reattach delays must be positive and ordered');
     if (this.operationTimeoutMs <= 0)
       throw new RangeError('abduco operation timeout must be positive');
+  }
+  public get socketDir(): string | undefined {
+    return this.socketOptions.socketDir;
   }
   public async createSession(
     name: string,
