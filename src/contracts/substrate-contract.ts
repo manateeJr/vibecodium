@@ -32,7 +32,9 @@ export interface SubstrateAttachment {
 
 export interface SubstrateClient {
   /** Resolved abduco socket dir; undefined when abduco's default lookup applies. */
-  readonly socketDir?: string;
+  readonly socketDir?: string | undefined;
+  /** Releases resources owned by this client, including any derived socket dir. */
+  dispose?(): void;
   createSession(
     name: string,
     argv: readonly string[],

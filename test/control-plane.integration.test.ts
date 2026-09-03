@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { WebSocket } from 'ws';
 import type { EventEnvelope } from '../src/contracts/events.js';
 import { Authority } from '../src/server/authority.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import type { ControlPlaneAddress } from '../src/server/control-plane.js';
 import { createSessionSubsystem } from '../src/session/index.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 type WireMessage = {
   id?: string;

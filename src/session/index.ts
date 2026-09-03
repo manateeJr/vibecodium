@@ -441,6 +441,7 @@ export class SessionSubsystem implements Subsystem {
       (sessionId) => this.emitSessionState(sessionId, 'resumable', 'shutdown'),
       () => void this.persistentManager?.shutdown(),
     );
+    this.substrate?.dispose?.();
   }
   private handleWorkerMessage(state: SessionState, message: WorkerOutputMessage): void {
     if (state.terminal || !message || message.stream_id !== state.stream_id) return;

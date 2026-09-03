@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import type { Readable } from 'node:stream';
 import { ControlPlane } from '../src/server/control-plane.js';
 import {
@@ -15,6 +15,10 @@ import {
   THREAD_ID,
   USER_ID,
 } from './helpers/telegram-stub.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 type JsonRecord = Record<string, unknown>;
 

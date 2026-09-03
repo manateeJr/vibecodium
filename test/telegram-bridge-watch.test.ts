@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { createClient } from '../src/client/index.js';
 import { createProjectsSubsystem } from '../src/projects/index.js';
 import { createSessionSubsystem } from '../src/session/index.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import { createSessionBridge } from '../src/telegram/bridge.js';
 import type { ObservedTurn, SessionBridge } from '../src/telegram/types.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 // Real HTTP/WebSocket integration needs a bounded wall-clock poll, not fake timers.
 async function waitForCondition(

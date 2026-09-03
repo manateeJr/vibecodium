@@ -35,7 +35,10 @@ export function registerSubsystems(
   const sessions = createSessionSubsystem({
     machineSessions,
     substrate:
-      options.substrate ?? createSubstrateClient(socketDir === undefined ? {} : { socketDir }),
+      options.substrate ??
+      createSubstrateClient(
+        socketDir === undefined ? {} : { socketDir, cleanupSocketDirOnDispose: true },
+      ),
     sessionTable:
       options.sessionTable ??
       new SessionTable({ filename: options.sessionTableFilename ?? ':memory:' }),

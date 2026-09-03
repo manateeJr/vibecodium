@@ -20,6 +20,7 @@ import {
 
 import { stopSubstrateScope } from './session-scope.js';
 import { parseSessionListing } from './listing.js';
+import { cleanupDerivedSocketDir } from './socket-dir.js';
 export { parseSessionListing };
 export interface AbducoSubstrateClientOptions {
   readonly binaryPath?: string;
@@ -29,6 +30,7 @@ export interface AbducoSubstrateClientOptions {
   readonly reattachMinDelayMs?: number;
   readonly reattachMaxDelayMs?: number;
   readonly operationTimeoutMs?: number;
+  readonly cleanupSocketDirOnDispose?: boolean;
 }
 
 interface AttachmentState {
@@ -128,6 +130,7 @@ export class AbducoSubstrateClient implements SubstrateClient {
   private readonly operationTimeoutMs: number;
   private readonly attachments = new Map<string, AttachmentState>();
   private readonly listeners = new Set<SubstrateOutputListener>();
+  private readonly cleanupSocketDirOnDispose: boolean;
   public constructor(options: AbducoSubstrateClientOptions = {}) {
     this.binaryPath = options.binaryPath ?? options.abducoPath ?? abducoBinaryPath();
     this.environment = { ...process.env };
@@ -139,6 +142,8 @@ export class AbducoSubstrateClient implements SubstrateClient {
       socketDir === undefined
         ? { environment: this.environment }
         : { socketDir, environment: this.environment };
+    this.cleanupSocketDirOnDispose =
+      options.cleanupSocketDirOnDispose === true && socketDir !== undefined;
     this.reattachMinDelayMs = options.reattachMinDelayMs ?? DEFAULT_REATTACH_MIN_DELAY_MS;
     this.reattachMaxDelayMs = options.reattachMaxDelayMs ?? DEFAULT_REATTACH_MAX_DELAY_MS;
     this.operationTimeoutMs = options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS;
@@ -146,6 +151,10 @@ export class AbducoSubstrateClient implements SubstrateClient {
       throw new RangeError('abduco reattach delays must be positive and ordered');
     if (this.operationTimeoutMs <= 0)
       throw new RangeError('abduco operation timeout must be positive');
+  }
+  public dispose(): void {
+    if (this.cleanupSocketDirOnDispose && this.socketOptions.socketDir !== undefined)
+      cleanupDerivedSocketDir(this.socketOptions.socketDir);
   }
   public get socketDir(): string | undefined {
     return this.socketOptions.socketDir;

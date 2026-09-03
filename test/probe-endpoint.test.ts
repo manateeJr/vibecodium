@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import type { CapabilityTokenClaims } from '../src/notify/types.js';
 import type { Subsystem } from '../src/contracts/subsystem.js';
 import { ControlPlane } from '../src/server/control-plane.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 test('debug probe endpoint is bearer-protected and heartbeat includes probe data', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-probe-endpoint-'));

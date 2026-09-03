@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import type { EventEnvelope } from '../src/contracts/events.js';
 import type { TelemetrySignatureRow } from '../src/contracts/telemetry-schema.js';
 import type { EventHandler, SubsystemContext } from '../src/contracts/subsystem.js';
@@ -13,6 +13,10 @@ import {
   TELEMETRY_RECORD_COMMAND,
   TelemetryStore,
 } from '../src/telemetry/index.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 function verifyFailedEvent(
   seq: number,

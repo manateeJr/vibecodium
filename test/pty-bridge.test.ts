@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { WebSocket } from 'ws';
 import type { Subsystem, SubsystemContext } from '../src/contracts/subsystem.js';
 import type {
@@ -13,6 +13,10 @@ import type {
 import { ControlPlane } from '../src/server/control-plane.js';
 import type { ControlPlaneAddress } from '../src/server/control-plane.js';
 import { PtySubscriptionHub } from '../src/session/pty-subscriptions.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 type WireMessage = {
   type: string;

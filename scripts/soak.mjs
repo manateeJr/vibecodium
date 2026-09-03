@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { Buffer } from 'node:buffer';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { socketPathCandidates } from '../dist/src/substrate/paths.js';
 import { fileURLToPath } from 'node:url';
 import { ControlPlane } from '../dist/src/server/control-plane.js';
 import { createFilesSubsystem } from '../dist/src/files/index.js';
@@ -21,7 +23,13 @@ const root = fs.mkdtempSync(path.join(tmpdir(), 'vibecodium-soak-'));
 const projectDir = path.join(root, 'project');
 const storageRoot = path.join(root, 'sessions');
 const sharedDir = path.join(root, 'shared');
-const socketDir = path.join('/tmp', `vibecodium-soak-${process.pid}`);
+const socketDir = fs.mkdtempSync(path.join('/tmp', 'vc-soak-'));
+const worstCaseSocketPath = socketPathCandidates(`substrate-${'0'.repeat(36)}`, { socketDir })[0];
+if (worstCaseSocketPath === undefined || Buffer.byteLength(worstCaseSocketPath) >= 108) {
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(socketDir, { recursive: true, force: true });
+  throw new Error(`soak socket path exceeds abduco's 108-byte limit: ${worstCaseSocketPath}`);
+}
 const machineRoot = path.join(root, 'machine');
 const databasePath = path.join(root, 'control-plane.sqlite');
 const projectsPath = path.join(root, 'projects.json');

@@ -3,12 +3,16 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { AbducoSubstrateClient, createSubstrateClient } from '../src/substrate/index.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import { SessionSubsystem } from '../src/session/index.js';
 import { SessionTable } from '../src/session/session-table.js';
 import { abducoBinaryPath, planeSocketDir, socketPathCandidates } from '../src/substrate/paths.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 async function waitForLive(client: AbducoSubstrateClient, name: string): Promise<void> {
   const deadline = Date.now() + 3000;
@@ -90,8 +94,14 @@ test('session.attach_info reports the socket directory containing a live substra
   try {
     const derivedSocketDir = planeSocketDir(dataPath);
     assert.ok(derivedSocketDir);
-    client = new AbducoSubstrateClient({ binaryPath, operationTimeoutMs: 3000 });
-    await client.createSession(sessionName, ['/bin/sh', '-c', 'sleep 5']);
+    client = new AbducoSubstrateClient({
+      binaryPath,
+      socketDir: derivedSocketDir,
+      operationTimeoutMs: 3000,
+    });
+    await client.createSession(sessionName, ['/bin/sh', '-c', 'sleep 5'], {
+      env: previousRuntimeDir === undefined ? {} : { XDG_RUNTIME_DIR: previousRuntimeDir },
+    });
     const now = new Date().toISOString();
     table = new SessionTable({ filename: sessionTablePath });
     table.upsert({

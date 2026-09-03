@@ -4,12 +4,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { REPORT_INTAKE_PATH } from '../src/contracts/report-commands.js';
 import { createReportsSubsystem } from '../src/reports/index.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import { ReportStore } from '../src/reports/store.js';
 import { handleReportIntake } from '../src/server/report-intake.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 type MultipartInput = {
   readonly name: string;

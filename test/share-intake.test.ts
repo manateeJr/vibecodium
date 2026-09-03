@@ -3,12 +3,16 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { COMMAND_NAMES } from '../src/contracts/commands.js';
 import type { CommandHandler, SubsystemContext } from '../src/contracts/subsystem.js';
 import { createFilesSubsystem } from '../src/files/index.js';
 import { ControlPlane } from '../src/server/control-plane.js';
 import { MultipartError, parseMultipart } from '../src/server/multipart.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 type Part = { readonly name: string; readonly value: string | Buffer; readonly filename?: string };
 

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { endianness } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import {
   AbducoSubstrateClient,
   buildSubstrateLaunch,
@@ -17,6 +17,10 @@ import {
 } from '../src/substrate/index.js';
 import { isSubstrateSessionLive } from '../src/session/relaunch-liveness.js';
 import type { SubstrateClient } from '../src/contracts/substrate-contract.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const binaryPath = path.join(repositoryRoot, '.vibecodium', 'bin', 'abduco');

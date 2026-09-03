@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { ControlPlane } from '../src/server/control-plane.js';
+import { createTestSocketDir } from './helpers/socket-dir.js';
+
+const testSocketDir = createTestSocketDir();
+after(() => testSocketDir.dispose());
 
 function temporaryPath(): string {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vibecodium-static-')), 'events.sqlite');
