@@ -87,6 +87,67 @@ export type ActionRequestedPayload = ActionEventPayload;
 export type ActionApprovedPayload = ActionEventPayload;
 export type ActionDeniedPayload = ActionEventPayload;
 
+export const ASK_ACTION = 'ask.answer';
+export const ASK_SOURCE = 'omp-ask';
+
+export interface AskOption {
+  readonly label: string;
+  readonly description?: string;
+}
+
+export interface AskQuestion {
+  readonly id: string;
+  readonly header: string;
+  readonly question: string;
+  readonly options: readonly AskOption[];
+}
+
+export interface AskRequestedFields {
+  readonly session_id: string;
+  readonly turn: number;
+  readonly ask_id: string;
+  readonly questions: readonly AskQuestion[];
+  readonly source: 'omp-ask';
+  readonly requested_at: string;
+}
+
+/** omp ask relay: action_requested carrying the parked ask; base action_* fields stay populated. */
+export type AskRequestedPayload = ActionEventPayload & AskRequestedFields;
+
+export interface AskDecisionFields {
+  readonly session_id: string;
+  readonly ask_id: string;
+  readonly question_id: string;
+  readonly option_index: number;
+}
+
+/**
+ * Telegram answer: action_approved carries the picked option; the deny path
+ * uses action_denied with the same shape for Don't-ask style options.
+ */
+export type AskApprovedPayload = ActionEventPayload & AskDecisionFields;
+export type AskDeniedPayload = ActionEventPayload & AskDecisionFields;
+
+export function isAskRequestedPayload(value: unknown): value is AskRequestedPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    candidate.source === ASK_SOURCE &&
+    typeof candidate.ask_id === 'string' &&
+    Array.isArray(candidate.questions)
+  );
+}
+
+export function isAskDecisionPayload(value: unknown): value is AskApprovedPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.ask_id === 'string' &&
+    typeof candidate.question_id === 'string' &&
+    typeof candidate.option_index === 'number'
+  );
+}
+
 export interface MergeToMainPayload {
   readonly branch: string;
   readonly commit_sha: string;
