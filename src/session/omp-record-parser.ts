@@ -4,6 +4,24 @@ export interface OmpToolCall {
   readonly id: string;
   readonly name: string;
   readonly summary: string;
+  readonly ask?: OmpAskDetail;
+}
+
+export interface OmpAskOption {
+  readonly label: string;
+  readonly description?: string;
+}
+
+export interface OmpAskQuestion {
+  readonly id: string;
+  readonly header: string;
+  readonly question: string;
+  readonly options: readonly OmpAskOption[];
+}
+
+export interface OmpAskDetail {
+  readonly askId: string;
+  readonly questions: readonly OmpAskQuestion[];
 }
 
 export interface OmpToolResult {
@@ -116,7 +134,7 @@ export function parseOmpTranscriptLine(line: string): OmpTranscriptRecord | null
     .map((part) => (typeof part.thinking === 'string' ? part.thinking : ''))
     .filter((text) => text.length > 0);
   const toolCalls = contentParts(content)
-    .filter((part) => part.type === 'toolCall')
+    .filter((part) => part.type === 'toolCall' || part.type === 'tool_execution_start')
     .map((part) => parseToolCall(part))
     .filter((call): call is OmpToolCall => call !== null);
   const text = transcriptText(content);
@@ -146,7 +164,66 @@ function parseToolCall(part: Record<string, unknown>): OmpToolCall | null {
   const name = stringField(part, 'name') ?? stringField(part, 'toolName');
   const id = stringField(part, 'id') ?? stringField(part, 'toolCallId');
   if (!name || !id) return null;
-  return { id, name, summary: summarizeArguments(part.arguments) };
+  // tool_execution_start parts carry the invocation under `args`; legacy toolCall parts use `arguments`.
+  const rawArgs =
+    part.type === 'tool_execution_start' ? (part.args ?? part.arguments) : part.arguments;
+  const ask = name === 'ask' ? parseAskDetail(rawArgs, id) : undefined;
+  const summary =
+    ask !== undefined && ask.questions.length > 0
+      ? truncateAskSummary(ask)
+      : summarizeArguments(rawArgs);
+  return { id, name, summary, ...(ask === undefined ? {} : { ask }) };
+}
+
+function parseAskDetail(value: unknown, askId: string): OmpAskDetail | undefined {
+  const parsed = parseArguments(value);
+  if (!isObject(parsed) || !Array.isArray(parsed.questions)) return undefined;
+  const questions: OmpAskQuestion[] = [];
+  parsed.questions.forEach((entry, index) => {
+    const question = parseAskQuestion(entry, index);
+    if (question) questions.push(question);
+  });
+  if (questions.length === 0) return undefined;
+  return { askId, questions };
+}
+
+function parseAskQuestion(entry: unknown, index: number): OmpAskQuestion | undefined {
+  if (!isObject(entry)) return undefined;
+  const question =
+    stringField(entry, 'question') ??
+    stringField(entry, 'prompt') ??
+    stringField(entry, 'text') ??
+    '';
+  if (!question) return undefined;
+  const options: OmpAskOption[] = [];
+  if (Array.isArray(entry.options)) {
+    for (const raw of entry.options) {
+      if (typeof raw === 'string') {
+        if (raw.trim()) options.push({ label: raw });
+      } else if (isObject(raw)) {
+        const label =
+          stringField(raw, 'label') ?? stringField(raw, 'id') ?? stringField(raw, 'title') ?? '';
+        if (!label) continue;
+        const description = stringField(raw, 'description');
+        options.push({ label, ...(description === undefined ? {} : { description }) });
+      }
+    }
+  }
+  if (options.length === 0) return undefined;
+  return {
+    id: stringField(entry, 'id') ?? `q${index + 1}`,
+    header: stringField(entry, 'header') ?? stringField(entry, 'title') ?? '',
+    question,
+    options,
+  };
+}
+
+function truncateAskSummary(ask: OmpAskDetail): string {
+  return truncate(
+    ask.questions
+      .map((entry) => (entry.header ? `${entry.header}: ${entry.question}` : entry.question))
+      .join(' / '),
+  );
 }
 
 function summarizeArguments(argumentsValue: unknown): string {

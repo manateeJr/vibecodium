@@ -3,6 +3,7 @@ import { mkdir, open, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import type { EventKind } from '../contracts/events.js';
+import { ASK_ACTION, ASK_SOURCE, type AskQuestion } from '../contracts/events.js';
 import type { SubsystemContext } from '../contracts/subsystem.js';
 import type { HarnessPlugin, HarnessTranscriptRecord } from '../contracts/substrate-contract.js';
 import {
@@ -68,6 +69,14 @@ export class SessionTranscriptTailer {
       readonly startedAt?: number;
     }
   >();
+  private readonly pendingAsks = new Map<
+    string,
+    {
+      readonly turn: number;
+      readonly questions: readonly AskQuestion[];
+    }
+  >();
+  private readonly emittedAskIds = new Set<string>();
   private lastContextKey?: string;
 
   public constructor(options: SessionTranscriptTailerOptions) {
@@ -275,7 +284,7 @@ export class SessionTranscriptTailer {
         ...(record.kind === 'steering' ? { steering: true } : {}),
       });
     } else if (record.kind === 'assistant') {
-      if (parsed?.kind === 'assistant') this.appendAssistant(parsed);
+      if (parsed?.kind === 'assistant') this.appendAssistant(parsed, at);
       else if (record.text?.trim()) {
         this.appendOutput(record.text, 'text');
       }
@@ -304,7 +313,7 @@ export class SessionTranscriptTailer {
     this.onActivity?.({ record, idle: this.idle, turn: this.turn, at });
   }
 
-  private appendAssistant(record: OmpAssistantRecord): void {
+  private appendAssistant(record: OmpAssistantRecord, at: number): void {
     for (const text of record.thinking) {
       if (text.trim()) this.appendOutput(text, 'thinking');
     }
@@ -320,26 +329,82 @@ export class SessionTranscriptTailer {
         summary: call.summary,
         ...(record.timeMs === undefined ? {} : { startedAt: record.timeMs }),
       });
+      this.emitAskRequest(call.id, call, at);
     }
     if (record.text?.trim()) this.appendOutput(record.text, 'text');
+  }
+
+  /**
+   * Producer half of the Telegram ask relay (issue #116): the first time a
+   * parked `ask` tool call is observed, emit one `action_requested` carrying
+   * the contract payload so the bound topic can render the questions. The
+   * turn stays open (no turn_complete) until the tool resolves natively or
+   * the control plane translates an action_approved/denied via resolveAsk.
+   */
+  private emitAskRequest(
+    askId: string,
+    call: { readonly name: string; readonly ask?: { readonly questions: readonly AskQuestion[] } },
+    at: number,
+  ): void {
+    if (call.name !== 'ask' || call.ask === undefined || this.emittedAskIds.has(askId)) return;
+    this.emittedAskIds.add(askId);
+    this.pendingAsks.set(askId, { turn: this.turn, questions: call.ask.questions });
+    this.appendEvent('action_requested', {
+      request_id: askId,
+      action: ASK_ACTION,
+      scope: { session_id: this.sessionId },
+      session_id: this.sessionId,
+      turn: this.turn,
+      ask_id: askId,
+      questions: call.ask.questions,
+      source: ASK_SOURCE,
+      requested_at: new Date(at).toISOString(),
+    });
+  }
+
+  /**
+   * Control-plane translation seam for Telegram ask answers (issue #116).
+   * Translates an action_approved/denied decision into the same tool
+   * completion the native transcript path produces, so pendingTools clears
+   * and the idle→turn_complete flow runs unchanged. Returns false when no
+   * `ask` tool call is pending under askId (unknown or already resolved).
+   */
+  public resolveAsk(askId: string, decision: { readonly approved: boolean }): boolean {
+    const pending = this.pendingTools.get(askId);
+    if (!pending || pending.name !== 'ask') return false;
+    this.pendingTools.delete(askId);
+    this.pendingAsks.delete(askId);
+    this.completeTool(pending.index, pending.name, pending.summary, decision.approved, undefined);
+    return true;
   }
 
   private processToolResult(record: OmpToolResultRecord): void {
     const pending = this.pendingTools.get(record.toolResult.id);
     if (!pending) return;
     this.pendingTools.delete(record.toolResult.id);
+    this.pendingAsks.delete(record.toolResult.id);
     const measuredMs =
       record.toolResult.durationMs ?? durationMs(pending.startedAt, record.toolResult.timeMs);
     const ms = measuredMs === undefined ? undefined : Math.round(measuredMs);
+    this.completeTool(pending.index, pending.name, pending.summary, record.toolResult.ok, ms);
+  }
+
+  private completeTool(
+    index: number,
+    name: string,
+    summary: string,
+    ok: boolean,
+    ms: number | undefined,
+  ): void {
     this.appendEvent('session_output', {
       session_id: this.sessionId,
-      index: pending.index,
+      index,
       text: '',
       kind: 'tool',
       tool: {
-        name: pending.name,
-        summary: pending.summary,
-        status: record.toolResult.ok ? 'ok' : 'err',
+        name,
+        summary,
+        status: ok ? 'ok' : 'err',
         ...(ms === undefined ? {} : { ms }),
       },
     });
