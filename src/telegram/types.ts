@@ -1,3 +1,5 @@
+import type { ActionRequestedPayload } from '../contracts/events.js';
+
 // Pinned shared contract for the Telegram frontend (issue #106).
 // Implemented by the api, bridge, and bot lanes.
 
@@ -101,6 +103,12 @@ export interface ObservedTurn {
   text: string;
   completedAt: string;
 }
+export interface ObservedAsk {
+  sessionId: string;
+  turn: number | null;
+  /** Verbatim action_requested payload (omp-ask shape; see telegram/ask-watch.ts). */
+  payload: ActionRequestedPayload;
+}
 export interface MachineSessionLite {
   source: 'omp' | 'codex';
   ref: string;
@@ -133,14 +141,31 @@ export interface SessionBridge {
     turn: number;
     onProgress: (progress: TurnProgress) => void;
     timeoutMs: number;
+    onAsk?: (ask: ObservedAsk) => void;
   }): Promise<TurnResult>;
   subscribeSession(p: {
     sessionId: string;
     fromTail: true;
     onTurn: (turn: ObservedTurn) => void;
     onState?: (state: string) => void;
+    onAsk?: (ask: ObservedAsk) => void;
   }): () => void; // returns unsubscribe
   openTurn(sessionId: string): Promise<number | null>;
+}
+
+export interface SessionAskBridge {
+  /** Global omp-ask feed; at-least-once — consumers dedupe by ask id. */
+  subscribeAsk(cb: (ask: ObservedAsk) => void): () => void; // returns unsubscribe
+  /**
+   * Answer a pending ask. Resolves void on the approve path and
+   * { status: 'denied' } when the tapped option maps to action_denied.
+   */
+  answerAsk(p: {
+    session_id: string;
+    ask_id: string;
+    question_id: string;
+    option_index: number;
+  }): Promise<void | { readonly status: 'denied' }>;
 }
 
 export interface TopicBinding {

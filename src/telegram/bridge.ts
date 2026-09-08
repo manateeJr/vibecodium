@@ -1,7 +1,9 @@
 import { WebSocket } from 'ws';
 import { createClient } from '../client/index.js';
 import type { SocketConstructor, VibecodiumClient } from '../client/types.js';
+import { postSessionAnswerAsk } from '../client/answer-ask.js';
 import type {
+  ActionRequestedPayload,
   EventEnvelope,
   SessionInputPayload,
   SessionOutputPayload,
@@ -9,6 +11,8 @@ import type {
   TurnCompletePayload,
 } from '../contracts/events.js';
 import type {
+  ObservedAsk,
+  SessionAskBridge,
   SessionBridge,
   SessionLite,
   MachineSessionLite,
@@ -16,8 +20,19 @@ import type {
   TurnProgress,
   TurnResult,
 } from './types.js';
+import {
+  asAskRequest,
+  askId,
+  askRoutedSessionId,
+  askSessionId,
+  askTurn,
+  resolveAskDecision,
+} from './ask-watch.js';
 
-export function createSessionBridge(config: TelegramConfig, provider = 'omp'): SessionBridge {
+export function createSessionBridge(
+  config: TelegramConfig,
+  provider = 'omp',
+): SessionBridge & SessionAskBridge {
   const client = createClient({
     baseUrl: config.controlPlaneUrl,
     // `ws` exposes the SDK's `.on` listener shape; its overloaded constructor needs this boundary cast.
@@ -26,6 +41,19 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
   const baseUrl = config.controlPlaneUrl.replace(/\/+$/, '');
   const watchStartSeqByTurn = new Map<string, number>();
   const lastSeenSeqBySession = new Map<string, number>();
+  // Recent omp-ask payloads by `${sessionId}:${askId}` so answerAsk can map the
+  // tapped option to the approve/deny path. Bounded; evicts oldest first.
+  const recentAsks = new Map<string, ActionRequestedPayload>();
+  // Global action_requested cursor so each subscribeAsk starts near the tail.
+  let askStartSeq = 0;
+  const noteAsk = (sessionId: string, payload: ActionRequestedPayload): void => {
+    recentAsks.set(`${sessionId}:${askId(payload)}`, payload);
+    while (recentAsks.size > 64) {
+      const oldest = recentAsks.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      recentAsks.delete(oldest);
+    }
+  };
 
   return {
     health: async (): Promise<boolean> => {
@@ -118,7 +146,7 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
             : { updatedAt: summary.updated_at ?? summary.started_at }),
         }));
       }),
-    subscribeSession: ({ sessionId, onTurn, onState }) => {
+    subscribeSession: ({ sessionId, onTurn, onState, onAsk }) => {
       const streamId = `session:${sessionId}`;
       const inProgress = new Map<number, { prompt: string; text: string }>();
       let cancelled = false;
@@ -169,6 +197,14 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
           });
           return;
         }
+        if (event.type === 'action_requested') {
+          const payload = event.payload as ActionRequestedPayload;
+          if (asAskRequest(payload) === null) return;
+          if (askSessionId(payload, sessionId) !== sessionId) return;
+          noteAsk(sessionId, payload);
+          onAsk?.({ sessionId, turn: askTurn(payload), payload });
+          return;
+        }
         if (event.type === 'session_state') {
           const payload = event.payload as SessionStatePayload;
           if (payload.session_id === sessionId) onState?.(payload.state);
@@ -217,12 +253,50 @@ export function createSessionBridge(config: TelegramConfig, provider = 'omp'): S
         }
         return latestTurn ?? null;
       }),
-    watchTurn: ({ sessionId, turn, onProgress, timeoutMs }) => {
+    watchTurn: ({ sessionId, turn, onProgress, timeoutMs, onAsk }) => {
       const key = `${sessionId}:${turn}`;
       const fromSeq = watchStartSeqByTurn.get(key);
       watchStartSeqByTurn.delete(key);
-      return watchTurn(client, sessionId, turn, fromSeq, onProgress, timeoutMs);
+      const forwardAsk =
+        onAsk === undefined
+          ? undefined
+          : (ask: ObservedAsk): void => {
+              noteAsk(sessionId, ask.payload);
+              onAsk(ask);
+            };
+      return watchTurn(client, sessionId, turn, fromSeq, onProgress, timeoutMs, forwardAsk);
     },
+    subscribeAsk: (cb) => {
+      const receive = (event: EventEnvelope): void => {
+        if (event.seq > askStartSeq) askStartSeq = event.seq;
+        if (event.type !== 'action_requested') return;
+        const payload = event.payload as ActionRequestedPayload;
+        if (asAskRequest(payload) === null) return;
+        const routed = askRoutedSessionId(payload);
+        if (routed === null) return;
+        noteAsk(routed, payload);
+        cb({ sessionId: routed, turn: askTurn(payload), payload });
+      };
+      return client.subscribe(askStartSeq, receive, '*');
+    },
+    answerAsk: ({ session_id, ask_id, question_id, option_index }) =>
+      controlPlaneCall('session answer ask', async () => {
+        const cached = recentAsks.get(`${session_id}:${ask_id}`) ?? null;
+        const { approved } = resolveAskDecision(cached === null ? null : asAskRequest(cached), {
+          question_id,
+          option_index,
+        });
+        // The bridge posts tokenless like its control-plane client (loopback).
+        const result = await postSessionAnswerAsk(baseUrl, {
+          session_id,
+          ask_id,
+          question_id,
+          option_index,
+          approved,
+        });
+        if (result.status === 'denied') return { status: 'denied' as const };
+        return undefined;
+      }),
   };
 }
 
@@ -243,6 +317,7 @@ function watchTurn(
   fromSeq: number | undefined,
   onProgress: (progress: TurnProgress) => void,
   timeoutMs: number,
+  onAsk?: (ask: ObservedAsk) => void,
 ): Promise<TurnResult> {
   return new Promise<TurnResult>((resolve, reject) => {
     const streamId = `session:${sessionId}`;
@@ -300,6 +375,18 @@ function watchTurn(
           return;
         }
         if (!collecting && payload.turn === turn - 1) collecting = true;
+        return;
+      }
+      if (event.type === 'action_requested') {
+        // Surface the pending ask alongside the wait; the turn stays open and the
+        // existing complete/failed/timeout outcomes are unchanged (no early close).
+        const payload = event.payload as ActionRequestedPayload;
+        if (asAskRequest(payload) === null) return;
+        const routed = askRoutedSessionId(payload);
+        if (routed !== null && routed !== sessionId) return;
+        const askTurnValue = askTurn(payload);
+        if (askTurnValue !== null && askTurnValue !== turn) return;
+        onAsk?.({ sessionId, turn: askTurnValue ?? turn, payload });
         return;
       }
       const eventType = event.type as string;

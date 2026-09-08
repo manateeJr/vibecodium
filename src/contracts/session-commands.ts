@@ -135,6 +135,27 @@ export interface SessionSendKeysResult {
   readonly sent: number;
 }
 
+/**
+ * Telegram ask-relay answer (issue #116). Records the tapped option as
+ * action_approved / action_denied on the session stream and resolves the
+ * pending omp ask so the turn can proceed.
+ */
+export interface SessionAnswerAskArgs {
+  readonly session_id: string;
+  readonly ask_id: string;
+  readonly question_id: string;
+  readonly option_index: number;
+  readonly approved: boolean;
+}
+
+export interface SessionAnswerAskResult {
+  readonly status: 'approved' | 'denied';
+  readonly resolved: boolean;
+}
+
+/** Command name for session.answer_ask; kept here so commands.ts stays untouched. */
+export const SESSION_ANSWER_ASK_COMMAND = 'session.answer_ask';
+
 /** Consumed by the PC-side attach CLI. */
 export interface SessionAttachInfoArgs {
   readonly session_id: string;

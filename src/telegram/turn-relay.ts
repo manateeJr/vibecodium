@@ -1,4 +1,5 @@
 import type {
+  ObservedAsk,
   SessionBridge,
   TelegramApi,
   TelegramConfig,
@@ -16,6 +17,7 @@ type TurnRelayParams = {
   threadId: number;
   sessionId: string;
   turn: number;
+  onAsk?: (ask: ObservedAsk) => void;
 };
 
 type TurnRelayDependencies = {
@@ -32,7 +34,13 @@ function seconds(ms: number): number {
 export function createTurnRelay({ api, bridge, config, format }: TurnRelayDependencies): {
   relayTurn(params: TurnRelayParams): Promise<void>;
 } {
-  async function relayTurn({ chatId, threadId, sessionId, turn }: TurnRelayParams): Promise<void> {
+  async function relayTurn({
+    chatId,
+    threadId,
+    sessionId,
+    turn,
+    onAsk,
+  }: TurnRelayParams): Promise<void> {
     const progressMessage = await api.sendMessage({
       chatId,
       threadId,
@@ -59,6 +67,7 @@ export function createTurnRelay({ api, bridge, config, format }: TurnRelayDepend
       turn,
       timeoutMs: config.turnTimeoutMs,
       onProgress,
+      ...(onAsk === undefined ? {} : { onAsk }),
     });
     await progressEdits;
     await renderResult({

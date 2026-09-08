@@ -3,6 +3,7 @@ import { fork as nodeFork } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrateSessionStorage, sessionStorageRootFromEnvironment } from './session-storage.js';
+import { answerAskHandler, SESSION_ANSWER_ASK_COMMAND } from './answer-ask.js';
 import { COMMAND_NAMES } from '../contracts/commands.js';
 import type * as SessionCommands from '../contracts/commands.js';
 import type { MachineSessionResolver } from '../machine-sessions/index.js';
@@ -160,6 +161,8 @@ export class SessionSubsystem implements Subsystem {
     context.registerCommand(COMMAND_NAMES.sessionAttachInfo, (command: unknown) =>
       sessionAttachInfo(this.sessionTable, command, this.substrate?.socketDir),
     );
+    const answerAsk = answerAskHandler(context, this.persistentManager);
+    context.registerCommand(SESSION_ANSWER_ASK_COMMAND, answerAsk);
     void this.reconcile().catch(() => undefined);
   }
   public reconcile(): Promise<void> {
