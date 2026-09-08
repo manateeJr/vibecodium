@@ -13,6 +13,7 @@ import { handleRenameCommand, RENAME_GENERAL_REPLY } from './rename.js';
 import { createTurnRelay } from './turn-relay.js';
 import { createEcho } from './echo.js';
 import { createSessionWatch } from './session-watch.js';
+import { createAskRelay } from './ask-relay.js';
 
 export interface TelegramFormat {
   escapeMarkdownV2(text: string): string;
@@ -84,6 +85,14 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   const echo = createEcho({ api, store, format, chatId: config.chatId });
   const sessionWatch = createSessionWatch({ bridge, store, echoTurn: echo.echoTurn });
   const { relayTurn } = createTurnRelay({ api, bridge, config, format });
+  const askRelay = createAskRelay({
+    api,
+    bridge,
+    store,
+    chatId: config.chatId,
+    format,
+    timeoutMs: config.turnTimeoutMs,
+  });
   const inFlight = new Set<number>();
   const pendingStarts = new Map<number, PendingStart>();
   const projectChoices = new Map<string, Project>();
@@ -257,6 +266,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   }
 
   async function handleCallback(callback: CallbackQuery): Promise<void> {
+    if (await askRelay.handleCallback(callback)) return;
     await api.answerCallbackQuery(callback.id);
     if (await resumeHandler.handleCallback(callback)) return;
     if (!callback.data.startsWith('new:')) return;
@@ -428,6 +438,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
 
   return {
     start(): void {
+      askRelay.start();
       sessionWatch.start();
     },
     async handleUpdate(update: TelegramUpdate): Promise<void> {
