@@ -406,7 +406,7 @@ export function createClient(options: ClientOptions): VibecodiumClient {
   };
 }
 
-async function post<T>(
+export async function post<T>(
   baseUrl: string,
   name: string,
   args: unknown,

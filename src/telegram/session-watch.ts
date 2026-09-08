@@ -1,7 +1,9 @@
-import type { ObservedTurn, SessionBridge, TopicStore } from './types.js';
+import type { ObservedAsk, ObservedTurn, SessionBridge, TopicStore } from './types.js';
+import { askId } from './ask-watch.js';
 
 const RELAYED_TURN_LIMIT = 32;
 const SENT_PROMPT_LIMIT = 8;
+const SEEN_ASK_LIMIT = 32;
 
 export interface SessionWatch {
   start(): void;
@@ -10,18 +12,21 @@ export interface SessionWatch {
   stopAll(): void;
   markSent(sessionId: string, prompt: string): void;
   markRelayed(sessionId: string, turn: number): void;
+  markAsked(sessionId: string, askKey: string): void;
 }
 
 type SessionWatchDependencies = {
   bridge: SessionBridge;
   store: TopicStore;
   echoTurn: (turn: ObservedTurn) => Promise<void>;
+  echoAsk?: (ask: ObservedAsk) => Promise<void>;
 };
 
 export function createSessionWatch({
   bridge,
   store,
   echoTurn,
+  echoAsk,
 }: SessionWatchDependencies): SessionWatch {
   const subscriptions = new Map<
     string,
@@ -29,6 +34,18 @@ export function createSessionWatch({
   >();
   const relayedTurns = new Map<string, Set<number>>();
   const sentPrompts = new Map<string, string[]>();
+  const seenAsks = new Map<string, Set<string>>();
+
+  const rememberAsk = (sessionId: string, askKey: string): void => {
+    const seen = seenAsks.get(sessionId) ?? new Set<string>();
+    seen.add(askKey);
+    while (seen.size > SEEN_ASK_LIMIT) {
+      const oldest = seen.values().next().value as string | undefined;
+      if (oldest === undefined) break;
+      seen.delete(oldest);
+    }
+    seenAsks.set(sessionId, seen);
+  };
 
   const onTurn = (turn: ObservedTurn): void => {
     const relayed = relayedTurns.get(turn.sessionId);
@@ -48,6 +65,14 @@ export function createSessionWatch({
     }
 
     void echoTurn(turn).catch(() => undefined);
+  };
+
+  const onAsk = (ask: ObservedAsk): void => {
+    const key = askId(ask.payload);
+    if (seenAsks.get(ask.sessionId)?.has(key)) return;
+    rememberAsk(ask.sessionId, key);
+    if (echoAsk === undefined) return;
+    void echoAsk(ask).catch(() => undefined);
   };
 
   const watch = (sessionId: string): void => {
@@ -76,6 +101,9 @@ export function createSessionWatch({
         if (subscription.active) onTurn(turn);
       },
       onState,
+      onAsk: (ask) => {
+        if (subscription.active) onAsk(ask);
+      },
     });
     if (subscription.active) subscription.unsubscribe = unsubscribe;
     else unsubscribe();
@@ -90,6 +118,7 @@ export function createSessionWatch({
     subscriptions.delete(sessionId);
     relayedTurns.delete(sessionId);
     sentPrompts.delete(sessionId);
+    seenAsks.delete(sessionId);
   };
 
   const stopAll = (): void => {
@@ -100,6 +129,7 @@ export function createSessionWatch({
     subscriptions.clear();
     relayedTurns.clear();
     sentPrompts.clear();
+    seenAsks.clear();
   };
 
   const markSent = (sessionId: string, prompt: string): void => {
@@ -125,10 +155,13 @@ export function createSessionWatch({
       if (prompts.length === 0) sentPrompts.delete(sessionId);
     }
   };
+  const markAsked = (sessionId: string, askKey: string): void => {
+    rememberAsk(sessionId, askKey);
+  };
 
   const start = (): void => {
     for (const binding of store.all()) watch(binding.sessionId);
   };
 
-  return { start, watch, unwatch, stopAll, markSent, markRelayed };
+  return { start, watch, unwatch, stopAll, markSent, markRelayed, markAsked };
 }
