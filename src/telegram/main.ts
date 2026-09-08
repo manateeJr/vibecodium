@@ -83,6 +83,7 @@ export async function main(): Promise<void> {
 
   const controller = new AbortController();
   let store: TopicStore | undefined;
+  let bot: TelegramBot | undefined;
   const stop = (): void => controller.abort();
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
@@ -91,7 +92,7 @@ export async function main(): Promise<void> {
     const api = createTelegramApi(config, undefined, getTelegramApiBase());
     const bridge = createSessionBridge(config, getTelegramProvider());
     store = openTopicStore(config.dbPath);
-    const bot = createTelegramBot({
+    bot = createTelegramBot({
       api,
       bridge,
       store,
@@ -117,6 +118,7 @@ export async function main(): Promise<void> {
   } finally {
     process.removeListener('SIGTERM', stop);
     process.removeListener('SIGINT', stop);
+    bot?.stop();
     store?.close();
   }
 }

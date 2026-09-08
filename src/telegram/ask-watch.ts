@@ -1,29 +1,14 @@
-import type { ActionRequestedPayload } from '../contracts/events.js';
+import type {
+  ActionRequestedPayload,
+  AskOption,
+  AskQuestion,
+  AskRequestedFields,
+} from '../contracts/events.js';
 
-// TEMPORARY MIRROR (issue #116): the canonical AskRequestedFields / AskQuestion /
-// AskOption types land in src/contracts/events.ts via the AskProducer lane. These
-// mirrors use the exact pinned names and shapes so the pre-integration swap is a
-// pure import-source change. Do not extend here; flag drift to L0.
-export interface AskOption {
-  readonly label: string;
-  readonly description?: string;
-}
-
-export interface AskQuestion {
-  readonly id: string;
-  readonly header: string;
-  readonly question: string;
-  readonly options: readonly AskOption[];
-}
-
-export interface AskRequestedFields {
-  readonly session_id: string;
-  readonly turn: number;
-  readonly ask_id: string;
-  readonly questions: readonly AskQuestion[];
-  readonly source: 'omp-ask';
-  readonly requested_at: string;
-}
+// Canonical ask types (issue #116): AskOption / AskQuestion / AskRequestedFields
+// live in src/contracts/events.ts (AskProducer lane). Re-exported here so
+// existing ask-watch consumers keep their import source.
+export type { AskOption, AskQuestion, AskRequestedFields };
 
 export type AskRequestPayload = ActionRequestedPayload & AskRequestedFields;
 

@@ -30,6 +30,7 @@ export interface TelegramBotDependencies {
 
 export interface TelegramBot {
   start(): void;
+  stop(): void;
   handleUpdate(update: TelegramUpdate): Promise<void>;
 }
 
@@ -440,6 +441,11 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     start(): void {
       askRelay.start();
       sessionWatch.start();
+    },
+    stop(): void {
+      // The ask subscription holds a process-lifetime control-plane socket;
+      // without this the telegram main child never exits on SIGTERM (#116).
+      askRelay.stop();
     },
     async handleUpdate(update: TelegramUpdate): Promise<void> {
       const fromId = update.callbackQuery?.from.id ?? update.message?.from.id;
