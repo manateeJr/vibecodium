@@ -1,6 +1,8 @@
 dist
 node_modules
 .vibecodium/evidence
+.vibecodium/heartbeat.json
+.vibecodium/wedge-*.json
 package-lock.json
 third_party
 web/vendor

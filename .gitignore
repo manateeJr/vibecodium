@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .vibecodium/evidence/
+.vibecodium/heartbeat.json
+.vibecodium/wedge-*.json
 .vibecodium/*.sqlite
 .vibecodium/*.sqlite-shm
 .vibecodium/*.sqlite-wal
