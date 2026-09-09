@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrateSessionStorage, sessionStorageRootFromEnvironment } from './session-storage.js';
 import { answerAskHandler, SESSION_ANSWER_ASK_COMMAND } from './answer-ask.js';
+import { registerAttachLeases } from './session-attach-leases.js';
 import { COMMAND_NAMES } from '../contracts/commands.js';
 import type * as SessionCommands from '../contracts/commands.js';
 import type { MachineSessionResolver } from '../machine-sessions/index.js';
@@ -51,7 +52,6 @@ import { reconcileSubstrateSessions } from './substrate-reconciliation.js';
 import { registerSessionProbes } from './substrate-probe.js';
 import { SessionSendIdempotency } from './send-idempotency.js';
 import type { SessionFork, SessionState } from './worker-lifecycle.js';
-export type { SessionFork } from './worker-lifecycle.js';
 export const DEFAULT_SESSION_STORAGE_ROOT = sessionStorageRootFromEnvironment();
 export interface SessionSubsystemOptions {
   readonly workerPath?: string;
@@ -112,7 +112,7 @@ export class SessionSubsystem implements Subsystem {
     if (this.substrate) {
       this.persistentManager = new PersistentSessionManager({
         substrate: this.substrate,
-        ...(this.sessionTable === undefined ? {} : { sessionTable: this.sessionTable }),
+        ...registerAttachLeases(context, this.sessionTable),
         sessionStorageRoot: this.sessionStorageRoot,
         sessionStorageDirs: this.sessionStorageDirs,
         append: context.append.bind(context),

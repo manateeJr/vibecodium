@@ -17,6 +17,13 @@ import type {
   SessionStopArgs,
   SessionSummary,
 } from '../contracts/commands.js';
+import type {
+  SessionAttachHeartbeatArgs,
+  SessionAttachHeartbeatResult,
+  SessionAttachReleaseArgs,
+  SessionAttachReleaseResult,
+} from '../contracts/session-commands.js';
+import type { SessionAttachLeases } from './session-attach-leases.js';
 import type { SubstrateKey } from '../contracts/substrate-contract.js';
 import { abducoBinaryPath } from '../substrate/paths.js';
 import type { SessionTable } from './session-table.js';
@@ -178,6 +185,63 @@ export function sessionAttachInfo(
     state: record.state,
     ...(socketDir === undefined ? {} : { socket_dir: socketDir }),
   };
+}
+
+export function sessionAttachHeartbeatArgs(command: unknown): SessionAttachHeartbeatArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim()) {
+    throw new Error('session_id is required');
+  }
+  if (
+    value.substrate_name !== undefined &&
+    (typeof value.substrate_name !== 'string' || !value.substrate_name.trim())
+  ) {
+    throw new Error('substrate_name must be a non-empty string');
+  }
+  if (value.ttl_ms !== undefined && typeof value.ttl_ms !== 'number') {
+    throw new Error('ttl_ms must be a number');
+  }
+  return {
+    session_id: value.session_id,
+    ...(value.substrate_name === undefined
+      ? {}
+      : { substrate_name: value.substrate_name as string }),
+    ...(value.ttl_ms === undefined ? {} : { ttl_ms: value.ttl_ms as number }),
+  };
+}
+
+export function sessionAttachHeartbeat(
+  leases: SessionAttachLeases | undefined,
+  table: SessionTable | undefined,
+  command: unknown,
+): SessionAttachHeartbeatResult {
+  if (!leases) throw new Error('attach leases are not configured');
+  const args = sessionAttachHeartbeatArgs(command);
+  const record = table?.get(args.session_id);
+  if (table && !record) throw new Error('session not found');
+  const substrateName = args.substrate_name ?? record?.substrateName;
+  if (!substrateName) throw new Error('substrate_name is required');
+  return { lease_until_ms: leases.heartbeat(args.session_id, substrateName, args.ttl_ms) };
+}
+
+export function sessionAttachReleaseArgs(command: unknown): SessionAttachReleaseArgs {
+  const value = asRecord(command);
+  if (!value || typeof value.session_id !== 'string' || !value.session_id.trim()) {
+    throw new Error('session_id is required');
+  }
+  return { session_id: value.session_id };
+}
+
+export function sessionAttachRelease(
+  leases: SessionAttachLeases | undefined,
+  command: unknown,
+  nowMs: number = Date.now(),
+): SessionAttachReleaseResult {
+  if (!leases) throw new Error('attach leases are not configured');
+  const args = sessionAttachReleaseArgs(command);
+  const held = leases.isLeased(args.session_id, nowMs);
+  leases.release(args.session_id);
+  return { released: held };
 }
 
 export function sessionSendKeysArgs(command: unknown): SessionSendKeysArgs {

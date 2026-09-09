@@ -223,6 +223,14 @@ export class SessionTable {
     return repaired;
   }
 
+  /**
+   * Shared better-sqlite3 handle for co-located tables (e.g. attach
+   * leases). The table retains ownership; borrowers must not close it.
+   */
+  public get databaseHandle(): Database.Database {
+    return this.database;
+  }
+
   public close(): void {
     if (this.closed) return;
     this.closed = true;

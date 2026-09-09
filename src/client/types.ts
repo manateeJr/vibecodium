@@ -1,5 +1,11 @@
-import type * as Commands from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
+import type * as Commands from '../contracts/commands.js';
+import type {
+  SessionAttachHeartbeatArgs,
+  SessionAttachHeartbeatResult,
+  SessionAttachReleaseArgs,
+  SessionAttachReleaseResult,
+} from '../contracts/session-commands.js';
 
 export interface ClientOptions {
   readonly baseUrl: string;
@@ -21,6 +27,9 @@ export interface VibecodiumClient {
   sessionEnsureLive(
     args: Commands.SessionEnsureLiveArgs,
   ): Promise<Commands.SessionEnsureLiveResult>;
+  /** Attach-lease transport (#118); optional structural seam for the attach CLI. */
+  sessionAttachHeartbeat?(args: SessionAttachHeartbeatArgs): Promise<SessionAttachHeartbeatResult>;
+  sessionAttachRelease?(args: SessionAttachReleaseArgs): Promise<SessionAttachReleaseResult>;
   sessionSendKeys(args: Commands.SessionSendKeysArgs): Promise<Commands.SessionSendKeysResult>;
   sessionAttachInfo(
     args: Commands.SessionAttachInfoArgs,
