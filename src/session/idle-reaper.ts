@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { SubstrateClient, SubstrateSessionState } from '../contracts/substrate-contract.js';
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
+import type { SessionAttachLeases } from './session-attach-leases.js';
 
 export const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 export const DEFAULT_REAPER_INTERVAL_MS = 60 * 1000;
@@ -24,18 +25,11 @@ export interface SessionLivenessCandidate {
   readonly substrateName: string;
 }
 /**
- * Minimal structural mirror of Lane A's `SessionAttachLeases` surface
- * (src/session/session-attach-leases.ts) covering only what attach-aware
- * reaping (#118) needs: lease check + expiry prune. A canonical
- * `SessionAttachLeases` instance is directly assignable to this interface.
- * Integration: replace with
- * `Pick<SessionAttachLeases, 'isLeased' | 'prune'>` — DRIFT FLAG if the
- * canonical `isLeased`/`prune` signatures differ from these.
+ * Attach-lease shield surface (#118): the canonical `SessionAttachLeases`
+ * narrowed to what attach-aware reaping needs — lease check + expiry prune.
+ * A canonical `SessionAttachLeases` instance is directly assignable.
  */
-export interface AttachLeaseShield {
-  isLeased(sessionId: string, nowMs: number): boolean;
-  prune(nowMs: number): number;
-}
+export type AttachLeaseShield = Pick<SessionAttachLeases, 'isLeased' | 'prune'>;
 
 export interface SessionIdleReaperOptions {
   readonly substrate: SubstrateClient;
