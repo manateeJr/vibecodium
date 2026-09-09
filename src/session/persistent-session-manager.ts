@@ -20,6 +20,7 @@ import {
 } from '../server/session-worker.js';
 import {
   SessionIdleReaper,
+  type AttachLeaseShield,
   type SessionReapCandidate,
   type SessionReapReason,
 } from './idle-reaper.js';
@@ -27,6 +28,7 @@ import { errorMessage, sessionEnsureLiveArgs, sessionSendKeysArgs } from './sess
 import { isSubstrateSessionLive } from './relaunch-liveness.js';
 import { harnessRefFromTranscriptPath } from './transcript-ref.js';
 import type { SessionTable } from './session-table.js';
+import { resumeFailureMessage } from './resume-failure.js';
 export interface PersistentSessionManagerOptions {
   readonly substrate: SubstrateClient;
   readonly sessionTable?: SessionTable;
@@ -44,6 +46,7 @@ export interface PersistentSessionManagerOptions {
   readonly reaperIntervalMs?: number;
   readonly memoryPressureMinMb?: number;
   readonly memoryAvailableMb?: () => number | Promise<number | undefined>;
+  readonly attachLeases?: AttachLeaseShield;
 }
 type PersistentWorkerConfig = Omit<
   ConstructorParameters<typeof PersistentSessionWorker>[0],
@@ -68,6 +71,7 @@ export class PersistentSessionManager {
   private readonly workers = new Map<string, PersistentSessionWorker>();
   private readonly relaunches = new Map<string, Promise<PersistentSessionRelaunchResult>>();
   private readonly sessionExitTasks = new Map<string, Promise<void>>();
+  private readonly attachLeases: AttachLeaseShield | undefined;
   private readonly reaper: SessionIdleReaper;
   public constructor(options: PersistentSessionManagerOptions) {
     this.substrate = options.substrate;
@@ -75,15 +79,17 @@ export class PersistentSessionManager {
     this.sessionStorageRoot = options.sessionStorageRoot;
     this.sessionStorageDirs = options.sessionStorageDirs;
     this.append = options.append;
-    this.summaryFor = options.summaryFor;
     this.onStateChange = options.onStateChange;
+    this.summaryFor = options.summaryFor;
     this.now = options.now ?? (() => new Date());
+    this.attachLeases = options.attachLeases;
     this.reaper = new SessionIdleReaper({
       substrate: this.substrate,
       candidates: () => this.reapCandidates(),
       onReaped: (candidate, reason) => this.finishReap(candidate, reason),
       livenessCandidates: () => this.sessionTable?.list() ?? [],
       onLivenessLost: (candidate) => this.finishReap(candidate, 'liveness-sweep'),
+      isShielded: (sessionId) => this.attachLeases?.isLeased(sessionId, Date.now()) ?? false,
       now: () => this.now().getTime(),
       ...(options.idleTimeoutMs === undefined ? {} : { timeoutMs: options.idleTimeoutMs }),
       ...(options.reaperIntervalMs === undefined ? {} : { intervalMs: options.reaperIntervalMs }),
@@ -247,6 +253,7 @@ export class PersistentSessionManager {
   }
   public async runReaper(): Promise<readonly string[]> {
     await this.flush();
+    this.attachLeases?.prune(Date.now());
     return this.reaper.runOnce();
   }
   public async flush(): Promise<void> {
@@ -489,9 +496,4 @@ export class PersistentSessionManager {
     await worker?.shutdown();
     this.onStateChange(candidate.sessionId, 'resumable', reason);
   }
-}
-function resumeFailureMessage(detail: string, prompt: string | undefined): string {
-  return prompt === undefined
-    ? `resume-failed: ${detail}`
-    : `resume-failed: ${detail}; undelivered prompt: ${prompt}`;
 }

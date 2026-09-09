@@ -23,6 +23,19 @@ export interface SessionLivenessCandidate {
   readonly state?: SubstrateSessionState;
   readonly substrateName: string;
 }
+/**
+ * Minimal structural mirror of Lane A's `SessionAttachLeases` surface
+ * (src/session/session-attach-leases.ts) covering only what attach-aware
+ * reaping (#118) needs: lease check + expiry prune. A canonical
+ * `SessionAttachLeases` instance is directly assignable to this interface.
+ * Integration: replace with
+ * `Pick<SessionAttachLeases, 'isLeased' | 'prune'>` — DRIFT FLAG if the
+ * canonical `isLeased`/`prune` signatures differ from these.
+ */
+export interface AttachLeaseShield {
+  isLeased(sessionId: string, nowMs: number): boolean;
+  prune(nowMs: number): number;
+}
 
 export interface SessionIdleReaperOptions {
   readonly substrate: SubstrateClient;
@@ -38,6 +51,13 @@ export interface SessionIdleReaperOptions {
   readonly memoryAvailableMb?: () => number | Promise<number | undefined>;
   readonly livenessCandidates?: () => readonly SessionLivenessCandidate[];
   readonly onLivenessLost?: (candidate: SessionLivenessCandidate) => void | Promise<void>;
+  /**
+   * Attach-lease shield (#118): return true while `sessionId` is held by an
+   * attached terminal. Shielded sessions are skipped in the timeout loop, the
+   * pressure loop, and the liveness sweep — never killed under lease.
+   * Defaults to `() => false` (no shielding; prior behavior).
+   */
+  readonly isShielded?: (sessionId: string) => boolean;
 }
 
 export function idleTimeoutMsFromEnv(
@@ -98,6 +118,7 @@ export class SessionIdleReaper {
   private readonly memoryAvailableMb: () => number | Promise<number | undefined>;
   private readonly livenessCandidates: (() => readonly SessionLivenessCandidate[]) | undefined;
   private readonly onLivenessLost: SessionIdleReaperOptions['onLivenessLost'];
+  private readonly isShielded: (sessionId: string) => boolean;
   private timer: NodeJS.Timeout | undefined;
   private runPromise: Promise<readonly string[]> | undefined;
 
@@ -112,6 +133,7 @@ export class SessionIdleReaper {
     this.memoryAvailableMb = options.memoryAvailableMb ?? readMemAvailableMb;
     this.livenessCandidates = options.livenessCandidates;
     this.onLivenessLost = options.onLivenessLost;
+    this.isShielded = options.isShielded ?? (() => false);
     if (!Number.isFinite(this.timeoutMs) || this.timeoutMs < 0) {
       throw new Error('idle timeout must be a non-negative finite number');
     }
@@ -154,7 +176,7 @@ export class SessionIdleReaper {
       let available = await this.memoryAvailableMb();
       while (available !== undefined && available < this.memoryPressureMinMb) {
         const candidate = pressureReapCandidates(this.candidates(), this.now()).find(
-          (entry) => !attemptedPressure.has(entry.sessionId),
+          (entry) => !attemptedPressure.has(entry.sessionId) && !this.isShielded(entry.sessionId),
         );
         if (!candidate) break;
         attemptedPressure.add(candidate.sessionId);
@@ -172,6 +194,7 @@ export class SessionIdleReaper {
         reapedIds.has(candidate.sessionId) ||
         !candidate.idle ||
         candidate.runningTurn === true ||
+        this.isShielded(candidate.sessionId) ||
         now - candidate.lastActivityAt < this.timeoutMs
       )
         continue;
@@ -189,6 +212,15 @@ export class SessionIdleReaper {
     if (!candidates || !onLivenessLost) return [];
     const swept: string[] = [];
     for (const candidate of candidates()) {
+      // Attach-aware reaping (#118): never kill under an active attach lease —
+      // not even on a failed liveness probe. Rationale: substrate death
+      // disconnects the terminal (the abduco client exits when the server dies),
+      // so the CLI heartbeat stops and the 30s TTL lapses; the next sweep then
+      // reconciles. The stale window is bounded (~90s) and self-healing, while
+      // killing an attached session on a false-negative probe under load (the
+      // wedge dumps seen during gate runs) repeats exactly the complaint #118
+      // fixes. Keep this a pure lease check: no freshness sub-checks.
+      if (this.isShielded(candidate.sessionId)) continue;
       if (candidate.state !== undefined && candidate.state !== 'live') continue;
       if (await isSubstrateSessionLive(this.substrate, candidate.substrateName)) continue;
       try {
@@ -208,6 +240,7 @@ export class SessionIdleReaper {
   ): Promise<boolean> {
     const current = this.candidates().find((entry) => entry.sessionId === candidate.sessionId);
     if (!current || !current.idle || current.runningTurn === true) return false;
+    if (this.isShielded(current.sessionId)) return false;
     try {
       await this.substrate.kill(current.substrateName);
       await this.onReaped(current, reason);
