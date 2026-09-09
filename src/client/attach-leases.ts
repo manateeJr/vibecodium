@@ -6,7 +6,6 @@ import {
   type SessionAttachReleaseArgs,
   type SessionAttachReleaseResult,
 } from '../contracts/session-commands.js';
-import type { VibecodiumClient } from './types.js';
 import { post } from './index.js';
 
 /**
@@ -33,23 +32,4 @@ export function postSessionAttachRelease(
   token?: string,
 ): Promise<SessionAttachReleaseResult> {
   return post<SessionAttachReleaseResult>(baseUrl, SESSION_ATTACH_RELEASE_COMMAND, args, token);
-}
-
-/**
- * Bound attach-lease methods for createClient (#118). Spread into the client
- * so structural CLI callers (`sessionAttachHeartbeat?.()` /
- * `sessionAttachRelease?.()`) resolve against a live implementation.
- * The `post` import back into ./index.js is call-deferred, so the module
- * cycle is evaluation-safe.
- */
-export function attachLeaseMethods(
-  baseUrl: string,
-  token?: string,
-): Pick<VibecodiumClient, 'sessionAttachHeartbeat' | 'sessionAttachRelease'> {
-  return {
-    sessionAttachHeartbeat: (args: SessionAttachHeartbeatArgs) =>
-      postSessionAttachHeartbeat(baseUrl, args, token),
-    sessionAttachRelease: (args: SessionAttachReleaseArgs) =>
-      postSessionAttachRelease(baseUrl, args, token),
-  };
 }

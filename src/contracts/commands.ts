@@ -18,8 +18,12 @@ import type * as ReportCommands from './report-commands.js';
 import type {
   SessionArchiveArgs,
   SessionArchiveResult,
+  SessionAttachHeartbeatArgs,
+  SessionAttachHeartbeatResult,
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
+  SessionAttachReleaseArgs,
+  SessionAttachReleaseResult,
   SessionEnsureLiveArgs,
   SessionEnsureLiveResult,
   SessionForkArgs,
@@ -49,8 +53,12 @@ export type {
   PtyUnsubscribeFrame,
   SessionArchiveArgs,
   SessionArchiveResult,
+  SessionAttachHeartbeatArgs,
+  SessionAttachHeartbeatResult,
   SessionAttachInfoArgs,
   SessionAttachInfoResult,
+  SessionAttachReleaseArgs,
+  SessionAttachReleaseResult,
   SessionEnsureLiveArgs,
   SessionEnsureLiveResult,
   SessionForkArgs,
@@ -116,6 +124,8 @@ export const COMMAND_NAMES = {
   sessionEnsureLive: 'session.ensure_live',
   sessionSendKeys: 'session.send_keys',
   sessionAttachInfo: 'session.attach_info',
+  sessionAttachHeartbeat: 'session.attach_heartbeat',
+  sessionAttachRelease: 'session.attach_release',
   filesList: 'files.list',
   filesDownload: 'files.download',
   filesUpload: 'files.upload',
@@ -134,42 +144,7 @@ export const COMMAND_NAMES = {
   skillPropose: 'skill.propose',
   skillInvoke: 'skill.invoke',
 } as const;
-export const SESSION_OPEN_COMMAND = COMMAND_NAMES.sessionOpen;
-export const SESSION_RENAME_COMMAND = COMMAND_NAMES.sessionRename;
-export const SESSION_STOP_COMMAND = COMMAND_NAMES.sessionStop;
-export const SESSION_SEND_COMMAND = COMMAND_NAMES.sessionSend;
-export const SESSION_LIST_COMMAND = COMMAND_NAMES.sessionList;
-export const SESSION_FORK_COMMAND = COMMAND_NAMES.sessionFork;
-export const SESSION_PIN_COMMAND = COMMAND_NAMES.sessionPin;
-export const SESSION_ARCHIVE_COMMAND = COMMAND_NAMES.sessionArchive;
-export const WORKSPACE_LIST_COMMAND = COMMAND_NAMES.workspaceList;
-export const WORKFLOW_RUN_COMMAND = COMMAND_NAMES.workflowRun;
-export const WORKFLOW_APPROVE_COMMAND = COMMAND_NAMES.workflowApprove;
 export const WORKFLOW_START_COMMAND = 'workflow.start';
-export const MACHINE_LIST_COMMAND = COMMAND_NAMES.machineList;
-export const SESSION_RESUME_COMMAND = COMMAND_NAMES.sessionResume;
-export const WORKSPACE_STATUS_COMMAND = COMMAND_NAMES.workspaceStatus;
-export const PROJECT_LIST_COMMAND = COMMAND_NAMES.projectList;
-export const PROJECT_DETECT_COMMAND = COMMAND_NAMES.projectDetect;
-export const PROJECT_SAVE_COMMAND = COMMAND_NAMES.projectSave;
-export const PROJECT_REMOVE_COMMAND = COMMAND_NAMES.projectRemove;
-export const VOICE_TRANSCRIBE_COMMAND = COMMAND_NAMES.voiceTranscribe;
-export const HOST_STATS_COMMAND = COMMAND_NAMES.hostStats;
-export const HOST_SET_SESSION_CAP_COMMAND = COMMAND_NAMES.hostSetSessionCap;
-export const SESSION_ENSURE_LIVE_COMMAND = COMMAND_NAMES.sessionEnsureLive;
-export const SESSION_SEND_KEYS_COMMAND = COMMAND_NAMES.sessionSendKeys;
-export const SESSION_ATTACH_INFO_COMMAND = COMMAND_NAMES.sessionAttachInfo;
-export const FILES_LIST_COMMAND = COMMAND_NAMES.filesList;
-export const FILES_DOWNLOAD_COMMAND = COMMAND_NAMES.filesDownload;
-export const FILES_UPLOAD_COMMAND = COMMAND_NAMES.filesUpload;
-export const FILES_SHARED_DIR_COMMAND = COMMAND_NAMES.filesSharedDir;
-export const SKILL_LIST_COMMAND = COMMAND_NAMES.skillList;
-export const SKILL_DRAFT_COMMAND = COMMAND_NAMES.skillDraft;
-export const SKILL_SAVE_COMMAND = COMMAND_NAMES.skillSave;
-export const SKILL_REMOVE_COMMAND = COMMAND_NAMES.skillRemove;
-export const SKILL_ADOPT_COMMAND = COMMAND_NAMES.skillAdopt;
-export const SKILL_PROPOSE_COMMAND = COMMAND_NAMES.skillPropose;
-export const SKILL_INVOKE_COMMAND = COMMAND_NAMES.skillInvoke;
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
 export interface WorkspaceEntry {
   readonly name: string;
@@ -377,6 +352,8 @@ export interface CommandArgsMap {
   'session.ensure_live': SessionEnsureLiveArgs;
   'session.send_keys': SessionSendKeysArgs;
   'session.attach_info': SessionAttachInfoArgs;
+  'session.attach_heartbeat': SessionAttachHeartbeatArgs;
+  'session.attach_release': SessionAttachReleaseArgs;
   'files.list': FilesCommands.FilesListArgs;
   'files.download': FilesCommands.FilesDownloadArgs;
   'files.upload': FilesCommands.FilesUploadArgs;
@@ -423,6 +400,8 @@ export interface CommandResultMap {
   'session.ensure_live': SessionEnsureLiveResult;
   'session.send_keys': SessionSendKeysResult;
   'session.attach_info': SessionAttachInfoResult;
+  'session.attach_heartbeat': SessionAttachHeartbeatResult;
+  'session.attach_release': SessionAttachReleaseResult;
   'files.list': FilesCommands.FilesListResult;
   'files.download': FilesCommands.FilesDownloadResult;
   'files.upload': FilesCommands.FilesUploadResult;

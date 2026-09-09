@@ -46,7 +46,6 @@ import type * as Commands from '../contracts/commands.js';
 import type { EventEnvelope } from '../contracts/events.js';
 
 import type { ClientOptions, SocketConstructor, SocketLike, VibecodiumClient } from './types.js';
-import { attachLeaseMethods } from './attach-leases.js';
 // Keep command names local so /client.js remains a standalone browser module.
 const COMMAND_NAMES = {
   sessionOpen: 'session.open',
@@ -353,7 +352,6 @@ export function createClient(options: ClientOptions): VibecodiumClient {
   const reconnect = (): void => {
     for (const forceReconnect of reconnectors) forceReconnect();
   };
-
   const postCommand = <Name extends Commands.CommandName>(
     name: Name,
     args: Commands.CommandArgs<Name>,
@@ -383,7 +381,10 @@ export function createClient(options: ClientOptions): VibecodiumClient {
     removeProject,
     transcribe,
     hostStats,
-    ...attachLeaseMethods(baseUrl, options.token),
+    sessionAttachHeartbeat: (args: Commands.SessionAttachHeartbeatArgs) =>
+      postCommand('session.attach_heartbeat', args),
+    sessionAttachRelease: (args: Commands.SessionAttachReleaseArgs) =>
+      postCommand('session.attach_release', args),
     setSessionCap,
     runWorkflow,
     approve,
