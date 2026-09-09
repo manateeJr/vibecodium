@@ -20,6 +20,62 @@ type OpenAndAttach = (
   announce?: boolean,
 ) => Promise<void>;
 
+/** Interval between attach-lease heartbeats while a terminal stays attached. */
+export const ATTACH_HEARTBEAT_INTERVAL_MS = 10_000;
+
+/**
+ * Structural subset of the Lane A client surface (session.attach_heartbeat /
+ * session.attach_release). Declared locally so this lane compiles before Lane A
+ * lands its VibecodiumClient methods; at integration the real methods satisfy
+ * this shape structurally. Calls stay optional until then (no-op when absent).
+ */
+export interface AttachLeaseClient {
+  sessionAttachHeartbeat?: (args: { session_id: string }) => Promise<{ lease_until_ms: number }>;
+  sessionAttachRelease?: (args: { session_id: string }) => Promise<{ released: boolean }>;
+}
+
+/**
+ * Hold the attach lease for `session_id` until the returned stop runs.
+ * Heartbeats every ATTACH_HEARTBEAT_INTERVAL_MS; stop clears the interval,
+ * removes the signal handlers, and best-effort releases the lease (never rejects).
+ * Idempotent: only the first stop releases.
+ */
+function startAttachHeartbeat(client: VibecodiumClient, session_id: string): () => Promise<void> {
+  // Lane A client methods pending: view the client through the local structural subset.
+  const leased = client as VibecodiumClient & AttachLeaseClient;
+  const beat = (): void => {
+    void leased.sessionAttachHeartbeat?.({ session_id }).catch(() => undefined);
+  };
+  const timer = setInterval(beat, ATTACH_HEARTBEAT_INTERVAL_MS);
+  // Node Timeout carries unref; keep the handle from holding the loop open.
+  const unrefable: { unref?: () => void } = timer as unknown as { unref?: () => void };
+  if (typeof unrefable.unref === 'function') unrefable.unref();
+  let stopped = false;
+  const stop = async (): Promise<void> => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
+    await leased.sessionAttachRelease?.({ session_id }).catch(() => undefined);
+  };
+  // A listener suppresses Node's default terminate-on-signal, so re-raise after
+  // cleanup to preserve signal-exit semantics (the child-close path also stops).
+  const onSigint = (): void => {
+    void stop()
+      .catch(() => undefined)
+      .finally(() => process.kill(process.pid, 'SIGINT'));
+  };
+  const onSigterm = (): void => {
+    void stop()
+      .catch(() => undefined)
+      .finally(() => process.kill(process.pid, 'SIGTERM'));
+  };
+  process.once('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
+  return stop;
+}
+
 export async function runAttachCommand(
   client: VibecodiumClient,
   args: string[],
@@ -59,9 +115,17 @@ export async function attachSession(
       : { env: { ...process.env, ABDUCO_SOCKET_DIR: info.socket_dir } }),
   });
   if (isChildProcess(child)) {
-    const status = waitForChild(child);
-    await forceRepaintAfterAttach(client, session_id, child);
-    process.exitCode = await status;
+    const stopHeartbeat = startAttachHeartbeat(client, session_id);
+    try {
+      const status = waitForChild(child);
+      // A child 'error' racing the repaint wait must not surface as an unhandled
+      // rejection; the `await status` below still rethrows it.
+      void status.catch(() => undefined);
+      await forceRepaintAfterAttach(client, session_id, child);
+      process.exitCode = await status;
+    } finally {
+      await stopHeartbeat().catch(() => undefined);
+    }
     return;
   }
   if (child.error) throw child.error;
