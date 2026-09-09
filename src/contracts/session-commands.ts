@@ -169,6 +169,32 @@ export interface SessionAttachInfoResult {
 }
 
 /**
+ * Terminal-held attach lease heartbeat (issue #118). An attached terminal
+ * refreshes its lease on an interval; the idle reaper skips leased sessions.
+ */
+export interface SessionAttachHeartbeatArgs {
+  readonly session_id: string;
+  readonly substrate_name?: string;
+  readonly ttl_ms?: number;
+}
+
+export interface SessionAttachHeartbeatResult {
+  readonly lease_until_ms: number;
+}
+
+export interface SessionAttachReleaseArgs {
+  readonly session_id: string;
+}
+
+export interface SessionAttachReleaseResult {
+  readonly released: boolean;
+}
+
+/** Command names for attach leases; wired into COMMAND_NAMES in commands.ts. */
+export const SESSION_ATTACH_HEARTBEAT_COMMAND = 'session.attach_heartbeat';
+export const SESSION_ATTACH_RELEASE_COMMAND = 'session.attach_release';
+
+/**
  * PTY frames are EPHEMERAL transport messages and are NEVER persisted to the
  * event log.
  */
