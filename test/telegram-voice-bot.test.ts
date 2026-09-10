@@ -120,6 +120,8 @@ class FakeBridge implements SessionBridge {
   readonly transcribeCalls: TranscribeArgs[] = [];
   transcribeText = 'hello from voice';
   transcribeError: unknown;
+  readonly openCalls: Array<{ cwd: string; prompt: string; project?: string }> = [];
+  readonly sendCalls: Array<{ sessionId: string; prompt: string }> = [];
 
   async health(): Promise<boolean> {
     return this.healthResult;
@@ -253,7 +255,7 @@ function cleanup(store: TopicStore, directory: string): void {
 
 function topicVoice(options: { caption?: string; voice?: VoiceAttachment } = {}): IncomingMessage {
   return incoming({
-    caption: options.caption,
+    ...(options.caption === undefined ? {} : { caption: options.caption }),
     voice: options.voice ?? { fileId: 'voice-file-1', mimeType: 'audio/ogg', fileSize: 1024 },
     threadId: 600,
     isTopicMessage: true,

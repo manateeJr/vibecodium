@@ -77,6 +77,13 @@ class FakeApi implements TelegramApi {
   async editForumTopic(): Promise<void> {}
 
   async answerCallbackQuery(): Promise<void> {}
+  async getFile(): Promise<{ filePath: string }> {
+    throw new Error('not implemented');
+  }
+
+  async downloadFile(): Promise<Uint8Array> {
+    throw new Error('not implemented');
+  }
 }
 
 class FakeBridge implements SessionBridge {
@@ -94,6 +101,9 @@ class FakeBridge implements SessionBridge {
 
   async health(): Promise<boolean> {
     return true;
+  }
+  async transcribe(): Promise<{ text: string }> {
+    throw new Error('not implemented');
   }
 
   async projects(): Promise<Array<{ name: string; path: string }>> {

@@ -105,6 +105,13 @@ class FakeApi implements TelegramApi {
     if (text === undefined) this.callbackAcks.push({ id });
     else this.callbackAcks.push({ id, text });
   }
+  async getFile(): Promise<{ filePath: string }> {
+    throw new Error('not implemented');
+  }
+
+  async downloadFile(): Promise<Uint8Array> {
+    throw new Error('not implemented');
+  }
 }
 
 class FakeAskBridge {

@@ -94,6 +94,8 @@ class FakeApi implements TelegramApi {
     void text;
     this.calls.push(`answerCallbackQuery:${id}`);
   }
+  getFile = (): Promise<{ filePath: string }> => Promise.reject(new Error('unused'));
+  downloadFile = (): Promise<Uint8Array> => Promise.reject(new Error('unused'));
 }
 
 class FakeBridge implements SessionBridge {
@@ -110,7 +112,7 @@ class FakeBridge implements SessionBridge {
   async health(): Promise<boolean> {
     return this.healthResult;
   }
-
+  transcribe = (): Promise<{ text: string }> => Promise.reject(new Error('unused'));
   async projects(): Promise<Project[]> {
     this.projectCalls.push(1);
     return this.projectsList;
@@ -123,9 +125,7 @@ class FakeBridge implements SessionBridge {
     this.openCalls.push(params);
     return { sessionId: 'session-1', turn: 1 };
   }
-  async machineSessions(): Promise<MachineSessionLite[]> {
-    return [];
-  }
+  machineSessions = (): Promise<MachineSessionLite[]> => Promise.resolve([]);
   subscribeSession = (): (() => void) => () => undefined;
   openTurn = (): Promise<number | null> => Promise.resolve(null);
   async resume(): Promise<{ sessionId: string; turn: number }> {
@@ -145,9 +145,7 @@ class FakeBridge implements SessionBridge {
     this.renameCalls.push(params);
   }
 
-  async list(): Promise<SessionLite[]> {
-    return this.sessions;
-  }
+  list = (): Promise<SessionLite[]> => Promise.resolve(this.sessions);
 
   async watchTurn(params: WatchParams): Promise<TurnResult> {
     this.watchCalls.push(params);
