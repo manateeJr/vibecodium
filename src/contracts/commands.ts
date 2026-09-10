@@ -3,6 +3,8 @@ import { MACHINE_READ_COMMAND } from './machine-commands.js';
 import type * as MachineCommands from './machine-commands.js';
 import { FILES_SHARED_STAGED_COMMAND } from './files-commands.js';
 import type * as FilesCommands from './files-commands.js';
+import { MEDIA_ATTACH_COMMAND } from './media-commands.js';
+import type * as MediaCommands from './media-commands.js';
 import { SESSION_RECENT_COMMAND } from './session-recent.js';
 import type * as SessionRecent from './session-recent.js';
 import {
@@ -86,6 +88,7 @@ export type {
 export type * from './machine-commands.js';
 export { MACHINE_READ_COMMAND, FILES_SHARED_STAGED_COMMAND, SESSION_RECENT_COMMAND };
 export type * from './files-commands.js';
+export type * from './media-commands.js';
 export type * from './session-recent.js';
 export type * from './report-commands.js';
 export {
@@ -143,6 +146,7 @@ export const COMMAND_NAMES = {
   skillAdopt: 'skill.adopt',
   skillPropose: 'skill.propose',
   skillInvoke: 'skill.invoke',
+  mediaAttach: MEDIA_ATTACH_COMMAND,
 } as const;
 export const WORKFLOW_START_COMMAND = 'workflow.start';
 export type CommandName = (typeof COMMAND_NAMES)[keyof typeof COMMAND_NAMES];
@@ -371,6 +375,7 @@ export interface CommandArgsMap {
   'skill.adopt': SkillAdoptArgs;
   'skill.propose': SkillProposeArgs;
   'skill.invoke': SkillInvokeArgs;
+  'media.attach': MediaCommands.MediaAttachArgs;
 }
 
 export interface CommandResultMap {
@@ -419,6 +424,7 @@ export interface CommandResultMap {
   'skill.adopt': SkillAdoptResult;
   'skill.propose': SkillProposeResult;
   'skill.invoke': SkillInvokeResult;
+  'media.attach': MediaCommands.MediaAttachResult;
 }
 export type CommandArgs<Name extends CommandName = CommandName> = CommandArgsMap[Name];
 export type CommandResult<Name extends CommandName = CommandName> = CommandResultMap[Name];

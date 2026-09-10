@@ -12,6 +12,7 @@ import { createWorkspaceSubsystem } from '../workspace/index.js';
 import { createProjectsSubsystem } from '../projects/index.js';
 import { createFilesSubsystem } from '../files/index.js';
 import { createSkillsSubsystem } from '../skills/index.js';
+import { createMediaSubsystem } from '../media/index.js';
 import { createReportsSubsystem } from '../reports/index.js';
 
 import { createTelemetrySubsystem } from '../telemetry/index.js';
@@ -55,6 +56,7 @@ export function registerSubsystems(
     createProjectsSubsystem(),
     createFilesSubsystem(),
     createSkillsSubsystem(),
+    createMediaSubsystem(),
     createReportsSubsystem({ sessions }),
   ];
   for (const subsystem of selected) subsystem.register(context);
