@@ -429,7 +429,7 @@ test('a bridge health failure is reported without escaping the handler', async (
   }
 });
 
-test('a new topic rejects messages while its first turn is running', async () => {
+test('a new topic queues messages while its first turn is running', async () => {
   const fixture = createFixture();
   let resolveTurn: ((result: TurnResult) => void) | undefined;
   let watchStartedResolve: (() => void) | undefined;
@@ -451,16 +451,15 @@ test('a new topic rejects messages while its first turn is running', async () =>
       update(message('second', { threadId: 501, isTopicMessage: true })),
     );
     assert.equal(fixture.bridge.sendCalls.length, 0);
-    assert.ok(
-      fixture.api.sentMessages.some(({ text }) => text === 'still working on the previous turn'),
-    );
+    assert.ok(fixture.api.sentMessages.some(({ text }) => text === 'queued (#1)'));
     resolveTurn?.({ status: 'complete', text: 'done', elapsedMs: 1_000, toolCalls: 1 });
     await first;
+    assert.equal(fixture.bridge.sendCalls.map((call) => call.prompt).join('|'), 'second');
   } finally {
     cleanup(fixture.store, fixture.directory);
   }
 });
-test('a second topic message while a turn is running is rejected', async () => {
+test('a second topic message while a turn is running is queued and drained in order', async () => {
   const fixture = createFixture();
   const binding = topicBinding(603);
   fixture.store.bind(binding);
@@ -486,11 +485,10 @@ test('a second topic message while a turn is running is rejected', async () => {
       update(message('second', { threadId: binding.threadId, isTopicMessage: true })),
     );
     assert.equal(fixture.bridge.sendCalls.length, 1);
-    assert.ok(
-      fixture.api.sentMessages.some(({ text }) => text === 'still working on the previous turn'),
-    );
+    assert.ok(fixture.api.sentMessages.some(({ text }) => text === 'queued (#1)'));
     resolveTurn?.({ status: 'complete', text: 'done', elapsedMs: 1_000, toolCalls: 1 });
     await first;
+    assert.equal(fixture.bridge.sendCalls.map((call) => call.prompt).join('|'), 'first|second');
   } finally {
     cleanup(fixture.store, fixture.directory);
   }

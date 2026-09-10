@@ -15,6 +15,7 @@ import { createEcho } from './echo.js';
 import { createSessionWatch } from './session-watch.js';
 import { createAskRelay } from './ask-relay.js';
 import { resolvePrompt } from './voice-prompt.js';
+import { TurnQueue } from './turn-queue.js';
 
 export interface TelegramFormat {
   escapeMarkdownV2(text: string): string;
@@ -50,34 +51,28 @@ const HELP_TEXT = [
   '/attach — print the terminal attach command',
   '/help — show this help',
 ].join('\n');
-
 function messageTarget(message: IncomingMessage): ReplyTarget {
   if (message.threadId === undefined) return { chatId: message.chatId };
   return { chatId: message.chatId, threadId: message.threadId };
 }
-
 function callbackTarget(callback: CallbackQuery): ReplyTarget {
   if (callback.message.threadId === undefined) return { chatId: callback.message.chatId };
   return { chatId: callback.message.chatId, threadId: callback.message.threadId };
 }
-
 function commandName(text: string): string | null {
   const first = text.trim().split(/\s+/, 1)[0];
   if (!first?.startsWith('/')) return null;
   return first.slice(1).split('@', 1)[0]?.toLowerCase() || null;
 }
-
 function commandArguments(text: string): string {
   const trimmed = text.trim();
   const firstSpace = trimmed.search(/\s/);
   return firstSpace < 0 ? '' : trimmed.slice(firstSpace).trim();
 }
-
 function promptHead(prompt: string): string {
   const firstLine = prompt.trim().split(/\r?\n/, 1)[0]?.trim() || 'new session';
   return firstLine.length <= 64 ? firstLine : `${firstLine.slice(0, 63)}…`;
 }
-
 function topicName(project: string, prompt: string): string {
   return `${project} · ${promptHead(prompt)}`;
 }
@@ -96,6 +91,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     timeoutMs: config.turnTimeoutMs,
   });
   const inFlight = new Set<number>();
+  const turnQueue = new TurnQueue();
   const pendingStarts = new Map<number, PendingStart>();
   const projectChoices = new Map<string, Project>();
   const lastTurns = new Map<string, number>();
@@ -182,8 +178,13 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       inFlight.delete(topic.threadId);
       sessionWatch.watch(opened.sessionId);
     }
+    const queued = turnQueue.dequeue(topic.threadId);
+    if (queued !== undefined) {
+      const binding = store.byThread(topic.threadId);
+      if (binding)
+        await runTurn({ ...message, threadId: topic.threadId, text: queued }, binding, queued);
+    }
   }
-
   async function createSession(
     message: IncomingMessage,
     project: Project,
@@ -204,7 +205,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       (sessionId) => `session ${sessionId} started in ${project.name}`,
     );
   }
-
   async function resumeSession(
     message: IncomingMessage,
     pending: Extract<PendingStart, { kind: 'resume' }>,
@@ -230,7 +230,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       },
     );
   }
-
   async function resolveProject(name: string): Promise<Project | null> {
     const cached = projectChoices.get(name);
     if (cached) return cached;
@@ -239,14 +238,12 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     if (project) projectChoices.set(project.name, project);
     return project ?? null;
   }
-
   async function handleNew(message: IncomingMessage): Promise<void> {
     const args = commandArguments(message.text ?? '');
     if (!args) {
       await chooseProject(message);
       return;
     }
-
     const separator = args.search(/\s/);
     const projectName = separator < 0 ? args : args.slice(0, separator);
     const prompt = separator < 0 ? '' : args.slice(separator).trim();
@@ -254,7 +251,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       await reply(messageTarget(message), 'usage: /new <project> <prompt>');
       return;
     }
-
     const project = await resolveProject(projectName);
     if (!project) {
       await reply(messageTarget(message), `unknown project: ${projectName}`);
@@ -262,7 +258,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     }
     await createSession(message, project, prompt);
   }
-
   async function handleSessions(message: IncomingMessage): Promise<void> {
     await resumeHandler.handleSessions(message);
   }
@@ -319,6 +314,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       return true;
     }
     if (command === 'stop') {
+      turnQueue.clear(binding.threadId);
       const stopped = await bridge.stop(binding.sessionId);
       sessionWatch.unwatch(binding.sessionId);
       await reply(
@@ -343,10 +339,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     binding: TopicBinding,
   ): Promise<void> {
     const threadId = message.threadId;
-    if (threadId !== undefined && inFlight.has(threadId)) {
-      await reply(messageTarget(message), 'still working on the previous turn');
-      return;
-    }
     const resolved = await resolvePrompt({ api, bridge, reply }, message);
     if (resolved.kind === 'empty') {
       await reply(messageTarget(message), 'nothing was transcribed');
@@ -355,9 +347,20 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     if (resolved.kind === 'handled') return;
     const prompt = resolved.prompt;
     const command = commandName(prompt);
-    if (command && (await handleTopicCommand(message, binding, command, prompt))) return;
+    const busy = threadId !== undefined && inFlight.has(threadId);
     if (command) {
+      if (busy) {
+        await reply(messageTarget(message), 'still working on the previous turn');
+        return;
+      }
+      if (await handleTopicCommand(message, binding, command, prompt)) return;
       await reply(messageTarget(message), 'unknown command; use /help');
+      return;
+    }
+    if (busy && threadId !== undefined) {
+      const queued = turnQueue.enqueue(threadId, prompt);
+      if (queued.queued) await reply(messageTarget(message), `queued (#${queued.position})`);
+      else await reply(messageTarget(message), 'queue full, try again after this turn');
       return;
     }
     await runTurn(message, binding, prompt);
@@ -370,32 +373,34 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
   ): Promise<void> {
     const threadId = message.threadId;
     if (threadId === undefined) return;
-    if (inFlight.has(threadId)) {
-      await reply(messageTarget(message), 'still working on the previous turn');
-      return;
-    }
-
+    const { sessionId } = binding;
+    const { chatId } = message;
     inFlight.add(threadId);
-    sessionWatch.unwatch(binding.sessionId);
+    sessionWatch.unwatch(sessionId);
     try {
-      await ensureHealthy();
-      if ((await bridge.openTurn(binding.sessionId)) !== null) {
-        await reply(messageTarget(message), 'still working on the previous turn');
-        return;
+      let next: string | undefined = prompt;
+      while (next !== undefined) {
+        await ensureHealthy();
+        if ((await bridge.openTurn(sessionId)) !== null) {
+          turnQueue.clear(threadId);
+          await reply(messageTarget(message), 'still working on the previous turn');
+          return;
+        }
+        sessionWatch.markSent(sessionId, next);
+        try {
+          const sent = await bridge.send({ sessionId, prompt: next });
+          sessionWatch.markRelayed(sessionId, sent.turn);
+          lastTurns.set(sessionId, sent.turn);
+          await relayTurn({ chatId, threadId, sessionId, turn: sent.turn });
+        } catch (error) {
+          turnQueue.clear(threadId);
+          throw error;
+        }
+        next = turnQueue.dequeue(threadId);
       }
-      sessionWatch.markSent(binding.sessionId, prompt);
-      const sent = await bridge.send({ sessionId: binding.sessionId, prompt });
-      sessionWatch.markRelayed(binding.sessionId, sent.turn);
-      lastTurns.set(binding.sessionId, sent.turn);
-      await relayTurn({
-        chatId: message.chatId,
-        threadId,
-        sessionId: binding.sessionId,
-        turn: sent.turn,
-      });
     } finally {
       inFlight.delete(threadId);
-      sessionWatch.watch(binding.sessionId);
+      sessionWatch.watch(sessionId);
     }
   }
 
@@ -466,8 +471,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       sessionWatch.start();
     },
     stop(): void {
-      // The ask subscription holds a process-lifetime control-plane socket;
-      // without this the telegram main child never exits on SIGTERM (#116).
+      // Ask socket is process-lifetime; stop it so SIGTERM exits (#116).
       askRelay.stop();
     },
     async handleUpdate(update: TelegramUpdate): Promise<void> {
