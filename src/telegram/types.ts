@@ -25,6 +25,8 @@ export interface IncomingMessage {
   messageId: number;
   from: { id: number; username?: string };
   text?: string;
+  caption?: string;
+  voice?: { fileId: string; mimeType?: string; fileSize?: number };
   isTopicMessage: boolean;
 }
 
@@ -74,6 +76,8 @@ export interface TelegramApi {
   }>;
   editForumTopic(p: { chatId: number; threadId: number; name: string }): Promise<void>;
   answerCallbackQuery(id: string, text?: string): Promise<void>;
+  getFile(fileId: string): Promise<{ filePath: string }>;
+  downloadFile(filePath: string): Promise<Uint8Array>;
 }
 
 export interface TurnProgress {
@@ -151,6 +155,7 @@ export interface SessionBridge {
     onAsk?: (ask: ObservedAsk) => void;
   }): () => void; // returns unsubscribe
   openTurn(sessionId: string): Promise<number | null>;
+  transcribe(args: { audio_base64: string; mime?: string }): Promise<{ text: string }>;
 }
 
 export interface SessionAskBridge {

@@ -8,6 +8,8 @@ type SendDocumentParams = Parameters<TelegramApi['sendDocument']>[0];
 type ForumTopicParams = Parameters<TelegramApi['createForumTopic']>[0];
 type EditForumTopicParams = Parameters<TelegramApi['editForumTopic']>[0];
 
+const MAX_TELEGRAM_FILE_BYTES = 15 * 1024 * 1024;
+
 export function createTelegramApi(
   config: TelegramConfig,
   fetchImpl?: typeof fetch,
@@ -154,6 +156,44 @@ export function createTelegramApi(
       if (text !== undefined) body.text = text;
       await postTelegram(requestFetch, `${apiBase}/answerCallbackQuery`, body, undefined, false);
     },
+
+    async getFile(fileId: string): Promise<{ filePath: string }> {
+      const value = await postTelegram(
+        requestFetch,
+        `${apiBase}/getFile`,
+        { file_id: fileId },
+        undefined,
+        false,
+      );
+      if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('Telegram file is not ready yet');
+      }
+      const filePath = (value as JsonRecord).file_path;
+      if (typeof filePath !== 'string' || filePath.length === 0) {
+        throw new Error('Telegram file is not ready yet');
+      }
+      return { filePath };
+    },
+
+    async downloadFile(filePath: string): Promise<Uint8Array> {
+      assertSafeFilePath(filePath);
+      const response = await requestFetch(`${baseUrl}/file/bot${config.token}/${filePath}`);
+      if (!response.ok) {
+        throw new Error(`Telegram file download failed with HTTP ${response.status}`);
+      }
+      const contentLength = response.headers.get('content-length');
+      if (contentLength !== null) {
+        const parsed = Number(contentLength);
+        if (Number.isFinite(parsed) && parsed > MAX_TELEGRAM_FILE_BYTES) {
+          throw new Error('Telegram file exceeds 15 MB limit');
+        }
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (bytes.byteLength > MAX_TELEGRAM_FILE_BYTES) {
+        throw new Error('Telegram file exceeds 15 MB limit');
+      }
+      return bytes;
+    },
   };
 }
 
@@ -263,7 +303,43 @@ function mapMessage(value: unknown): NonNullable<TelegramUpdate['message']> {
   if (typeof message.message_thread_id === 'number') mapped.threadId = message.message_thread_id;
   if (typeof from.username === 'string') mapped.from.username = from.username;
   if (typeof message.text === 'string') mapped.text = message.text;
+  if (typeof message.caption === 'string') mapped.caption = message.caption;
+  const voiceAttachment =
+    mapVoiceAttachment(message.voice, 'audio/ogg') ??
+    mapVoiceAttachment(message.audio, 'audio/mpeg') ??
+    mapVoiceAttachment(message.video_note, undefined);
+  if (voiceAttachment !== undefined) mapped.voice = voiceAttachment;
   return mapped;
+}
+
+function mapVoiceAttachment(
+  value: unknown,
+  defaultMimeType: string | undefined,
+): NonNullable<TelegramUpdate['message']>['voice'] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as JsonRecord;
+  if (typeof record.file_id !== 'string' || record.file_id.length === 0) return undefined;
+  const attachment: NonNullable<NonNullable<TelegramUpdate['message']>['voice']> = {
+    fileId: record.file_id,
+  };
+  if (typeof record.mime_type === 'string' && record.mime_type.length > 0) {
+    attachment.mimeType = record.mime_type;
+  } else if (defaultMimeType !== undefined) {
+    attachment.mimeType = defaultMimeType;
+  }
+  if (typeof record.file_size === 'number' && Number.isFinite(record.file_size)) {
+    attachment.fileSize = record.file_size;
+  }
+  return attachment;
+}
+
+function assertSafeFilePath(filePath: string): void {
+  if (typeof filePath !== 'string' || filePath.length === 0) {
+    throw new Error('Invalid Telegram file path');
+  }
+  if (filePath.startsWith('/') || filePath.split('/').includes('..')) {
+    throw new Error('Invalid Telegram file path');
+  }
 }
 
 function mapCallbackQuery(value: unknown): NonNullable<TelegramUpdate['callbackQuery']> {
