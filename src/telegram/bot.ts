@@ -14,6 +14,7 @@ import { createTurnRelay } from './turn-relay.js';
 import { createEcho } from './echo.js';
 import { createSessionWatch } from './session-watch.js';
 import { createAskRelay } from './ask-relay.js';
+import { resolvePrompt } from './voice-prompt.js';
 
 export interface TelegramFormat {
   escapeMarkdownV2(text: string): string;
@@ -293,6 +294,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     message: IncomingMessage,
     binding: TopicBinding,
     command: string,
+    prompt: string,
   ): Promise<boolean> {
     const target = messageTarget(message);
     if (command === 'rename') {
@@ -302,7 +304,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
           chatId: message.chatId,
           threadId: binding.threadId,
           sessionId: binding.sessionId,
-          argumentText: commandArguments(message.text ?? ''),
+          argumentText: commandArguments(prompt),
         },
       );
       return true;
@@ -345,16 +347,27 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
       await reply(messageTarget(message), 'still working on the previous turn');
       return;
     }
-    const command = commandName(message.text ?? '');
-    if (command && (await handleTopicCommand(message, binding, command))) return;
+    const resolved = await resolvePrompt({ api, bridge, reply }, message);
+    if (resolved.kind === 'empty') {
+      await reply(messageTarget(message), 'nothing was transcribed');
+      return;
+    }
+    if (resolved.kind === 'handled') return;
+    const prompt = resolved.prompt;
+    const command = commandName(prompt);
+    if (command && (await handleTopicCommand(message, binding, command, prompt))) return;
     if (command) {
       await reply(messageTarget(message), 'unknown command; use /help');
       return;
     }
-    await runTurn(message, binding);
+    await runTurn(message, binding, prompt);
   }
 
-  async function runTurn(message: IncomingMessage, binding: TopicBinding): Promise<void> {
+  async function runTurn(
+    message: IncomingMessage,
+    binding: TopicBinding,
+    prompt: string,
+  ): Promise<void> {
     const threadId = message.threadId;
     if (threadId === undefined) return;
     if (inFlight.has(threadId)) {
@@ -370,7 +383,6 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
         await reply(messageTarget(message), 'still working on the previous turn');
         return;
       }
-      const prompt = message.text ?? '';
       sessionWatch.markSent(binding.sessionId, prompt);
       const sent = await bridge.send({ sessionId: binding.sessionId, prompt });
       sessionWatch.markRelayed(binding.sessionId, sent.turn);
@@ -391,7 +403,18 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     const pending = pendingStarts.get(message.chatId);
     if (pending) {
       pendingStarts.delete(message.chatId);
-      const prompt = message.text?.trim() ?? '';
+      const resolved = await resolvePrompt({ api, bridge, reply }, message);
+      if (resolved.kind !== 'prompt') {
+        pendingStarts.set(message.chatId, pending);
+        if (resolved.kind === 'empty') {
+          await reply(
+            messageTarget(message),
+            "I couldn't hear anything — please send the first prompt as text or voice again",
+          );
+        }
+        return;
+      }
+      const prompt = resolved.prompt;
       if (pending.kind === 'new') {
         await createSession(message, pending.project, prompt);
       } else {

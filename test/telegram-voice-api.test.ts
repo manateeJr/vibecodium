@@ -26,9 +26,7 @@ function rawMessage(fields: RawMessage = {}): RawMessage {
   };
 }
 
-async function messageFor(
-  message: RawMessage,
-): Promise<NonNullable<TelegramUpdate['message']>> {
+async function messageFor(message: RawMessage): Promise<NonNullable<TelegramUpdate['message']>> {
   const fetchImpl: typeof fetch = async () =>
     new Response(JSON.stringify({ ok: true, result: [{ update_id: 1, message }] }), {
       status: 200,
@@ -41,9 +39,7 @@ async function messageFor(
 }
 
 test('maps voice attachments with an audio/ogg default', async () => {
-  const mapped = await messageFor(
-    rawMessage({ voice: { file_id: 'voice-1', file_size: 1234 } }),
-  );
+  const mapped = await messageFor(rawMessage({ voice: { file_id: 'voice-1', file_size: 1234 } }));
   assert.deepEqual(mapped.voice, { fileId: 'voice-1', mimeType: 'audio/ogg', fileSize: 1234 });
 });
 
