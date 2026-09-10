@@ -123,6 +123,8 @@ export function createSessionBridge(
         watchStartSeqByTurn.set(`${sessionId}:${result.turn}`, streamTailSeq);
         return { turn: result.turn };
       }),
+    transcribe: (args: { audio_base64: string; mime?: string }) =>
+      controlPlaneCall('voice transcribe', () => client.transcribe(args)),
     stop: (sessionId) =>
       controlPlaneCall('session stop', async () => {
         const result = await client.stopSession({ session_id: sessionId });
