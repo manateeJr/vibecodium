@@ -309,6 +309,8 @@ function mapMessage(value: unknown): NonNullable<TelegramUpdate['message']> {
     mapVoiceAttachment(message.audio, 'audio/mpeg') ??
     mapVoiceAttachment(message.video_note, undefined);
   if (voiceAttachment !== undefined) mapped.voice = voiceAttachment;
+  const photoAttachment = mapPhotoAttachment(message.photo);
+  if (photoAttachment !== undefined) mapped.photo = photoAttachment;
   return mapped;
 }
 
@@ -331,6 +333,38 @@ function mapVoiceAttachment(
     attachment.fileSize = record.file_size;
   }
   return attachment;
+}
+
+function mapPhotoAttachment(value: unknown): NonNullable<TelegramUpdate['message']>['photo'] {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  let best: { fileId: string; fileSize?: number; width?: number; height?: number } | undefined;
+  let bestScore = -1;
+  for (const entry of value) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const record = entry as JsonRecord;
+    if (typeof record.file_id !== 'string' || record.file_id.length === 0) continue;
+    const fileSize =
+      typeof record.file_size === 'number' && Number.isFinite(record.file_size)
+        ? record.file_size
+        : undefined;
+    const width =
+      typeof record.width === 'number' && Number.isFinite(record.width) ? record.width : undefined;
+    const height =
+      typeof record.height === 'number' && Number.isFinite(record.height)
+        ? record.height
+        : undefined;
+    const score = fileSize ?? (width !== undefined && height !== undefined ? width * height : -1);
+    if (best === undefined || score >= bestScore) {
+      best = { fileId: record.file_id };
+      if (fileSize !== undefined) best.fileSize = fileSize;
+      if (width !== undefined) best.width = width;
+      if (height !== undefined) best.height = height;
+      bestScore = score;
+    }
+  }
+  if (best === undefined) return undefined;
+  // Telegram PhotoSize carries no mime type; photos are delivered as JPEG.
+  return { ...best, mimeType: 'image/jpeg' };
 }
 
 function assertSafeFilePath(filePath: string): void {

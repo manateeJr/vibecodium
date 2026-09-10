@@ -27,6 +27,7 @@ export interface IncomingMessage {
   text?: string;
   caption?: string;
   voice?: { fileId: string; mimeType?: string; fileSize?: number };
+  photo?: { fileId: string; mimeType?: string; fileSize?: number; width?: number; height?: number };
   isTopicMessage: boolean;
 }
 
@@ -156,6 +157,12 @@ export interface SessionBridge {
   }): () => void; // returns unsubscribe
   openTurn(sessionId: string): Promise<number | null>;
   transcribe(args: { audio_base64: string; mime?: string }): Promise<{ text: string }>;
+  attachImage(args: {
+    session_id: string;
+    image_base64: string;
+    mime?: string;
+    filename?: string;
+  }): Promise<{ path: string; bytes: number }>;
 }
 
 export interface SessionAskBridge {

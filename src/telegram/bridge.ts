@@ -125,6 +125,51 @@ export function createSessionBridge(
       }),
     transcribe: (args: { audio_base64: string; mime?: string }) =>
       controlPlaneCall('voice transcribe', () => client.transcribe(args)),
+    attachImage: (args: {
+      session_id: string;
+      image_base64: string;
+      mime?: string;
+      filename?: string;
+    }) =>
+      controlPlaneCall('media attach', async () => {
+        // The bridge posts tokenless like its control-plane client (loopback).
+        const response = await fetch(`${baseUrl}/commands/media.attach`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(args),
+        });
+        let body: unknown;
+        try {
+          body = (await response.json()) as unknown;
+        } catch {
+          throw new Error(`control plane returned HTTP ${response.status}`);
+        }
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+          throw new Error(
+            response.ok
+              ? 'control plane returned an invalid response'
+              : `control plane returned HTTP ${response.status}`,
+          );
+        }
+        if (!response.ok) {
+          if ('error' in body && typeof body.error === 'string') throw new Error(body.error);
+          throw new Error(`control plane returned HTTP ${response.status}`);
+        }
+        if (!('value' in body)) throw new Error('control plane returned an invalid response');
+        const value = body.value;
+        if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error('control plane returned an invalid response');
+        }
+        if (!('path' in value) || typeof value.path !== 'string') {
+          throw new Error('control plane returned an invalid response');
+        }
+        if (!('size' in value) || typeof value.size !== 'number') {
+          throw new Error('control plane returned an invalid response');
+        }
+        // wire-final: the server returns `size`; mapped to the `bytes` field
+        // pinned by the lane SessionBridge contract.
+        return { path: value.path, bytes: value.size };
+      }),
     stop: (sessionId) =>
       controlPlaneCall('session stop', async () => {
         const result = await client.stopSession({ session_id: sessionId });
