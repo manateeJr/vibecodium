@@ -14,7 +14,7 @@ import { createTurnRelay } from './turn-relay.js';
 import { createEcho } from './echo.js';
 import { createSessionWatch } from './session-watch.js';
 import { createAskRelay } from './ask-relay.js';
-import { resolvePrompt } from './voice-prompt.js';
+import { resolveMediaPrompt } from './photo-prompt.js';
 import { TurnQueue } from './turn-queue.js';
 
 export interface TelegramFormat {
@@ -339,7 +339,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     binding: TopicBinding,
   ): Promise<void> {
     const threadId = message.threadId;
-    const resolved = await resolvePrompt({ api, bridge, reply }, message);
+    const resolved = await resolveMediaPrompt({ api, bridge, reply }, binding.sessionId, message);
     if (resolved.kind === 'empty') {
       await reply(messageTarget(message), 'nothing was transcribed');
       return;
@@ -408,7 +408,7 @@ export function createTelegramBot(deps: TelegramBotDependencies): TelegramBot {
     const pending = pendingStarts.get(message.chatId);
     if (pending) {
       pendingStarts.delete(message.chatId);
-      const resolved = await resolvePrompt({ api, bridge, reply }, message);
+      const resolved = await resolveMediaPrompt({ api, bridge, reply }, undefined, message);
       if (resolved.kind !== 'prompt') {
         pendingStarts.set(message.chatId, pending);
         if (resolved.kind === 'empty') {

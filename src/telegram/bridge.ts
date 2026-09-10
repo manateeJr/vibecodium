@@ -166,9 +166,7 @@ export function createSessionBridge(
         if (!('size' in value) || typeof value.size !== 'number') {
           throw new Error('control plane returned an invalid response');
         }
-        // wire-final: the server returns `size`; mapped to the `bytes` field
-        // pinned by the lane SessionBridge contract.
-        return { path: value.path, bytes: value.size };
+        return { path: value.path, size: value.size };
       }),
     stop: (sessionId) =>
       controlPlaneCall('session stop', async () => {

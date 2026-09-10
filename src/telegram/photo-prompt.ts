@@ -1,4 +1,5 @@
 import type { IncomingMessage, SessionBridge, TelegramApi } from './types.js';
+import { resolvePrompt } from './voice-prompt.js';
 
 export const MAX_PHOTO_BYTES = 15 * 1024 * 1024;
 
@@ -56,4 +57,29 @@ export async function resolvePhoto(
     }
     return { kind: 'handled' };
   }
+}
+
+export async function resolveMediaPrompt(
+  deps: PhotoResolverDeps,
+  sessionId: string | undefined,
+  message: IncomingMessage,
+): Promise<ResolvedPhotoPrompt> {
+  const photoFirst =
+    message.photo !== undefined &&
+    (message.text?.trim() ?? '') === '' &&
+    message.voice === undefined;
+  if (!photoFirst) return resolvePrompt(deps, message);
+  if (sessionId === undefined) {
+    await deps.reply(
+      messageTarget(message),
+      'start the session with text first, then send photos in the thread',
+    );
+    return { kind: 'handled' };
+  }
+  const photo = await resolvePhoto(deps, sessionId, message);
+  if (photo.kind === 'empty') {
+    await deps.reply(messageTarget(message), 'could not use that photo');
+    return { kind: 'handled' };
+  }
+  return photo;
 }

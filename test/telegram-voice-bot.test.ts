@@ -157,6 +157,9 @@ class FakeBridge implements SessionBridge {
     if (this.transcribeError !== undefined) throw this.transcribeError;
     return { text: this.transcribeText };
   }
+  async attachImage(): Promise<{ path: string; size: number }> {
+    throw new Error('not implemented');
+  }
 
   async stop(sessionId: string): Promise<boolean> {
     void sessionId;

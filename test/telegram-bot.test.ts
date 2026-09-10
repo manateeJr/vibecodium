@@ -113,6 +113,7 @@ class FakeBridge implements SessionBridge {
     return this.healthResult;
   }
   transcribe = (): Promise<{ text: string }> => Promise.reject(new Error('unused'));
+  attachImage = (): Promise<{ path: string; size: number }> => Promise.reject(new Error('unused'));
   async projects(): Promise<Project[]> {
     this.projectCalls.push(1);
     return this.projectsList;

@@ -109,6 +109,9 @@ class FakeBridge implements SessionBridge {
   async transcribe(): Promise<{ text: string }> {
     throw new Error('not implemented');
   }
+  async attachImage(): Promise<{ path: string; size: number }> {
+    throw new Error('not implemented');
+  }
 
   async projects(): Promise<Array<{ name: string; path: string }>> {
     return [];

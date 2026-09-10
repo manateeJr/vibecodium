@@ -162,7 +162,7 @@ export interface SessionBridge {
     image_base64: string;
     mime?: string;
     filename?: string;
-  }): Promise<{ path: string; bytes: number }>;
+  }): Promise<{ path: string; size: number }>;
 }
 
 export interface SessionAskBridge {
